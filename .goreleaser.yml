@@ -1,0 +1,46 @@
+version: 2
+
+builds:
+  - id: labelsync
+    main: .
+    binary: labelsync
+    flags:
+      - -trimpath
+      - -tags=netgo
+    ldflags:
+      - -s -w
+      - -X github.com/specsnl/labelsync/internal/cmd.Version={{ .Version }}
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+
+archives:
+  - formats: [tar.gz]
+    name_template: "labelsync_{{ .Os }}_{{ .Arch }}{{ if .Arm }}_v{{ .Arm }}{{ end }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  github:
+    owner: specsnl
+    name: labelsync
+  draft: false
+  prerelease: auto
+
+homebrew_casks:
+  - name: labelsync
+    repository:
+      owner: specsnl
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/specsnl/labelsync"
+    description: "A Github label synchronization tool"
+    directory: Casks
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/labelsync"]
+          end
