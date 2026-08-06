@@ -1,0 +1,105 @@
+# labelsync's own label catalogue.
+#
+# This file is both the source of truth for this repository's labels and the
+# worked example the documentation refers to. It deliberately satisfies every
+# rule in docs/design.md § Validation — most notably that label colours are
+# globally unique and descriptions are at most 100 characters.
+
+version: 1
+
+# ── Repository selectors ──────────────────────────────────────────────
+groups:
+  self:
+    repos:
+      - specsnl/labelsync
+
+# ── Fallback groups for labels that don't specify any ─────────────────
+defaults:
+  groups: [self]
+
+# ── Labels ────────────────────────────────────────────────────────────
+labels:
+  # Area — which part of the codebase an issue touches.
+  - name: "area: config"
+    color: "1d76db"
+    description: "Config loading, validation, group resolution"
+
+  - name: "area: palette"
+    color: "8a63d2"
+    description: "Colour allocation and candidate generation"
+
+  - name: "area: plan"
+    color: "5319e7"
+    description: "The pure reconciliation planner"
+
+  - name: "area: github"
+    color: "24292f"
+    description: "GitHub API client, auth, cache, rate limiting"
+
+  - name: "area: cli"
+    color: "0e8a16"
+    description: "Cobra commands, flags, output rendering"
+
+  - name: "area: ci"
+    color: "fbca04"
+    description: "Workflows, rulesets, release pipeline"
+
+  - name: "area: docs"
+    color: "0075ca"
+    description: "Documentation and README"
+
+  # Type — what kind of work it is.
+  - name: "type: epic"
+    color: "3f1f78"
+    description: "Parent tracking issue with sub-issues"
+
+  - name: "type: feature"
+    color: "a2eeef"
+    description: "New functionality"
+
+  - name: "type: test"
+    color: "bfd4f2"
+    description: "Test coverage without behaviour change"
+
+  - name: "type: chore"
+    color: "d4c5f9"
+    description: "Maintenance, tooling, scaffolding"
+
+  - name: "type: spike"
+    color: "e99695"
+    description: "Time-boxed research; the output is a decision"
+
+  - name: "type: bug"
+    color: "d73a4a"
+    description: "Something isn't working"
+
+  # Readiness — answers "what can I pick up right now?".
+  - name: "blocked"
+    color: "b60205"
+    description: "Waiting on another issue to land"
+
+  - name: "parallel-safe"
+    color: "0052cc"
+    description: "No unlanded dependencies; safe to start immediately"
+
+  - name: "good first issue"
+    color: "7057ff"
+    description: "Good for newcomers"
+
+  # Referenced by .github/dependabot.yml. Dependabot silently drops labels that
+  # do not exist, so these have to be declared here to have any effect.
+  - name: "dependencies"
+    color: "0366d6"
+    description: "Dependency updates"
+
+  - name: "github-actions"
+    color: "2088ff"
+    description: "GitHub Actions dependency updates"
+
+  - name: "go"
+    color: "00add8"
+    description: "Go dependency updates"
+
+  - name: "docker"
+    color: "2496ed"
+    description: "Docker dependency updates"

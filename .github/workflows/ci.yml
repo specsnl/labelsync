@@ -43,3 +43,31 @@ jobs:
       - name: Build (smoke)
         run: go build -o /dev/null .
 
+  integration-tests:
+    # Required by .github/rulesets/Main.json. Nothing carries the `integration`
+    # build tag yet, so this is a green no-op — the check has to exist for the
+    # ruleset to be satisfiable at all.
+    name: Integration tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Cache Go modules
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/go/pkg/mod
+            ~/.cache/go/build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Test
+        run: go test -race -count=1 -tags=integration ./...
+
