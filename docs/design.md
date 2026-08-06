@@ -931,6 +931,37 @@ Matching specs-cli, so the developer experience is identical:
 Milestones 1–2 are the entire interesting core and need no GitHub access at all — worth building
 and testing first.
 
+These exist as GitHub milestones `M0 · Foundation` through `M7 · Ship`. `M0` was added when the
+tracker was seeded: the design assumes the sentinel errors, XDG paths, Cobra spine, and output
+writer already exist, and they did not.
+
+### Build order
+
+Work is tracked as eight epics — one per subsystem — each with sub-issues carrying a milestone.
+Epics deliberately carry no milestone, because several span more than one stage.
+
+The critical path is **foundation → config load → planner → `sync --dry-run` → apply**. Everything
+else hangs off it:
+
+| Wave | Available in parallel                                                                          |
+|------|------------------------------------------------------------------------------------------------|
+| 1    | ruleset fix, sentinels + XDG paths, `AGENTS.md`, all three spikes, colour candidates           |
+| 2    | output writer, config load, `Allocate()`, the `Action` type, auth, client                      |
+| 3    | Cobra spine, group resolution, validation, `Compute()`, enumeration, label CRUD, rate limiting |
+| 4    | renames, prune semantics, rendering, ETag cache, `init`, `groups`, `export`, docs              |
+| 5    | determinism suite, countdown, `sync --dry-run`, `cache`                                        |
+| 6    | apply, then prune, renames end to end, release verification, dogfood CI                        |
+
+The spikes are the ones to start today: they need no code, they are fully parallel, and two of them
+gate validation rules.
+
+The `internal/github` epic depends only on the foundation and on the config package's selector
+types, so it is fully independent of the config, palette, and plan epics. That is the cleanest
+split when more than one person is working at once.
+
+Issues labelled `parallel-safe` have no unlanded dependencies; `blocked` ones name what they wait
+on. `gh issue list --label parallel-safe` answers "what can I pick up right now".
+
 ---
 
 ## Open questions
