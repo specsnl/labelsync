@@ -79,7 +79,7 @@ tasks:
     cmds:
       - task: dc:run:go-builder
         vars:
-          SUB_CMD: "go test -tags=integration ./..."
+          SUB_CMD: "go test -race -tags=integration ./..."
 
   release:dry-run:
     desc: Build a snapshot release locally without publishing
