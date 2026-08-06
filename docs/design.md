@@ -667,6 +667,16 @@ surfaced as a stable `error_kind` string in JSON output — exactly the specs-cl
 func KindOf(err error) string // stable kind string, or "" when no known sentinel is wrapped
 ```
 
+**The wrapping rule is the package rule.** A call site with context to add never returns a
+sentinel bare, and never renders one with `%v` or into a freshly constructed error — either
+breaks both `errors.Is` matching and `KindOf`:
+
+```go
+return fmt.Errorf("%w: %s", labelsync.ErrInvalidColor, raw)
+```
+
+The kind strings are a public contract. They may be added to, never renamed.
+
 | Sentinel                      | Kind string                  |
 |-------------------------------|------------------------------|
 | `ErrConfigNotFound`           | `config_not_found`           |
