@@ -1,0 +1,100 @@
+# https://taskfile.dev
+version: "3"
+
+includes:
+  md: ./taskfiles/Taskfile.md.yml
+  lint:
+    taskfile: ./taskfiles/Taskfile.lint.yml
+    flatten: true
+
+silent: true
+
+# env:
+#   BUILDKIT_PROGRESS: plain
+
+tasks:
+
+  dc:
+    desc: Run a docker compose command
+    internal: true
+    vars:
+      FIXUID:
+        sh: echo ${FIXUID:-$(id -u)}
+      FIXGID:
+        sh: echo ${FIXGID:-$(id -g)}
+    cmds:
+      - FIXUID={{ .FIXUID }} FIXGID={{ .FIXGID }} docker compose {{ .SUB_CMD }} {{ .CLI_ARGS }}
+
+  dc:build:
+    desc: Run docker compose build
+    cmds:
+      - task: dc
+        vars:
+          SUB_CMD: --profile=* build
+
+  dc:run:*:
+    desc: Run a one-off docker compose command
+    vars:
+      SERVICE: '{{ index .MATCH 0 }}'
+      RUN_FLAGS: '{{ .RUN_FLAGS | default "" }}'
+      USER_FLAG: '{{ (ne (.NON_ROOT | default "true") "false") | ternary " --user $(id -u):$(id -g)" "" }}'
+      COMPOSE_SERVICES:
+        sh: COMPOSE_PROFILES="*" docker compose config --services
+    cmds:
+      - task: dc
+        vars:
+          SUB_CMD: 'run --rm {{ .RUN_FLAGS }} {{ .USER_FLAG }} {{ .SERVICE }} {{ .SUB_CMD }}'
+          CLI_ARGS: '{{ .CLI_ARGS }}'
+    requires:
+      vars:
+        - name: SERVICE
+          enum:
+            ref: .COMPOSE_SERVICES | splitLines | compact
+
+  dc:shell:
+    desc: Shell into a docker compose service
+    cmds:
+      - task: dc
+        vars:
+          SUB_CMD: "run --tty --rm go-builder /bin/bash"
+          CLI_ARGS: "{{.CLI_ARGS}}"
+
+  build:
+    desc: Build Labelsync
+    vars:
+      LABELSYNC_VERSION:
+        sh: git describe --tags --always --dirty="-dev" 2>/dev/null || echo "dev"
+    cmds:
+      - task: lint
+      - >-
+        docker buildx bake --file compose.yml
+        --set "go-binary.output=type=local,dest=."
+        --set "go-binary.args.GOARCH={{ARCH}}"
+        --set "go-binary.args.GOOS={{OS}}"
+        --set "go-binary.args.LABELSYNC_VERSION={{.LABELSYNC_VERSION}}"
+        go-binary
+
+  test:
+    desc: Run go tests
+    cmds:
+      - task: dc:run:go-builder
+        vars:
+          SUB_CMD: "go test -tags=integration ./..."
+
+  release:dry-run:
+    desc: Build a snapshot release locally without publishing
+    cmds:
+      - task: dc:run:goreleaser
+        vars:
+          SUB_CMD: release --snapshot --clean
+
+  cleanup:
+    desc: Cleanup workspace
+    summary: |
+      Cleanup of almost all gitignored files, untracked files and development containers.
+
+      The following files/dirs are excluded: none
+    cmds:
+      - git clean
+        -xd
+        --force
