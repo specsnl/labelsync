@@ -1,0 +1,8 @@
+info resolving 3 groups
+┌─────────────────────────────────────────────────┐
+│ Group     Repositories  Source                  │
+│ ─────────────────────────────────────────────── │
+│ websites  12            org: specsnl            │
+│ platform  3             repos:                  │
+│ archive   0             org: specsnl (excluded) │
+└─────────────────────────────────────────────────┘

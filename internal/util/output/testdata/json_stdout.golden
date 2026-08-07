@@ -1,0 +1,4 @@
+{"level":"info","message":"resolving 3 groups"}
+{"group":"websites","repositories":"12","source":"org: specsnl"}
+{"group":"platform","repositories":"3","source":"repos:"}
+{"group":"archive","repositories":"0","source":"org: specsnl (excluded)"}

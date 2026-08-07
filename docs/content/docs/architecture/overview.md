@@ -30,16 +30,18 @@ labelsync/
     ├── apply/                    # executes a Plan, prune prompts
     └── util/
         ├── exit/                 # exit codes
-        ├── output/               # lipgloss logger + table renderer
+        ├── output/               # Writer (pretty + NDJSON), table renderers, slog setup
         └── validate/             # shared validators
 ```
 
 ### Implemented so far
 
-| Package              | Status  | Notes                                                          |
-|----------------------|---------|----------------------------------------------------------------|
-| `internal/labelsync` | landed  | XDG config/cache paths, config file names, sentinels, `KindOf` |
-| everything else      | planned | See the milestone table in the design plan                     |
+| Package                | Status  | Notes                                                          |
+|------------------------|---------|----------------------------------------------------------------|
+| `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf` |
+| `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes](./output.md)   |
+| `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring        |
+| everything else        | planned | See the milestone table in the design plan                     |
 
 ### Why `plan` and `palette` are isolated
 
@@ -74,12 +76,14 @@ labelsync [--config <path>]
 
 ### Exit codes
 
-| Code | Meaning                                                            |
-|------|--------------------------------------------------------------------|
-| `0`  | In sync — no changes needed, or applied successfully with no drift |
-| `1`  | Error (config invalid, auth failure, unrecoverable API error)      |
-| `2`  | Drift detected — `--dry-run` found pending actions                 |
-| `3`  | Applied successfully, but one or more repositories were skipped    |
+| Code | Constant       | Meaning                                                            |
+|------|----------------|--------------------------------------------------------------------|
+| `0`  | `exit.OK`      | In sync — no changes needed, or applied successfully with no drift |
+| `1`  | `exit.Error`   | Error (config invalid, auth failure, unrecoverable API error)      |
+| `2`  | `exit.Drift`   | Drift detected — `--dry-run` found pending actions                 |
+| `3`  | `exit.Skipped` | Applied successfully, but one or more repositories were skipped    |
+
+Defined in `internal/util/exit`; the rationale is in [Output & Exit Codes](./output.md#exit-codes).
 
 ## Configuration
 
