@@ -698,6 +698,11 @@ The kind strings are a public contract. They may be added to, never renamed.
 | `ErrRepoInaccessible`         | `repo_inaccessible`          |
 | `ErrMaxWaitExceeded`          | `max_wait_exceeded`          |
 
+**Adding a sentinel means adding a row here, a `KindOf` case, and an entry in the `allSentinels`
+test table.** The test derives its expected set by parsing the package source for exported `Err*`
+variables, so a sentinel that is declared but not tabled — or tabled after being removed — fails
+the build rather than silently escaping `KindOf` and rendering an empty `error_kind`.
+
 ---
 
 ## Output
