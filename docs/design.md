@@ -667,6 +667,16 @@ surfaced as a stable `error_kind` string in JSON output — exactly the specs-cl
 func KindOf(err error) string // stable kind string, or "" when no known sentinel is wrapped
 ```
 
+**The wrapping rule is the package rule.** A call site with context to add never returns a
+sentinel bare, and never renders one with `%v` or into a freshly constructed error — either
+breaks both `errors.Is` matching and `KindOf`:
+
+```go
+return fmt.Errorf("%w: %s", labelsync.ErrInvalidColor, raw)
+```
+
+The kind strings are a public contract. They may be added to, never renamed.
+
 | Sentinel                      | Kind string                  |
 |-------------------------------|------------------------------|
 | `ErrConfigNotFound`           | `config_not_found`           |
@@ -687,6 +697,11 @@ func KindOf(err error) string // stable kind string, or "" when no known sentine
 | `ErrInteractiveRequired`      | `interactive_required`       |
 | `ErrRepoInaccessible`         | `repo_inaccessible`          |
 | `ErrMaxWaitExceeded`          | `max_wait_exceeded`          |
+
+**Adding a sentinel means adding a row here, a `KindOf` case, and an entry in the `allSentinels`
+test table.** The test derives its expected set by parsing the package source for exported `Err*`
+variables, so a sentinel that is declared but not tabled — or tabled after being removed — fails
+the build rather than silently escaping `KindOf` and rendering an empty `error_kind`.
 
 ---
 
