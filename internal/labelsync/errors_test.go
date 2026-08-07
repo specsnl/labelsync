@@ -3,35 +3,42 @@ package labelsync_test
 import (
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/specsnl/labelsync/internal/labelsync"
 )
 
-// allSentinels pairs every exported sentinel with its documented kind string.
-// Adding a sentinel without adding it here fails TestKindOf_CoversEverySentinel.
+// allSentinels pairs every exported sentinel with its declared name and its
+// documented kind string. Adding a sentinel without adding it here fails
+// TestKindOf_CoversEverySentinel.
 var allSentinels = []struct {
+	name string
 	err  error
 	kind string
 }{
-	{labelsync.ErrConfigNotFound, "config_not_found"},
-	{labelsync.ErrAmbiguousConfigFile, "ambiguous_config_file"},
-	{labelsync.ErrUnsupportedConfigVersion, "unsupported_config_version"},
-	{labelsync.ErrEmptyConfig, "empty_config"},
-	{labelsync.ErrDuplicateLabelName, "duplicate_label_name"},
-	{labelsync.ErrDuplicateLabelColor, "duplicate_label_color"},
-	{labelsync.ErrInvalidColor, "invalid_color"},
-	{labelsync.ErrInvalidLabelName, "invalid_label_name"},
-	{labelsync.ErrDescriptionTooLong, "description_too_long"},
-	{labelsync.ErrUnknownGroup, "unknown_group"},
-	{labelsync.ErrAmbiguousGroupSource, "ambiguous_group_source"},
-	{labelsync.ErrCyclicGroup, "cyclic_group"},
-	{labelsync.ErrInvalidRepoRef, "invalid_repo_ref"},
-	{labelsync.ErrInvalidRename, "invalid_rename"},
-	{labelsync.ErrNoToken, "no_token"},
-	{labelsync.ErrInteractiveRequired, "interactive_required"},
-	{labelsync.ErrRepoInaccessible, "repo_inaccessible"},
-	{labelsync.ErrMaxWaitExceeded, "max_wait_exceeded"},
+	{"ErrConfigNotFound", labelsync.ErrConfigNotFound, "config_not_found"},
+	{"ErrAmbiguousConfigFile", labelsync.ErrAmbiguousConfigFile, "ambiguous_config_file"},
+	{"ErrUnsupportedConfigVersion", labelsync.ErrUnsupportedConfigVersion, "unsupported_config_version"},
+	{"ErrEmptyConfig", labelsync.ErrEmptyConfig, "empty_config"},
+	{"ErrDuplicateLabelName", labelsync.ErrDuplicateLabelName, "duplicate_label_name"},
+	{"ErrDuplicateLabelColor", labelsync.ErrDuplicateLabelColor, "duplicate_label_color"},
+	{"ErrInvalidColor", labelsync.ErrInvalidColor, "invalid_color"},
+	{"ErrInvalidLabelName", labelsync.ErrInvalidLabelName, "invalid_label_name"},
+	{"ErrDescriptionTooLong", labelsync.ErrDescriptionTooLong, "description_too_long"},
+	{"ErrUnknownGroup", labelsync.ErrUnknownGroup, "unknown_group"},
+	{"ErrAmbiguousGroupSource", labelsync.ErrAmbiguousGroupSource, "ambiguous_group_source"},
+	{"ErrCyclicGroup", labelsync.ErrCyclicGroup, "cyclic_group"},
+	{"ErrInvalidRepoRef", labelsync.ErrInvalidRepoRef, "invalid_repo_ref"},
+	{"ErrInvalidRename", labelsync.ErrInvalidRename, "invalid_rename"},
+	{"ErrNoToken", labelsync.ErrNoToken, "no_token"},
+	{"ErrInteractiveRequired", labelsync.ErrInteractiveRequired, "interactive_required"},
+	{"ErrRepoInaccessible", labelsync.ErrRepoInaccessible, "repo_inaccessible"},
+	{"ErrMaxWaitExceeded", labelsync.ErrMaxWaitExceeded, "max_wait_exceeded"},
 }
 
 func TestKindOf_KnownSentinels(t *testing.T) {
@@ -99,19 +106,83 @@ func TestKindOf_KindsAreUnique(t *testing.T) {
 	}
 }
 
-// TestKindOf_CoversEverySentinel keeps the table above in step with the package:
-// the design fixes the sentinel count at 18, and every one must map to a
-// non-empty kind.
+// TestKindOf_CoversEverySentinel keeps the table above in step with the package.
+// The expected set comes from the package source itself rather than a hardcoded
+// count, so adding or removing a sentinel fails here until the table follows.
 func TestKindOf_CoversEverySentinel(t *testing.T) {
-	const want = 18
-
-	if got := len(allSentinels); got != want {
-		t.Errorf("table covers %d sentinels, want %d — add the new sentinel to allSentinels", got, want)
-	}
+	covered := make(map[string]bool, len(allSentinels))
 
 	for _, tc := range allSentinels {
+		covered[tc.name] = true
+
 		if tc.kind == "" {
-			t.Errorf("sentinel %v has an empty kind string", tc.err)
+			t.Errorf("sentinel %s has an empty kind string", tc.name)
 		}
 	}
+
+	for _, name := range declaredSentinels(t) {
+		if !covered[name] {
+			t.Errorf("%s is declared in the package but missing from allSentinels", name)
+		}
+
+		delete(covered, name)
+	}
+
+	for name := range covered {
+		t.Errorf("allSentinels lists %s, which the package no longer declares", name)
+	}
+}
+
+// declaredSentinels parses the package's own (non-test) source and returns the
+// name of every exported package-level Err* variable. The test binary runs with
+// the package directory as its working directory, so "*.go" is that package.
+func declaredSentinels(t *testing.T) []string {
+	t.Helper()
+
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatalf("globbing package sources: %v", err)
+	}
+
+	fset := token.NewFileSet()
+
+	var names []string
+
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+
+		parsed, err := parser.ParseFile(fset, file, nil, parser.SkipObjectResolution)
+		if err != nil {
+			t.Fatalf("parsing %s: %v", file, err)
+		}
+
+		for _, decl := range parsed.Decls {
+			genDecl, ok := decl.(*ast.GenDecl)
+			if !ok || genDecl.Tok != token.VAR {
+				continue
+			}
+
+			for _, spec := range genDecl.Specs {
+				valueSpec, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+
+				for _, ident := range valueSpec.Names {
+					if strings.HasPrefix(ident.Name, "Err") {
+						names = append(names, ident.Name)
+					}
+				}
+			}
+		}
+	}
+
+	// A bad working directory or a failed glob would otherwise pass silently.
+	if len(names) == 0 {
+		t.Fatal("found no exported Err* variables in the package source")
+	}
+
+	return names
 }
