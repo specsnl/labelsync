@@ -81,6 +81,17 @@ tasks:
         vars:
           SUB_CMD: "go test -race -tags=integration ./..."
 
+  checkall:
+    desc: Run every check — golangci-lint, the Go tests, and markdownlint
+    summary: |
+      The full local check sequence, in the order CI runs it: lint, test, md:check.
+
+      Run this before opening a pull request.
+    cmds:
+      - task: lint
+      - task: test
+      - task: md:check
+
   release:dry-run:
     desc: Build a snapshot release locally without publishing
     cmds:
