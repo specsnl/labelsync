@@ -1,0 +1,127 @@
+---
+title: Overview
+weight: 1
+---
+
+`labelsync` synchronises GitHub issue/PR labels across a configured set of repositories, using a
+local YAML file as the source of truth. It is a reconciler, not a script: for each target
+repository it reads the current labels, resolves the desired set, computes an ordered plan, and
+then applies it — or prints it, under `--dry-run`.
+
+Full rationale, prior art, and the algorithm in detail:
+[design.md](https://github.com/specsnl/labelsync/blob/main/docs/design.md).
+
+## Package structure
+
+```text
+labelsync/
+├── main.go                       # XDG init, cmd.Execute()
+├── go.mod
+└── internal/
+    ├── labelsync/                # values every other package depends on
+    │   ├── configuration.go      # XDG paths, config file name constants
+    │   └── errors.go             # sentinel errors + KindOf()
+    ├── cmd/                      # one file per Cobra command
+    ├── config/                   # YAML load, validation, group → repo resolution
+    ├── github/                   # auth, client, enumeration, label CRUD, ETag cache
+    │   └── ratelimit/            # token bucket, backoff, countdown rendering
+    ├── plan/                     # Compute() — pure, no network — Action, rendering
+    ├── palette/                  # Allocate() + deterministic HSL candidate grid
+    ├── apply/                    # executes a Plan, prune prompts
+    └── util/
+        ├── exit/                 # exit codes
+        ├── output/               # lipgloss logger + table renderer
+        └── validate/             # shared validators
+```
+
+### Implemented so far
+
+| Package              | Status  | Notes                                                          |
+|----------------------|---------|----------------------------------------------------------------|
+| `internal/labelsync` | landed  | XDG config/cache paths, config file names, sentinels, `KindOf` |
+| everything else      | planned | See the milestone table in the design plan                     |
+
+### Why `plan` and `palette` are isolated
+
+Neither imports `internal/github`. `plan.Compute` takes plain structs and returns plain structs;
+`palette.Allocate` takes colours and returns a colour. Two consequences:
+
+1. The interesting logic — group resolution, prune semantics, colour allocation, determinism — is
+   testable with table-driven stdlib tests and zero HTTP mocking.
+2. A future `plan -o file` / `apply file` split becomes a thin serialisation shell rather than a
+   restructuring exercise.
+
+## CLI command tree
+
+```text
+labelsync [--config <path>]
+          [--debug]
+          [--output pretty|json]          default: pretty
+          [--no-cache]
+          [--concurrency N]               default: 8
+          [--write-rate N]                writes/min, default: 70
+          [--max-wait <duration>]         default: 15m
+│
+├── sync                                  reconcile labels
+│     [--dry-run] [--mode append|prune] [--prune all]
+│     [--group <name>]... [--repo <owner/repo>]...
+├── export <owner/repo> [-o <file>]       dump a repo's labels as config YAML
+├── init                                  scaffold a labels.yml
+├── groups [--group <name>]...            resolve and list group → repo membership
+├── cache {clear|info}
+└── version [--dont-prettify]
+```
+
+### Exit codes
+
+| Code | Meaning                                                            |
+|------|--------------------------------------------------------------------|
+| `0`  | In sync — no changes needed, or applied successfully with no drift |
+| `1`  | Error (config invalid, auth failure, unrecoverable API error)      |
+| `2`  | Drift detected — `--dry-run` found pending actions                 |
+| `3`  | Applied successfully, but one or more repositories were skipped    |
+
+## Configuration
+
+The config file is resolved in this order:
+
+1. `--config <path>`
+2. `./labels.yml` or `./labels.yaml` in the working directory
+3. `$XDG_CONFIG_HOME/labelsync/labels.yml` (default `~/.config/labelsync/labels.yml`)
+
+Both spellings in one directory is `ErrAmbiguousConfigFile`. The ETag cache lives under
+`$XDG_CACHE_HOME/labelsync`. Both paths come from `internal/labelsync/configuration.go`.
+
+See the [configuration reference](https://github.com/specsnl/labelsync/blob/main/docs/design.md#configuration)
+for the `groups`, `defaults`, `renames`, and `labels` sections.
+
+## Data flow — `labelsync sync`
+
+```mermaid
+flowchart TD
+    A[resolve config path] --> B[load + validate YAML]
+    B --> C["resolve groups → repository sets\n(no network for `repos:` groups)"]
+    C --> D["enumerate org/user repos\n+ filter on the enumeration response"]
+    D --> E["read labels per repo\n(bounded parallel, ETag-conditional)"]
+    E --> F["plan.Compute(desired, current, mode, renames)\npure, no I/O"]
+    F --> G{--dry-run?}
+    G -->|yes| H[render diff · exit 0 or 2]
+    G -->|no| I["apply.Run — rate-limited writes,\nper-repo failures collected"]
+    I --> J[render summary · exit 0 or 3]
+```
+
+Steps up to `Compute` never write. Per-repository failures — `403` archived, `404` renamed
+mid-run, `410` — are collected and reported at the end rather than aborting the run.
+
+## Testing
+
+Stdlib `testing` by default — no test framework dependency so far. Run with `task test`.
+
+| Package     | Approach                                                                                 |
+|-------------|------------------------------------------------------------------------------------------|
+| `config`    | Table-driven over every validation rule, valid and invalid; group composition and cycles |
+| `plan`      | The core suite: `(desired, current, mode, renames) → expected actions`, plus determinism |
+| `palette`   | Same input → same output, no duplicate allocation, exhaustion, legibility bounds         |
+| `github`    | `net/http/httptest` fake: pagination, ETag `304`, per-repo skips, `422` reclassification |
+| `ratelimit` | Injected clock: primary vs secondary backoff, `Retry-After`, the `--max-wait` ceiling    |
+| `output`    | Golden files for the pretty and JSON renderings                                          |
