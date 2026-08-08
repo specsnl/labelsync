@@ -103,6 +103,29 @@ tasks:
         vars:
           SUB_CMD: "go test -race -tags=integration ./..."
 
+  test:update:
+    desc: Rewrite the golden files from what the tests produce now
+    summary: |
+      Runs the tests with -update in every package that defines the flag, which
+      rewrites that package's testdata/*.golden files from the current output.
+
+      Then read the diff. A golden that changed is either the change you meant
+      to make or a regression, and the file is the only thing that says which.
+
+      The package list is discovered rather than hardcoded: any test file that
+      declares an -update flag puts its package in. Nothing to remember when a
+      new golden suite lands.
+    cmds:
+      - task: dc:run:go-builder
+        vars:
+          # Single-quoted so the command substitution runs in the container
+          # rather than on the host. -F makes the pattern a literal string, so
+          # the ( and the . in flag.Bool("update" need no regex escaping; the
+          # \" survive because bash leaves a backslash alone inside "..." unless
+          # it precedes $ ` " \ or a newline.
+          SUB_CMD: >-
+            bash -c 'go test $(grep -rlF --include="*_test.go" "flag.Bool(\"update\"" . | xargs -n1 dirname | sort -u) -update'
+
   checkall:
     desc: Run every check — the tidy check, golangci-lint, the Go tests, and markdownlint
     summary: |

@@ -20,7 +20,7 @@ var update = flag.Bool("update", false, "rewrite the .golden files from the curr
 //
 // Rewrite the goldens with:
 //
-//	task dc:run:go-builder -- go test ./internal/config/ -update
+//	task test:update
 func TestNormalize_Golden(t *testing.T) {
 	fixtures, err := filepath.Glob(filepath.Join("testdata", "*.yml"))
 	if err != nil {

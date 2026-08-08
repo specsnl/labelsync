@@ -113,5 +113,5 @@ pointer — not this one.
   the golden rather than as a subtly different plan several stages later.
 
 ```sh
-task dc:run:go-builder -- go test ./internal/config/ -update   # rewrite the goldens
+task test:update   # rewrite the goldens, here and in every other golden package
 ```

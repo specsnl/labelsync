@@ -24,6 +24,7 @@ Run `task --list` for the full set. The ones used most:
 | `task lint`            | `golangci-lint run`                                               |
 | `task lint:fix`        | `golangci-lint run --fix`                                         |
 | `task test`            | `go test -race -tags=integration ./...`                           |
+| `task test:update`     | Rewrite the golden files from the current output                  |
 | `task md:check`        | markdownlint over every Markdown file                             |
 | `task md:fix`          | Align Markdown tables, then apply autofixable rules               |
 | `task build`           | Build the binary into the working directory                       |

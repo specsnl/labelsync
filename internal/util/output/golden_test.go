@@ -21,7 +21,7 @@ var goldenColor = []string{"CLICOLOR_FORCE=1", "TERM=xterm-256color"}
 // assertGolden compares got against testdata/<name>.golden, rewriting the file
 // instead when -update is passed:
 //
-//	task dc:run:go-builder -- go test ./internal/util/output/ -update
+//	task test:update
 func assertGolden(t *testing.T, name, got string) {
 	t.Helper()
 
