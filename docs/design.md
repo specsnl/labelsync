@@ -244,9 +244,17 @@ sentinel error.
 could technically reuse a colour without conflict, but global uniqueness is far easier to reason
 about and can be validated offline. This is a deliberate, slightly conservative choice.
 
-**Case-insensitive name comparison** reflects GitHub's apparent behaviour (a repo cannot hold both
-`Bug` and `bug`). This needs empirical confirmation against the live API before being relied on —
-see [Open questions](#open-questions).
+**Case-insensitive name comparison** mirrors GitHub's own uniqueness rule: a repo cannot hold both
+`Bug` and `bug`, confirmed against the live API in
+[#16](https://github.com/specsnl/labelsync/issues/16) and recorded under
+[Label names are case-insensitively unique](#label-names-are-case-insensitively-unique). Two config
+entries differing only by case describe a state GitHub cannot represent, so rejecting them at load
+turns an unavoidable apply-time `422` into a clear config error before any network call.
+
+The same case-insensitive comparison applies to both `ErrInvalidRename` checks. In particular,
+`from` not being a configured label name is compared case-insensitively, which means a case-only
+rename such as `bug` → `Bug` is **rejected as a rename**. That is deliberate and not a limitation:
+casing drift needs no rename entry, because step 5 of the algorithm already converges it.
 
 ---
 
@@ -272,12 +280,19 @@ Actions within a repository are emitted in this order, and the order matters:
 4. **Update** existing configured labels (colour and/or description).
 5. **Delete** — last, and only in `prune` mode.
 
+**Both existence checks in step 1 are case-insensitive**, and this is the one place a rename can
+collide. GitHub rejects a `PATCH` whose `new_name` matches an existing label in any casing with the
+same `422 already_exists` it uses for creates, so a rename to `Bug` fails when the repo already
+holds `bug`. Skipping the rename when `to` already exists — compared case-insensitively — is what
+keeps that unreachable. A case-only *drift* (step 5) can never collide this way, since the only
+label its target can match is the label being renamed itself.
+
 ### Steps
 
 ```text
 1. Apply renames
      for each rename {from, to}:
-       if `from` exists remotely and `to` does not:
+       if `from` exists remotely and `to` does not:   # both checks case-insensitive
          emit Update{Name: from, NewName: to}   # PATCH preserves issue/PR associations
          rewrite local view: from → to
 
@@ -414,6 +429,34 @@ the run — a suboptimal colour is better than an aborted sync.
 | Update / rename label | `PATCH /repos/{o}/{r}/labels/{name}`  | `new_name` **preserves** issue/PR associations |
 | Delete label          | `DELETE /repos/{o}/{r}/labels/{name}` | **Destructive** — removes from all issues/PRs  |
 | Rate limit status     | `GET /rate_limit`                     | Free — does not count against the limit        |
+
+### Label names are case-insensitively unique
+
+**Confirmed empirically** against the live API ([#16](https://github.com/specsnl/labelsync/issues/16)).
+Four behaviours, all of which the reconciler depends on:
+
+| Request                                                       | Result                                               |
+|---------------------------------------------------------------|------------------------------------------------------|
+| `POST` `bug`, then `POST` `Bug`                               | `422` `{"resource":"Label","code":"already_exists"}` |
+| `GET /labels/{name}` with any casing                          | `200` — lookup is case-**in**sensitive               |
+| `PATCH /labels/bug` with `new_name: Bug`                      | `200`, casing changes, **same label `id`**           |
+| `PATCH` whose `new_name` collides with another label's casing | `422`, same `already_exists` shape                   |
+
+Two consequences, and they pull in different directions, so both matter:
+
+- **A repository can never hold two labels differing only by case.** Matching remote labels against
+  the desired set case-insensitively is therefore unambiguous — at most one remote label can match
+  a given configured name, so no tie-break rule is needed.
+- **Casing drift is still a real state.** A repo holding `bug` while the config asks for `Bug` is
+  perfectly possible; the two facts above do *not* collapse into "casing never differs". It is
+  repaired by an ordinary `PATCH` with `new_name`, in one call, preserving the label `id` and every
+  issue/PR association. This is why step 5 of the algorithm treats `m.name != d.name` as a genuine
+  update rather than a no-op.
+
+A `GET` or `PATCH` path segment resolves regardless of casing, but requests always address a label
+by its **observed** remote name, with the desired spelling carried in `new_name`. That keeps the
+request consistent with the state the plan was computed against, and keeps the ETag cache keyed on
+what the API actually returned.
 
 ### Labels work when issues are disabled
 
@@ -998,20 +1041,20 @@ on. `gh issue list --label parallel-safe` answers "what can I pick up right now"
 
 ## Open questions
 
-1. **Case-insensitive label uniqueness.** The assumption that GitHub rejects both `Bug` and `bug`
-   in one repo drives the matching logic and a validation rule. Confirm empirically against a
-   scratch repository before relying on it.
-2. **Labels on issues-disabled repos.** High confidence they work, unverified. Confirm against a
+1. **Labels on issues-disabled repos.** High confidence they work, unverified. Confirm against a
    scratch repo with issues disabled. The design already tolerates being wrong.
-3. **`has_issues: false` reporting.** Should such repos produce an informational note in the diff,
+2. **`has_issues: false` reporting.** Should such repos produce an informational note in the diff,
    even though syncing works? Probably yes, since it is surprising to see label changes on a repo
    with issues off.
-4. **`plan`/`apply` split timing.** Deferred by design, with the planner kept pure so it stays a
+3. **`plan`/`apply` split timing.** Deferred by design, with the planner kept pure so it stays a
    thin addition. Revisit if the CI approval-gate workflow becomes desirable.
-5. **GitHub App auth timing.** PAT-as-secret is sufficient for CI initially. An App becomes
+4. **GitHub App auth timing.** PAT-as-secret is sufficient for CI initially. An App becomes
    worthwhile if PAT rotation becomes annoying or rate limits bite.
-6. **Description length limit.** Documented as 100 characters; worth confirming the exact API
+5. **Description length limit.** Documented as 100 characters; worth confirming the exact API
    behaviour on overflow (truncate vs `422`) so validation matches reality.
+
+**Answered:** case-insensitive label uniqueness ([#16](https://github.com/specsnl/labelsync/issues/16))
+— see [Label names are case-insensitively unique](#label-names-are-case-insensitively-unique).
 
 ---
 
