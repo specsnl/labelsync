@@ -92,6 +92,15 @@ Only the root and `version` exist so far; the rest are the leaves still to be ad
   the compiler never checks, so `version_test.go` asserts both files still name it — a rename would
   otherwise ship every release as `dev`.
 
+`labelsync --version` is defined to mean `labelsync version --dont-prettify`, and both call the same
+`writeVersion` so the two cannot drift. It is a hand-rolled flag rather than Cobra's built-in
+`cmd.Version` + `SetVersionTemplate`, because Cobra handles that flag inside `execute()` *before*
+`PersistentPreRunE`. At that point `--output` has not been read and
+`app.Out` is still the fallback writer, so `--output=json --version` would print a bare line into a
+stream that is supposed to be typed JSON objects. Routing it through the root's `RunE` gets it the
+writer the user asked for. Giving the root a `RunE` is also why there is a test that a bare
+`labelsync` still prints help and an unknown subcommand still fails.
+
 Two invariants carry the weight, both detailed in
 [Output & Exit Codes](./output.md#wiring-it-in-cobra): writers and the logger come from
 `cmd.OutOrStdout()` / `cmd.ErrOrStderr()` rather than the `NewDefault*` constructors, and `os.Exit`

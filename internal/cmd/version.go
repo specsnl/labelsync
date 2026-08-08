@@ -34,20 +34,14 @@ The version is a result, not narration, so it goes to stdout and can be
 captured:
 
   labelsync version --dont-prettify   # 1.2.3
-  labelsync version --output=json     # {"version":"1.2.3"}`,
+  labelsync version --output=json     # {"version":"1.2.3"}
+
+The root flag "labelsync --version" is the same as "--dont-prettify".`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			bare, _ := cmd.Flags().GetBool(flagDontPrettify)
 
-			// The bare form exists for $(labelsync version --dont-prettify): a
-			// shell substitution wants the value, not a sentence around it. JSON
-			// output ignores both phrasings and emits the record.
-			format := labelsync.AppName + " version %s"
-			if bare {
-				format = "%s"
-			}
-
-			app.Out.WriteResult(versionRow{Version: Version}, format, Version)
+			writeVersion(app, bare)
 
 			return nil
 		},
@@ -56,4 +50,22 @@ captured:
 	cmd.Flags().Bool(flagDontPrettify, false, "Print the bare version string, with nothing around it")
 
 	return cmd
+}
+
+// writeVersion renders the version as the command's product on stdout.
+//
+// bare drops the sentence around the value, for $(labelsync version
+// --dont-prettify): a shell substitution wants the version, not a phrase
+// containing it. JSON output ignores both phrasings and emits the record, so
+// the flag is a choice of wording rather than a second output path.
+//
+// Shared with the root's --version, which is defined to mean exactly
+// `version --dont-prettify` — one function so the two cannot drift.
+func writeVersion(app *App, bare bool) {
+	format := labelsync.AppName + " version %s"
+	if bare {
+		format = "%s"
+	}
+
+	app.Out.WriteResult(versionRow{Version: Version}, format, Version)
 }

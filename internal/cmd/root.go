@@ -20,6 +20,7 @@ const (
 	flagConcurrency = "concurrency"
 	flagWriteRate   = "write-rate"
 	flagMaxWait     = "max-wait"
+	flagVersion     = "version"
 )
 
 // Execute builds the command tree and runs it with a background context.
@@ -62,6 +63,20 @@ Use "labelsync <command> --help" for more information about a command.`,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			return app.resolveFlags(cmd)
 		},
+
+		// The root has a RunE only so that --version has somewhere to be handled.
+		// Without the flag it does what a bare `labelsync` did before: print the
+		// help. Args stays nil so Cobra's legacy validator keeps rejecting an
+		// unknown subcommand rather than silently showing help for it.
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if version, _ := cmd.Flags().GetBool(flagVersion); version {
+				writeVersion(app, true)
+
+				return nil
+			}
+
+			return cmd.Help()
+		},
 	}
 
 	flags := cmd.PersistentFlags()
@@ -72,6 +87,18 @@ Use "labelsync <command> --help" for more information about a command.`,
 	flags.Int(flagConcurrency, DefaultConcurrency, "Maximum repositories read in parallel")
 	flags.Int(flagWriteRate, DefaultWriteRate, "Maximum label writes per minute")
 	flags.Duration(flagMaxWait, DefaultMaxWait, "Longest a rate-limit backoff may sleep before the run fails")
+
+	// Local, not persistent: --version answers for the binary, and `labelsync
+	// sync --version` would be asking a question the subcommand does not have.
+	//
+	// Reimplemented rather than enabled with cmd.Version + SetVersionTemplate,
+	// because Cobra handles its built-in version flag inside execute() *before*
+	// PersistentPreRunE runs. At that point --output has not been read and
+	// app.Out is still the fallback writer, so `--output=json --version` would
+	// print a bare line into what is supposed to be a stream of typed JSON
+	// objects. Going through RunE means the flag gets the writer the user asked
+	// for.
+	cmd.Flags().Bool(flagVersion, false, "Print the version and exit (same as: version --dont-prettify)")
 
 	cmd.AddCommand(newVersionCmd(app))
 

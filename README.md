@@ -48,8 +48,28 @@ Prints the version. It is a result, not narration, so it goes to **stdout** and 
 ```sh
 labelsync version                    # labelsync version 1.2.3
 labelsync version --dont-prettify    # 1.2.3
+labelsync --version                  # 1.2.3   — same as --dont-prettify
 labelsync version --output=json      # {"version":"1.2.3"}
 ```
+
+`--version` is a root flag rather than a global one: it answers for the binary, so
+`labelsync sync --version` is not a question `sync` has to have an opinion about. It honours
+`--output`, so `labelsync --output=json --version` gives you the record.
+
+### Where the version comes from
+
+| Build                      | Version string            |
+|----------------------------|---------------------------|
+| A released binary          | `1.2.3` — the release tag |
+| `task build`, on a tag     | `v1.2.3`                  |
+| `task build`, past a tag   | `v1.2.3-31-g69fca8f`      |
+| `task build`, no tags yet  | `69fca8f` — the commit    |
+| `go build` with no ldflags | `dev`                     |
+
+`task build` derives it with `git describe --tags --always --dirty=-dev` and injects it with
+`-ldflags -X`; releases use goreleaser's `{{ .Version }}`, which is the tag with the leading `v`
+stripped. A tree with no tags at all has nothing to describe, so `--always` falls back to the
+abbreviated commit hash — that is what a bare SHA means, not a broken build.
 
 ## Output
 

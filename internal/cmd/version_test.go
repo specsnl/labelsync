@@ -66,6 +66,74 @@ func TestVersion_JSON(t *testing.T) {
 	}
 }
 
+// --version is defined as `version --dont-prettify`, so the test is that the two
+// produce the same bytes rather than that each produces something plausible.
+func TestVersion_RootFlagMatchesDontPrettify(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		flags []string
+	}{
+		{"pretty", nil},
+		{"json", []string{"--output", "json"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, viaFlag, flagStderr, err := run(t, nil, append(tc.flags, "--version")...)
+			if err != nil {
+				t.Fatalf("--version: %v", err)
+			}
+
+			_, viaCmd, _, err := run(t, nil, append(tc.flags, "version", "--dont-prettify")...)
+			if err != nil {
+				t.Fatalf("version --dont-prettify: %v", err)
+			}
+
+			if viaFlag != viaCmd {
+				t.Errorf("--version = %q, version --dont-prettify = %q; they must agree", viaFlag, viaCmd)
+			}
+
+			if flagStderr != "" {
+				t.Errorf("--version narrated on stderr: %q", flagStderr)
+			}
+		})
+	}
+}
+
+// The flag has to be handled after the writers are built, or --output would not
+// have been read yet and JSON would get a bare line in its object stream. This
+// is what Cobra's built-in version flag does, and why it is not used.
+func TestVersion_RootFlagHonoursOutputFormat(t *testing.T) {
+	_, stdout, _, err := run(t, nil, "--output", "json", "--version")
+	if err != nil {
+		t.Fatalf("--version: %v", err)
+	}
+
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &obj); err != nil {
+		t.Fatalf("--output=json --version is not JSON: %q (%v)", stdout, err)
+	}
+}
+
+// Without the flag the root still prints its help, the way a bare `labelsync`
+// did before the flag gave the root a RunE at all.
+func TestRoot_BareInvocationPrintsHelp(t *testing.T) {
+	_, stdout, _, err := run(t, nil)
+	if err != nil {
+		t.Fatalf("bare invocation: %v", err)
+	}
+
+	if !strings.Contains(stdout, "Usage:") {
+		t.Errorf("stdout = %q, want the help", stdout)
+	}
+}
+
+// A RunE on the root must not turn a typo into a silent help screen.
+func TestRoot_UnknownCommandStillFails(t *testing.T) {
+	_, _, _, err := run(t, nil, "bogus")
+	if err == nil {
+		t.Fatal("want an error for an unknown command, got none")
+	}
+}
+
 // Nothing injects Version under `go test`, so the fallback is what a build
 // without -ldflags ships as.
 func TestVersion_DefaultsToDev(t *testing.T) {
