@@ -44,7 +44,7 @@ that pin the Go, golangci-lint, and Node versions — so a check runs the same w
 in CI. Run `task --list` for the full set.
 
 ```sh
-task checkall   # lint, test, md:check — run this before opening a pull request
+task checkall   # tidy:check, lint, test, md:check — run this before opening a pull request
 ```
 
 Conventions, workflow, and the house rules that reviews are held to: [AGENTS.md](./AGENTS.md).

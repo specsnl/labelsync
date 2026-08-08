@@ -78,6 +78,24 @@ tasks:
         --set "go-binary.args.LABELSYNC_VERSION={{.LABELSYNC_VERSION}}"
         go-binary
 
+  tidy:check:
+    desc: Check that go.mod and go.sum are tidy
+    summary: |
+      Fails, without writing anything, when `go mod tidy` would change go.mod or go.sum.
+
+      Run `task tidy` to apply what it reports.
+    cmds:
+      - task: dc:run:go-builder
+        vars:
+          SUB_CMD: "go mod tidy -diff"
+
+  tidy:
+    desc: Run go mod tidy
+    cmds:
+      - task: dc:run:go-builder
+        vars:
+          SUB_CMD: "go mod tidy"
+
   test:
     desc: Run go tests
     cmds:
@@ -86,12 +104,13 @@ tasks:
           SUB_CMD: "go test -race -tags=integration ./..."
 
   checkall:
-    desc: Run every check — golangci-lint, the Go tests, and markdownlint
+    desc: Run every check — the tidy check, golangci-lint, the Go tests, and markdownlint
     summary: |
-      The full local check sequence, in the order CI runs it: lint, test, md:check.
+      The full local check sequence: tidy:check, lint, test, md:check.
 
-      Run this before opening a pull request.
+      Every step reports; none of them writes. Run this before opening a pull request.
     cmds:
+      - task: tidy:check
       - task: lint
       - task: test
       - task: md:check

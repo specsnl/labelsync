@@ -32,6 +32,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
+      - name: Check go.mod is tidy
+        run: go mod tidy -diff
+
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
