@@ -43,7 +43,8 @@ that order — run them individually while iterating, and `checkall` before push
 
 Every step of the sequence reports; none of them writes. `tidy:check` runs `go mod tidy -diff`, so
 an untidy `go.mod`/`go.sum` fails the check with the diff it would have applied rather than quietly
-rewriting the tree mid-check. Run `task tidy` to apply it.
+rewriting the tree mid-check. Run `task tidy` to apply it. CI runs the same check in the `Unit
+tests` job.
 
 `task build` runs `task lint` first, so a green build implies a green lint — but it does not run the
 tests or the Markdown checks.
