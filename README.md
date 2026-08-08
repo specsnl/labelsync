@@ -58,18 +58,21 @@ labelsync version --output=json      # {"version":"1.2.3"}
 
 ### Where the version comes from
 
-| Build                      | Version string            |
-|----------------------------|---------------------------|
-| A released binary          | `1.2.3` — the release tag |
-| `task build`, on a tag     | `v1.2.3`                  |
-| `task build`, past a tag   | `v1.2.3-31-g69fca8f`      |
-| `task build`, no tags yet  | `69fca8f` — the commit    |
-| `go build` with no ldflags | `dev`                     |
+| Build                        | Version string            |
+|------------------------------|---------------------------|
+| A released binary            | `1.2.3` — the release tag |
+| `task build`, on a tag       | `1.2.3`                   |
+| `task build`, past a tag     | `1.2.3-31-g69fca8f`       |
+| `task build`, uncommitted    | `1.2.3-31-g69fca8f-dev`   |
+| `task build`, no tags yet    | `69fca8f` — the commit    |
+| `go build` with no `ldflags` | `dev`                     |
 
-`task build` derives it with `git describe --tags --always --dirty=-dev` and injects it with
-`-ldflags -X`; releases use goreleaser's `{{ .Version }}`, which is the tag with the leading `v`
-stripped. A tree with no tags at all has nothing to describe, so `--always` falls back to the
-abbreviated commit hash — that is what a bare SHA means, not a broken build.
+`task build` derives it with `git describe --tags --always --dirty=-dev`, strips the leading `v`,
+and injects the result with `-ldflags -X`. Releases use goreleaser's `{{ .Version }}`, which is the
+tag without the `v` already — so a local build and a release agree on how a version is spelled.
+
+A tree with **no tags at all** has nothing to describe, so `--always` falls back to the abbreviated
+commit hash. A bare SHA means the repository is untagged, not that the build is broken.
 
 ## Output
 
