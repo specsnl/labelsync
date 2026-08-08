@@ -497,7 +497,7 @@ decide.
 Golden files under `internal/util/output/testdata/`, regenerated with:
 
 ```sh
-task dc:run:go-builder -- go test ./internal/util/output/ -update
+task test:update
 ```
 
 The pretty rendering has **two** goldens per stream: one produced with an empty environment, where

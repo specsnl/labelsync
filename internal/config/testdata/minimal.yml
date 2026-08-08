@@ -1,0 +1,8 @@
+# The smallest config that says anything: no groups, no defaults, no renames.
+# Labels keep empty group lists, which is what makes them nobody's business
+# until a group claims them.
+version: 1
+
+labels:
+  - name: "type: bug"
+    color: "d73a4a"

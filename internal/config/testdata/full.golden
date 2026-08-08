@@ -1,0 +1,61 @@
+version: 1
+groups:
+    everything:
+        include_groups:
+            - specs-all
+            - personal
+        skip_archived: true
+        skip_forks: true
+        visibility: all
+    laravel:
+        repos:
+            - specsnl/example-website
+            - specsnl/example-platform
+        skip_archived: true
+        skip_forks: true
+        visibility: all
+    personal:
+        user: Ilyes512
+        include:
+            - boilr-*
+            - docker-php-*
+        skip_archived: true
+        skip_forks: true
+        visibility: all
+    specs-all:
+        org: specsnl
+        exclude:
+            - '*-archive'
+            - sandbox-*
+        skip_archived: true
+        skip_forks: true
+        visibility: all
+defaults:
+    groups:
+        - specs-all
+renames:
+    - from: bug
+      to: 'type: bug'
+    - from: enhancement
+      to: 'type: feature'
+labels:
+    - name: 'type: bug'
+      color: d73a4a
+      description: Something isn't working
+      groups:
+        - specs-all
+    - name: 'type: feature'
+      color: 0e8a16
+      description: New functionality
+      groups:
+        - specs-all
+    - name: 'priority: high'
+      color: b60205
+      groups:
+        - specs-all
+    - name: laravel
+      color: ff2d20
+      description: Laravel-specific
+      groups:
+        - laravel
+        - personal

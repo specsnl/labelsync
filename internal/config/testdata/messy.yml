@@ -1,0 +1,36 @@
+# Everything normalisation is supposed to touch, in one file: hash-prefixed and
+# upper-case colours, padded names, renames with stray whitespace, labels that
+# inherit defaults.groups and one that does not, and groups that omit the
+# skip_* and visibility keys or set them explicitly to a non-default value.
+version: 1
+
+groups:
+  defaulted:
+    org: specsnl
+
+  explicit:
+    user: Ilyes512
+    skip_archived: false
+    skip_forks: false
+    visibility: private
+
+  bare:
+
+defaults:
+  groups: [defaulted]
+
+renames:
+  - from: "  bug  "
+    to: "  type: bug  "
+
+labels:
+  - name: "  type: bug  "
+    color: "#D73A4A"
+    description: "Something isn't working"
+
+  - name: "priority: high"
+    color: "B60205"
+
+  - name: "laravel"
+    color: "#ff2d20"
+    groups: [explicit]

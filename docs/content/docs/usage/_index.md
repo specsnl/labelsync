@@ -39,8 +39,33 @@ Without `--config`, the file is searched for in this order:
 1. `./labels.yml` or `./labels.yaml` in the working directory
 2. `$XDG_CONFIG_HOME/labelsync/labels.yml` (default `~/.config/labelsync/labels.yml`)
 
-Both spellings in one directory is an error rather than a coin flip. The ETag cache lives under
+Both spellings in one directory is an error rather than a coin flip — in *either* directory, even
+when the other one holds a perfectly good file. The ETag cache lives under
 `$XDG_CACHE_HOME/labelsync` (default `~/.cache/labelsync`).
+
+`--config` takes a file or a directory: `--config ./ops` searches `./ops` for both spellings, the
+same way the working directory is searched.
+
+### What the file is tidied into
+
+The config file is normalised as it is read, so a few things are accepted in more than one
+spelling and mean the same thing:
+
+| You write                       | It means                                                   |
+|---------------------------------|------------------------------------------------------------|
+| `color: "#D73A4A"`              | `d73a4a` — a leading `#` is optional, case does not matter |
+| `name: "  type: bug  "`         | `type: bug` — surrounding whitespace is trimmed            |
+| A label with no `groups`        | The groups listed under `defaults.groups`                  |
+| A group with no `skip_archived` | `skip_archived: true`                                      |
+| A group with no `skip_forks`    | `skip_forks: true`                                         |
+| A group with no `visibility`    | `visibility: all`                                          |
+
+Omitting a label's `description` is **not** shorthand for "leave it alone" — descriptions are
+authoritative, so an omitted one clears whatever the repository has. Use `export` to capture the
+descriptions you already have before the first run.
+
+The full file reference — every field of `groups`, `defaults`, `renames`, and `labels` — is in the
+[design plan](https://github.com/specsnl/labelsync/blob/main/docs/design.md#configuration).
 
 ## Commands
 

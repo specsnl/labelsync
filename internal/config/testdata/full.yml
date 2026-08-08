@@ -1,0 +1,49 @@
+# The design plan's full example, verbatim, as the reference fixture for
+# normalisation.
+version: 1
+
+groups:
+  specs-all:
+    org: specsnl
+    exclude: ["*-archive", "sandbox-*"]
+    skip_archived: true
+    skip_forks: true
+    visibility: all
+
+  laravel:
+    repos:
+      - specsnl/example-website
+      - specsnl/example-platform
+
+  personal:
+    user: Ilyes512
+    include: ["boilr-*", "docker-php-*"]
+
+  everything:
+    include_groups: [specs-all, personal]
+
+defaults:
+  groups: [specs-all]
+
+renames:
+  - from: "bug"
+    to: "type: bug"
+  - from: "enhancement"
+    to: "type: feature"
+
+labels:
+  - name: "type: bug"
+    color: "d73a4a"
+    description: "Something isn't working"
+
+  - name: "type: feature"
+    color: "0e8a16"
+    description: "New functionality"
+
+  - name: "priority: high"
+    color: "b60205"
+
+  - name: "laravel"
+    color: "ff2d20"
+    description: "Laravel-specific"
+    groups: [laravel, personal]
