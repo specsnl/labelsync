@@ -581,6 +581,9 @@ before running a prune.
 
 ### Exit codes
 
+> **Landed** as `internal/util/exit` — see
+> [Output & Exit Codes](./content/docs/architecture/output.md#exit-codes).
+
 Borrowed from `terraform plan -detailed-exitcode`. Without this, a CI dry-run can only ever pass,
 which makes it useless as a check.
 
@@ -589,7 +592,11 @@ which makes it useless as a check.
 | `0`  | In sync — no changes needed / applied successfully with no drift |
 | `1`  | Error (config invalid, auth failure, unrecoverable API error)    |
 | `2`  | Drift detected — `--dry-run` found pending actions               |
-| `3`  | Applied successfully, but one or more repositories were skipped  |
+| `4`  | Applied successfully, but one or more repositories were skipped  |
+
+The outcome codes are disjoint bits and combine: a dry run that finds drift *and* cannot reach a
+repository exits `6`. `1` stays exclusive — a failed run cannot also report on a live state it never
+established.
 
 ### Non-interactive guard
 
@@ -706,6 +713,9 @@ the build rather than silently escaping `KindOf` and rendering an empty `error_k
 ---
 
 ## Output
+
+> **Landed.** `internal/util/output` is built; what it actually does is documented in
+> [Output & Exit Codes](./content/docs/architecture/output.md).
 
 All user-facing output goes through `output.Writer`, with `pretty` and `json` implementations
 selected by `--output`. `log/slog` is a **debug-only diagnostic channel on stderr**, silent on a
@@ -852,19 +862,21 @@ asserts byte-identical output. Colour churn on re-run is the most likely subtle 
 
 ## Dependencies
 
-| Package                              | Purpose                                     | Shared with specs-cli                            |
-|--------------------------------------|---------------------------------------------|--------------------------------------------------|
-| `github.com/spf13/cobra`             | CLI command tree                            | yes                                              |
-| `gopkg.in/yaml.v3`                   | Config parsing                              | yes                                              |
-| `charm.land/huh/v2`                  | Interactive prune selection (`MultiSelect`) | yes                                              |
-| `charm.land/lipgloss/v2`             | Output styling, diff table, countdown       | yes                                              |
-| `github.com/adrg/xdg`                | Config + cache directory resolution         | yes                                              |
-| `github.com/danwakefield/fnmatch`    | Repo include/exclude globs                  | yes                                              |
-| `golang.org/x/sync`                  | `errgroup` bounded parallel reads           | yes                                              |
-| `log/slog`                           | Debug logging (stdlib)                      | yes                                              |
-| `github.com/google/go-github/v76`    | GitHub REST client                          | **new**                                          |
-| `github.com/cli/go-gh/v2`            | Token resolution only                       | **new**                                          |
-| `github.com/lucasb-eyer/go-colorful` | CIELAB + CIEDE2000                          | **new (direct)** — already indirect via lipgloss |
+| Package                                 | Purpose                                       | Shared with specs-cli                            |
+|-----------------------------------------|-----------------------------------------------|--------------------------------------------------|
+| `github.com/spf13/cobra`                | CLI command tree                              | yes                                              |
+| `gopkg.in/yaml.v3`                      | Config parsing                                | yes                                              |
+| `charm.land/huh/v2`                     | Interactive prune selection (`MultiSelect`)   | yes                                              |
+| `charm.land/lipgloss/v2`                | Output styling, diff table, countdown         | yes                                              |
+| `github.com/adrg/xdg`                   | Config + cache directory resolution           | yes                                              |
+| `github.com/danwakefield/fnmatch`       | Repo include/exclude globs                    | yes                                              |
+| `golang.org/x/sync`                     | `errgroup` bounded parallel reads             | yes                                              |
+| `log/slog`                              | Debug logging (stdlib)                        | yes                                              |
+| `github.com/google/go-github/v76`       | GitHub REST client                            | **new**                                          |
+| `github.com/cli/go-gh/v2`               | Token resolution only                         | **new**                                          |
+| `github.com/lucasb-eyer/go-colorful`    | CIELAB + CIEDE2000                            | **new (direct)** — already indirect via lipgloss |
+| `github.com/charmbracelet/colorprofile` | Colour downsampling per output stream         | **new (direct)** — already indirect via lipgloss |
+| `github.com/charmbracelet/x/term`       | `IsTerminal` for the non-colour TTY decisions | **new (direct)** — already indirect via lipgloss |
 
 **Why go-github rather than a hand-rolled client or `go-gh`'s REST client:** the deciding factor
 is typed `*github.RateLimitError` and `*github.AbuseRateLimitError`. Secondary rate limits are the

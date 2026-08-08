@@ -1,0 +1,5 @@
++  create    type: bug       #d73a4a            "Something isn't working"
+~  update    type: feature   #1d76db → #0e8a16
+~  recolour  wontfix         #d73a4a → #16a3c4  (displaced by "type: bug")
+=  ok        priority: high
+-  delete    old-label                          (unconfigured)
