@@ -16,17 +16,19 @@ happens to be installed locally, which is not what CI runs.
 
 Run `task --list` for the full set. The ones used most:
 
-| Command                | What it does                                        |
-|------------------------|-----------------------------------------------------|
-| `task checkall`        | The full check sequence: `lint`, `test`, `md:check` |
-| `task lint`            | `golangci-lint run`                                 |
-| `task lint:fix`        | `golangci-lint run --fix`                           |
-| `task test`            | `go test -race -tags=integration ./...`             |
-| `task md:check`        | markdownlint over every Markdown file               |
-| `task md:fix`          | Align Markdown tables, then apply autofixable rules |
-| `task build`           | Build the binary into the working directory         |
-| `task release:dry-run` | Local goreleaser snapshot, no publishing            |
-| `task dc:shell`        | Shell into the `go-builder` service                 |
+| Command                | What it does                                                      |
+|------------------------|-------------------------------------------------------------------|
+| `task checkall`        | The full check sequence: `tidy:check`, `lint`, `test`, `md:check` |
+| `task tidy:check`      | `go mod tidy -diff` — fails if `go.mod`/`go.sum` are untidy       |
+| `task tidy`            | `go mod tidy`                                                     |
+| `task lint`            | `golangci-lint run`                                               |
+| `task lint:fix`        | `golangci-lint run --fix`                                         |
+| `task test`            | `go test -race -tags=integration ./...`                           |
+| `task md:check`        | markdownlint over every Markdown file                             |
+| `task md:fix`          | Align Markdown tables, then apply autofixable rules               |
+| `task build`           | Build the binary into the working directory                       |
+| `task release:dry-run` | Local goreleaser snapshot, no publishing                          |
+| `task dc:shell`        | Shell into the `go-builder` service                               |
 
 ### Local check sequence
 
@@ -36,8 +38,12 @@ Before opening a pull request, run:
 task checkall
 ```
 
-That is exactly `task lint`, then `task test`, then `task md:check`, in that order — run them
-individually while iterating, and `checkall` before pushing.
+That is exactly `task tidy:check`, then `task lint`, then `task test`, then `task md:check`, in
+that order — run them individually while iterating, and `checkall` before pushing.
+
+Every step of the sequence reports; none of them writes. `tidy:check` runs `go mod tidy -diff`, so
+an untidy `go.mod`/`go.sum` fails the check with the diff it would have applied rather than quietly
+rewriting the tree mid-check. Run `task tidy` to apply it.
 
 `task build` runs `task lint` first, so a green build implies a green lint — but it does not run the
 tests or the Markdown checks.
