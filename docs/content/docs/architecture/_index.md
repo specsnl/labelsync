@@ -18,6 +18,7 @@ lands, its behaviour moves from the design plan into this section.
 | [Output & Exit Codes](./output.md)    | `output.Writer`, pretty vs NDJSON, TTY detection, the `slog` boundary, exit codes |
 | [Versioning](./versioning.md)         | The linker-injected `Version`, and what each build produces                       |
 | [Colour Palette](./palette.md)        | The deterministic HSL candidate grid, its legibility bounds, and determinism      |
+| [Configuration](./configuration.md)   | Config file resolution, YAML parsing, and the normalisation rules                 |
 
 Pages are added here as the subsystems they document are implemented — the planner and the GitHub
 client with its rate limiting each get their own page.

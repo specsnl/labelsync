@@ -1,0 +1,36 @@
+version: 1
+groups:
+    bare:
+        skip_archived: true
+        skip_forks: true
+        visibility: all
+    defaulted:
+        org: specsnl
+        skip_archived: true
+        skip_forks: true
+        visibility: all
+    explicit:
+        user: Ilyes512
+        skip_archived: false
+        skip_forks: false
+        visibility: private
+defaults:
+    groups:
+        - defaulted
+renames:
+    - from: bug
+      to: 'type: bug'
+labels:
+    - name: 'type: bug'
+      color: d73a4a
+      description: Something isn't working
+      groups:
+        - defaulted
+    - name: 'priority: high'
+      color: b60205
+      groups:
+        - defaulted
+    - name: laravel
+      color: ff2d20
+      groups:
+        - explicit

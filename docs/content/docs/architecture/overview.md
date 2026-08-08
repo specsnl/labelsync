@@ -36,14 +36,15 @@ labelsync/
 
 ### Implemented so far
 
-| Package                | Status  | Notes                                                          |
-|------------------------|---------|----------------------------------------------------------------|
-| `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf` |
-| `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes](./output.md)   |
-| `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring        |
-| `internal/cmd`         | partial | Root command, `App`, persistent flags, `version`               |
-| `internal/palette`     | partial | The candidate grid — see [Colour Palette](./palette.md)        |
-| everything else        | planned | See the milestone table in the design plan                     |
+| Package                | Status  | Notes                                                                          |
+|------------------------|---------|--------------------------------------------------------------------------------|
+| `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf`                 |
+| `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes](./output.md)                   |
+| `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                        |
+| `internal/cmd`         | partial | Root command, `App`, persistent flags, `version`                               |
+| `internal/config`      | partial | Resolution, YAML load, normalisation — see [Configuration](./configuration.md) |
+| `internal/palette`     | partial | The candidate grid — see [Colour Palette](./palette.md)                        |
+| everything else        | planned | See the milestone table in the design plan                                     |
 
 ### Why `plan` and `palette` are isolated
 
@@ -129,11 +130,14 @@ The config file is resolved in this order:
 2. `./labels.yml` or `./labels.yaml` in the working directory
 3. `$XDG_CONFIG_HOME/labelsync/labels.yml` (default `~/.config/labelsync/labels.yml`)
 
-Both spellings in one directory is `ErrAmbiguousConfigFile`. The ETag cache lives under
-`$XDG_CACHE_HOME/labelsync`. Both paths come from `internal/labelsync/configuration.go`.
+A `--config` value naming a directory is searched the same way. Both spellings in one directory is
+`ErrAmbiguousConfigFile`. The ETag cache lives under `$XDG_CACHE_HOME/labelsync`. Both paths come
+from `internal/labelsync/configuration.go`.
 
-See the [configuration reference](https://github.com/specsnl/labelsync/blob/main/docs/design.md#configuration)
-for the `groups`, `defaults`, `renames`, and `labels` sections.
+How that resolution, the YAML load, and the normalisation rules work is in
+[Configuration](./configuration.md). For the `groups`, `defaults`, `renames`, and `labels` sections
+themselves, see the
+[configuration reference](https://github.com/specsnl/labelsync/blob/main/docs/design.md#configuration).
 
 ## Data flow — `labelsync sync`
 
