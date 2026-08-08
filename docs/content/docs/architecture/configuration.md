@@ -9,7 +9,7 @@ three separate concerns in three files, and only the first has landed:
 | File          | Concern                                           | Status  |
 |---------------|---------------------------------------------------|---------|
 | `config.go`   | Find the file, parse it, normalise it             | landed  |
-| `validate.go` | The rules in the design's validation table        | planned |
+| `validate.go` | The rules in the design's validation table        | landed  |
 | `resolve.go`  | Groups → repository sets, `include_groups` cycles | planned |
 
 Nothing in the package touches the network, and nothing in `config.go` rejects a config: an
@@ -22,9 +22,15 @@ decoder.
 ```go
 func Find(explicit string) (string, error)      // path only
 func Load(explicit string) (*Config, error)     // Find + LoadFile
-func LoadFile(path string) (*Config, error)     // read + Parse, records Config.Path
-func Parse(data []byte) (*Config, error)        // decode + normalise, no I/O
+func LoadFile(path string) (*Config, error)     // read + Parse + Validate, records Config.Path
+func Parse(data []byte) (*Config, error)        // decode + normalise, no I/O, no rules
+func (*Config) Validate() error                 // every rule, offline, first failure wins
 ```
+
+`Parse` is the one entry point that stops short of validating, which is what lets the
+normalisation tests drive fragments that were never meant to be whole files. Everything a user can
+reach goes through `LoadFile`, so a `*Config` that reaches the planner has passed every rule and
+no later stage re-asks whether a colour is hex.
 
 `Find` resolves in this order:
 
@@ -102,8 +108,88 @@ desired state, and nothing downstream would do anything different with the disti
 If a future mode ever means "leave descriptions alone", that is the change that introduces the
 pointer — not this one.
 
+## Validation
+
+`Validate` runs on an already normalised `Config`, entirely offline, and returns the **first**
+broken rule wrapped in its sentinel. Every rule is a rule GitHub would enforce anyway — validating
+locally turns a `422` discovered partway through a run into a message that names the line to fix,
+before a single request is sent.
+
+| Rule                                                       | Sentinel                      |
+|------------------------------------------------------------|-------------------------------|
+| `version` is present and equals `SchemaVersion`            | `ErrUnsupportedConfigVersion` |
+| At least one label is defined                              | `ErrEmptyConfig`              |
+| Label names are unique, compared case-insensitively        | `ErrDuplicateLabelName`       |
+| Colours are unique globally, across every label            | `ErrDuplicateLabelColor`      |
+| Colour is 6 hex digits                                     | `ErrInvalidColor`             |
+| Description is ≤ 100 code points                           | `ErrDescriptionTooLong`       |
+| Label name is 1–50 code points, measured after trimming    | `ErrInvalidLabelName`         |
+| Label name is not emoji only                               | `ErrInvalidLabelName`         |
+| Every group a label or `defaults.groups` names exists      | `ErrUnknownGroup`             |
+| Every group has exactly one source                         | `ErrAmbiguousGroupSource`     |
+| `include_groups` has no cycle                              | `ErrCyclicGroup`              |
+| `repos` entries are `owner/repo`                           | `ErrInvalidRepoRef`           |
+| Rename `to` targets a configured label; no chained renames | `ErrInvalidRename`            |
+| Rename `from` is not itself a configured label name        | `ErrInvalidRename`            |
+
+**The first failure wins**, rather than a collected list. A config file is edited by hand and
+re-run in a second, and most of the errors in a collected list are knock-on effects of the first
+one. Map iteration is sorted before it is walked, so a file with two problems always reports the
+same one.
+
+### The bounds count Unicode code points
+
+`utf8.RuneCountInString`, never `len()`. A 100-emoji description is 400 bytes and 200 UTF-16
+units, and GitHub accepts it; a byte-counting bound would reject it as though it were four times
+too long — while passing every ASCII test written to check it. Not grapheme clusters either: a ZWJ
+family emoji spends 5 of the 100. This was measured against the live API rather than assumed, and
+overflow is a `422` rather than a truncation, so the bounds mirror the API instead of being
+stricter than it.
+
+Names are compared and measured **after trimming**, because GitHub stores names trimmed.
+A name with a stray trailing space would otherwise produce a diff that never converges.
+
+### Emoji are permitted in a name, never as the whole of one
+
+GitHub rejects `🐛` with `name must contain more than native emoji`, and accepts `🐛 bug`. The
+check strips emoji, variation selectors, zero-width joiners, and whitespace, and asks whether
+anything is left — so `🐛 🐞` is as emoji-only as `🐛🐞` is. The range table behind it deliberately
+errs towards *not* matching: a pictograph it misses lets an emoji-only name through to an
+apply-time `422`, whereas one it wrongly matched would reject a name GitHub would have taken.
+
+### Colour uniqueness is global
+
+Two labels in groups that never share a repository could reuse a colour without ever colliding.
+Global uniqueness is checked anyway, because it needs no group resolution, holds offline, and is a
+rule a user can keep in their head. It is deliberately conservative and there is a comment in
+`validate.go` saying so, because it looks like something worth "fixing".
+
+### Renames are compared case-insensitively too
+
+A label's identity is case-insensitive, so both rename rules use the same fold as
+`ErrDuplicateLabelName`:
+
+- **`to` targets a configured label** — the rename has to land on something the config declares,
+  in any casing.
+- **`from` is not itself a configured label** — which rejects a case-only rename such as
+  `bug` → `Bug`. That is the right outcome rather than a limitation: casing drift needs no rename
+  entry, because step 5 of the reconciliation algorithm converges it on its own.
+
+Two further rules fall out of the same map: the same `from` renamed twice, and two renames onto
+one name — the second of which would collide with the label the first just created. Chained
+renames cannot survive the two rules above, since the middle name would have to be a configured
+label and not one at once; the chain is checked explicitly all the same, so the message names the
+chain rather than leaving the user to work out why the middle name is the one being complained
+about.
+
 ## Testing
 
+- **Validation** is table-driven over every rule, each with a valid case and an invalid one,
+  asserting the specific sentinel through `errors.Is` and that `KindOf` still names it through the
+  wrapping. Cases are whole config files run through `Parse` rather than hand-built structs,
+  because the rules assume normalisation has happened. The boundary cases the API probe measured
+  are in there by name — a 100-code-point emoji description and a 101, a 50-code-point name mixing
+  emoji and ASCII, an emoji-only name, and a name that is only within bounds once trimmed.
 - **Resolution** is table-driven over every branch of the order, including both ambiguity cases
   and both not-found cases, with the working directory and `XDG_CONFIG_HOME` pointed at temporary
   directories. Every error case also asserts `KindOf` still names the sentinel through the

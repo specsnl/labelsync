@@ -226,6 +226,10 @@ Stated precisely, because prune semantics depend on it:
 
 ## Validation
 
+> **Landed.** Every rule below is implemented in `internal/config/validate.go` and run by
+> `LoadFile`. What was built, and the decisions behind it, is described in
+> [Architecture → Configuration](./content/docs/architecture/configuration.md#validation).
+
 All validation happens at config load, before any network call, and fails fast with a wrapped
 sentinel error.
 

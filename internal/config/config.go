@@ -1,7 +1,12 @@
-// Package config finds the labelsync config file, parses it, and normalises
-// what it parsed. Nothing here validates and nothing here touches the network:
-// the rules in the design's validation table live in validate.go, and turning
-// groups into repository sets lives in resolve.go.
+// Package config finds the labelsync config file, parses it, normalises what it
+// parsed, and validates the result. Nothing here touches the network: the rules
+// in the design's validation table live in validate.go, which LoadFile runs
+// once normalisation is done, and turning groups into repository sets lives in
+// resolve.go.
+//
+// Parse is the one entry point that stops short of validating, so that a test —
+// or anything else that wants the decoder without the rules — can hand it a
+// fragment.
 //
 // Normalisation is the part every later stage depends on. Once Parse returns,
 // colours are bare lowercase hex, label names are trimmed, every label carries
@@ -215,8 +220,9 @@ func Find(explicit string) (string, error) {
 	return "", fmt.Errorf("%w: looked in %s", labelsync.ErrConfigNotFound, strings.Join(dirs, " and "))
 }
 
-// LoadFile reads, parses, and normalises one config file, and records where it
-// came from on the returned Config.
+// LoadFile reads, parses, normalises, and validates one config file, and
+// records where it came from on the returned Config. A Config it returns has
+// passed every rule in validate.go, so no later stage re-checks one.
 func LoadFile(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -233,6 +239,10 @@ func LoadFile(path string) (*Config, error) {
 	}
 
 	cfg.Path = path
+
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
 
 	return cfg, nil
 }
