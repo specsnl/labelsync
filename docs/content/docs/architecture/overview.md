@@ -90,7 +90,8 @@ Only the root and `version` exist so far; the rest are the leaves still to be ad
 - **`version.go`** owns `Version`, the variable `.goreleaser.yml` and the `Dockerfile` inject with
   `-ldflags -X github.com/specsnl/labelsync/internal/cmd.Version`. That path is a build-file string
   the compiler never checks, so `version_test.go` asserts both files still name it — a rename would
-  otherwise ship every release as `dev`.
+  otherwise ship every release as `dev`. What each build produces is in
+  [Versioning](./versioning.md).
 
 `labelsync --version` is defined to mean `labelsync version --dont-prettify`, and both call the same
 `writeVersion` so the two cannot drift. It is a hand-rolled flag rather than Cobra's built-in

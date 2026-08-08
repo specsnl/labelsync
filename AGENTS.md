@@ -57,15 +57,17 @@ tests or the Markdown checks.
 
 ## Conventions
 
-- **Code changes require tests, docs, and README updates.** Whenever code is added, removed, or
-  updated, all of the following happen in the *same* change:
+- **Code changes require tests and docs.** Whenever code is added, removed, or updated, all of the
+  following happen in the *same* change:
   - **Tests** — add or update `*_test.go` files covering the changed behaviour.
-  - **Docs** — update the relevant file(s) under `docs/content/` if the change affects package
-    structure, data flows, CLI flags, configuration, error handling, or any documented design
-    decision. The architecture docs live at `docs/content/docs/architecture/`.
+  - **Architecture docs** — update the relevant file(s) under
+    `docs/content/docs/architecture/` if the change affects package structure, data flows, error
+    handling, or any documented design decision.
     *This step is mandatory and must not be skipped, even for "internal" fixes.*
-  - **README** — update `README.md` if the change affects anything user-facing: commands, flags,
-    config file syntax, output formats, or exit codes.
+  - **User docs** — update `docs/content/docs/usage/` if the change affects anything user-facing:
+    commands, flags, config file syntax, output formats, or exit codes.
+  - **README** — only when what labelsync *is*, or how it is installed, changes. It is an overview
+    and a set of pointers; reference material belongs in `docs/content/`, not there.
 
 - **Tests default to stdlib `testing`.** No test framework dependency so far, and nothing here
   needs one. A helper library is not forbidden — propose one when it genuinely improves the tests
@@ -123,6 +125,7 @@ The full structure, with a file-level breakdown, is in
 | [docs/content/docs/architecture/overview.md](./docs/content/docs/architecture/overview.md)             | Package structure, CLI tree, data flow                        |
 | [docs/content/docs/architecture/error-handling.md](./docs/content/docs/architecture/error-handling.md) | Sentinel errors, the wrapping rule, and `error_kind` contract |
 | [docs/content/docs/architecture/output.md](./docs/content/docs/architecture/output.md)                 | `output.Writer`, pretty vs NDJSON, TTY detection, exit codes  |
+| [docs/content/docs/architecture/versioning.md](./docs/content/docs/architecture/versioning.md)         | The linker-injected `Version`, and what each build produces   |
 
 `docs/design.md` is the *plan*; `docs/content/docs/architecture/` describes what has been built. As
 subsystems land, their behaviour moves from the former into the latter.
