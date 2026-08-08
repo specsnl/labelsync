@@ -45,6 +45,7 @@ and has no idea which stream it belongs on. Three defects, no upside.
 | You want to…                                  | Use                          | Lands on |
 |-----------------------------------------------|------------------------------|----------|
 | Emit the result the command exists to produce | `output.Table(w, rows, ...)` | stdout   |
+| Emit a result that is a single value          | `w.WriteResult(rec, ...)`    | stdout   |
 | Tell the user what the code is doing          | `w.Info(...)`                | stderr   |
 | Report a recoverable problem (skipped repo)   | `w.Warn(...)`                | stderr   |
 | Report a failure                              | `w.Error(...)`               | stderr   |
@@ -58,17 +59,19 @@ and has no idea which stream it belongs on. Three defects, no upside.
 
 ```go
 type Writer interface {
-    Info(format string, args ...any)   // stderr
-    Warn(format string, args ...any)   // stderr
-    Error(format string, args ...any)  // stderr
-    WriteErr(err error)                // stderr
-    WriteTable(t TableData)            // stdout
+    Info(format string, args ...any)                    // stderr
+    Warn(format string, args ...any)                    // stderr
+    Error(format string, args ...any)                   // stderr
+    WriteErr(err error)                                 // stderr
+    WriteTable(t TableData)                             // stdout
+    WriteResult(record any, format string, args ...any) // stdout
 }
 ```
 
-`WriteTable` is the only method on stdout, and the asymmetry is the point: **`Writer` has exactly one
-product channel, and everything else narrates.** `Info` is progress — "resolving 3 groups",
-"applying 12 actions" — and progress is not what `> out.txt` is for.
+`WriteTable` and `WriteResult` are the only methods on stdout, and the asymmetry is the point:
+**`Writer`'s product channel is small and closed, and everything else narrates.** `Info` is
+progress — "resolving 3 groups", "applying 12 actions" — and progress is not what `> out.txt` is
+for.
 
 In JSON mode it is not only a stream-choice question. Narration on stdout would interleave objects
 that have none of the fields the data objects have:
@@ -85,8 +88,9 @@ the data key and no `level`.
 
 `specs-cli` puts `Info` on stdout and has commands depending on that. labelsync diverges
 deliberately: nothing here called `Info` when the decision was made, so there was no contract to
-break, and inheriting the defect to stay symmetrical is the wrong trade. If a command ever needs a
-*result* line that is not a table, it gets a new product-level method — `Info` does not move back.
+break, and inheriting the defect to stay symmetrical is the wrong trade. A command that needs a
+*result* line which is not a table gets a new product-level method instead — that is
+[`WriteResult`](#a-result-that-is-not-a-table), and `Info` does not move back.
 
 Two implementations back the `--output` flag:
 
@@ -132,6 +136,34 @@ methods. It prepares a `TableData` — headers, cells, and the source records �
 is what guarantees every row has exactly one cell per header. The old
 `Table(headers []string, rows [][]string)` could not: a ragged or reordered row was a runtime
 surprise, and the writer had to defend against short rows on every call.
+
+### A result that is not a table
+
+`version` has an answer, and it is not a table. Its answer is a value a user pipes —
+`v=$(labelsync version --dont-prettify)` — so it cannot be `Info` on stderr, and boxing a single
+string in a bordered table to reach stdout would be pretending it is something it is not.
+
+`WriteResult` is the product-level line the earlier note said this case would get. It takes both
+projections at once, and each audience gets only its own:
+
+```go
+app.Out.WriteResult(versionRow{Version: Version}, "labelsync version %s", Version)
+```
+
+| `--output`                   | stdout                    |
+|------------------------------|---------------------------|
+| `pretty`                     | `labelsync version 1.2.3` |
+| `pretty` + `--dont-prettify` | `1.2.3`                   |
+| `json`                       | `{"version":"1.2.3"}`     |
+
+The pretty rendering comes from the format string; the JSON comes from marshalling the record, the
+same split `WriteTable` makes. That is what keeps the NDJSON invariant intact — every line on stdout
+is still one typed object, never a sentence — and what makes `--dont-prettify` a choice of *phrasing*
+rather than a second output path: JSON has no prose in it to strip, so the flag has no effect there.
+
+**This is not a general-purpose print.** Reach for it only when the command's whole answer is one
+value and a user piping stdout would expect exactly that value in the file. Rows go through
+`output.Table`; anything narrating the work is `Info`.
 
 ### Writes are best-effort
 
@@ -279,22 +311,25 @@ the way down. Stderr and never stdout, for the same reason warnings go there.
 
 ## Wiring it in Cobra
 
-The command tree does not exist yet — it lands with `internal/cmd` — but the wiring it has to use is
-part of this contract, because getting it wrong is what makes the rest untestable.
+The command tree lives in `internal/cmd`, and this is the wiring it uses. Getting it wrong is what
+makes the rest untestable, so it is part of this contract rather than that package's private
+business.
 
 ### Take the writers from the command, not the process
 
 ```go
-// in PersistentPreRunE, where the flags are parsed
-switch outputFormat {
-case string(output.FormatJSON):
-    app.Out = output.NewJSONWriter(cmd.OutOrStdout(), cmd.ErrOrStderr())
-default:
-    app.Out = output.NewPrettyWriter(cmd.OutOrStdout(), cmd.ErrOrStderr(), nil)
+// internal/cmd/root.go — App.resolveFlags, called from PersistentPreRunE
+if a.Format == output.FormatJSON {
+    a.Out = output.NewJSONWriter(cmd.OutOrStdout(), cmd.ErrOrStderr())
+} else {
+    a.Out = output.NewPrettyWriter(cmd.OutOrStdout(), cmd.ErrOrStderr(), nil)
 }
 
-app.LogLevel = output.SetupLogger(cmd.ErrOrStderr(), format, debug)
+a.LogLevel = output.SetupLogger(cmd.ErrOrStderr(), a.Format, a.Debug)
 ```
+
+An unrecognised `--output` is wired as `pretty` *before* it is rejected: the rejection has to have
+somewhere to go, and a writer that does not exist yet cannot report that it could not be built.
 
 `cmd.OutOrStdout()` resolves to `os.Stdout` in production, so nothing is lost — but in a test
 `cmd.SetOut(buf)` / `cmd.SetErr(buf)` captures everything with no global-state hacking.
@@ -317,6 +352,9 @@ root := &cobra.Command{
     SilenceErrors: true,  // main prints it once, so it reliably lands on stderr
 }
 ```
+
+`TestRoot_SilencesUsageAndErrors` asserts both, and asserts the consequence too: after a failing
+command, neither stream carries a usage block or Cobra's own copy of the message.
 
 On a returned error, current Cobra already writes to stderr — the error line via `ErrOrStderr()`,
 and the usage block via `OutOrStderr()`, which itself *falls back to stderr* when `cmd.SetOut` is
@@ -412,16 +450,35 @@ from exactly the failures that carry a code.
 func main() {
     app := cmd.NewApp()
 
-    err := cmd.ExecuteContext(ctx, app)
+    err := cmd.Execute(app)
 
-    var ex *exit.Err
-    if err != nil && !(errors.As(err, &ex) && ex.Err == nil) {
-        app.Out.WriteErr(err)
-    }
+    report(app.Out, err)
 
     os.Exit(int(exit.Of(err)))
 }
+
+// report prints err, unless there is nothing to print.
+func report(w output.Writer, err error) {
+    if err == nil {
+        return
+    }
+
+    var carrier *exit.Err
+    if errors.As(err, &carrier) && carrier.Err == nil {
+        return
+    }
+
+    w.WriteErr(err)
+}
 ```
+
+The guard is a function rather than four lines inline for one reason: `os.Exit` cannot be tested,
+and everything above it can. `main_test.go` drives `report` over each case — nil, a plain failure, a
+carrier holding a failure, a silent carrier — and asserts what lands on stderr and what does not.
+
+Note which field the silence follows. It is `Err`, not `Code`: a carrier with `Code: exit.Skipped`
+*and* a wrapped failure still prints, because the failure is real. Only a nil `Err` means the
+non-zero code was the answer.
 
 A nil `Err` field means silent, and that guard is the whole reason the type exists: exit code `2` on
 a drifting dry run must not also print an error line, because the drift *was* the successful result
@@ -459,6 +516,8 @@ a complete object.
 - [ ] `WriteErr(err)` rather than `Error("%v", err)` whenever an `error` is in hand.
 - [ ] No `os.Exit` outside `main`.
 - [ ] Nothing styled is written around the writer.
+- [ ] A single-value result goes through `WriteResult` with a tagged record — not `Info`, and not a
+      one-row table.
 - [ ] Tables go through `output.Table` with a row struct whose `json` tags carry the machine
       contract — never a hand-built `TableData`, and never a struct field pre-formatted into a
       string just to make the table read well.
