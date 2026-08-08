@@ -35,8 +35,8 @@ The kind strings are a **public contract**. They may be added to, never renamed.
 | `ErrDuplicateLabelName`       | `duplicate_label_name`       | Two labels share a name (compared case-insensitively, as GitHub does)          |
 | `ErrDuplicateLabelColor`      | `duplicate_label_color`      | Two labels share a colour — uniqueness is global, not per repository           |
 | `ErrInvalidColor`             | `invalid_color`              | A colour is not a 6-digit hex value, with or without a leading `#`             |
-| `ErrInvalidLabelName`         | `invalid_label_name`         | A label name is empty or longer than the 50 characters GitHub accepts          |
-| `ErrDescriptionTooLong`       | `description_too_long`       | A description exceeds 100 characters                                           |
+| `ErrInvalidLabelName`         | `invalid_label_name`         | A label name is empty, emoji only, or over the 50 code points GitHub accepts   |
+| `ErrDescriptionTooLong`       | `description_too_long`       | A description exceeds 100 code points                                          |
 | `ErrUnknownGroup`             | `unknown_group`              | A label, or `defaults.groups`, references an undefined group                   |
 | `ErrAmbiguousGroupSource`     | `ambiguous_group_source`     | A group sets more than one of `org`, `user`, `repos`, `include_groups`         |
 | `ErrCyclicGroup`              | `cyclic_group`               | `include_groups` forms a cycle                                                 |

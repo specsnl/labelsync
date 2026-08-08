@@ -49,12 +49,12 @@ var (
 	// or without a leading #.
 	ErrInvalidColor = errors.New("invalid colour: want a 6-digit hex value")
 
-	// ErrInvalidLabelName is returned when a label name is empty or longer than
-	// the 50 characters GitHub accepts.
+	// ErrInvalidLabelName is returned when a label name is empty, consists only
+	// of emoji, or is longer than the 50 code points GitHub accepts.
 	ErrInvalidLabelName = errors.New("invalid label name")
 
 	// ErrDescriptionTooLong is returned when a label description exceeds the 100
-	// characters GitHub accepts.
+	// code points GitHub accepts.
 	ErrDescriptionTooLong = errors.New("label description is too long")
 
 	// ErrUnknownGroup is returned when a label, or defaults.groups, references a

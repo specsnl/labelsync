@@ -197,17 +197,22 @@ silently returning nothing.
 
 ### `labels` reference
 
-| Field         | Type     | Required | Notes                                                                            |
-|---------------|----------|----------|----------------------------------------------------------------------------------|
-| `name`        | string   | yes      | 1–50 chars. Emoji and colon-style markup (`:bug:`) permitted                     |
-| `color`       | string   | yes      | 6-digit hex. `#` accepted on input and stripped. Normalised to lowercase         |
-| `description` | string   | no       | Max 100 chars. **Authoritative** — omitting it *clears* any existing description |
-| `groups`      | []string | no       | Group names. When absent, `defaults.groups` applies                              |
+| Field         | Type     | Required | Notes                                                                                             |
+|---------------|----------|----------|---------------------------------------------------------------------------------------------------|
+| `name`        | string   | yes      | 1–50 code points. Emoji permitted, but never *only* emoji. Colon-style markup (`:bug:`) permitted |
+| `color`       | string   | yes      | 6-digit hex. `#` accepted on input and stripped. Normalised to lowercase                          |
+| `description` | string   | no       | Max 100 code points. **Authoritative** — omitting it *clears* any existing description            |
+| `groups`      | []string | no       | Group names. When absent, `defaults.groups` applies                                               |
 
 **Descriptions are authoritative.** Omitting `description` sets the remote description to empty.
 This makes the YAML the single source of truth, but it means a first run against existing repos
 will wipe descriptions you did not transcribe. The `export` command exists precisely to avoid
 this — see [CLI](#cli).
+
+**Both length bounds are the API's own**, they count Unicode code points, and overflow is a `422`
+rather than a silent truncation — confirmed against the live API, and recorded under
+[Name and description lengths are counted in code points](#name-and-description-lengths-are-counted-in-code-points).
+That is also where the emoji-only name rule and GitHub's whitespace trimming are pinned down.
 
 ### Resolution rule
 
@@ -231,8 +236,9 @@ sentinel error.
 | Label names unique, **compared case-insensitively**        | `ErrDuplicateLabelName`       |
 | **Colours globally unique across all labels**              | `ErrDuplicateLabelColor`      |
 | Colour is valid 6-digit hex                                | `ErrInvalidColor`             |
-| Description ≤ 100 chars                                    | `ErrDescriptionTooLong`       |
-| Label name 1–50 chars, non-empty after trim                | `ErrInvalidLabelName`         |
+| Description ≤ 100 code points                              | `ErrDescriptionTooLong`       |
+| Label name 1–50 code points, non-empty after trim          | `ErrInvalidLabelName`         |
+| Label name is not emoji only                               | `ErrInvalidLabelName`         |
 | Every referenced group exists                              | `ErrUnknownGroup`             |
 | Every group has exactly one source                         | `ErrAmbiguousGroupSource`     |
 | No cycle in `include_groups`                               | `ErrCyclicGroup`              |
@@ -457,6 +463,47 @@ A `GET` or `PATCH` path segment resolves regardless of casing, but requests alwa
 by its **observed** remote name, with the desired spelling carried in `new_name`. That keeps the
 request consistent with the state the plan was computed against, and keeps the ETag cache keyed on
 what the API actually returned.
+
+### Name and description lengths are counted in code points
+
+**Confirmed empirically** against the live API ([#18](https://github.com/specsnl/labelsync/issues/18)).
+The documented bounds are right, but the unit and the overflow behaviour were not:
+
+| Request                                     | Result                                                     |
+|---------------------------------------------|------------------------------------------------------------|
+| `POST` name of 50 / description of 100      | `201`, stored byte-for-byte as sent                        |
+| `POST` name of 51 / description of 101      | `422` `{"code":"custom","message":"... is too long"}`      |
+| `PATCH` at the same boundaries              | Identical — create and update agree exactly                |
+| `POST` description of 100 emoji (400 bytes) | `201` — the unit is code points, not bytes or UTF-16 units |
+| `POST` name of only emoji                   | `422` `name must contain more than native emoji`           |
+| `POST` name with surrounding whitespace     | `201`, stored **trimmed**                                  |
+
+**GitHub never truncates.** Overflow is rejected outright, at one threshold — 150, 255, 256, and
+1000 all fail the same way, so there is no second, larger bound hiding behind the documented one.
+Local validation is therefore *mirroring* the server rather than being stricter than it, which is
+what makes rejecting at config load a plain convenience: the same input would fail anyway, but
+per-repository and partway through a run.
+
+**The unit is Unicode code points**, and this is the part that cannot be guessed. A 100-emoji
+description is 400 bytes and 200 UTF-16 units and is accepted; 101 emoji is not. The same boundary
+holds for CJK and Latin-1 text regardless of encoded size. So `utf8.RuneCountInString` is correct
+and `len()` is not — the latter would reject a valid 100-emoji description as though it were 400.
+
+It is code points, **not grapheme clusters**: a ZWJ family emoji (👨‍👩‍👧) spends 5 of the 100, a
+regional-indicator flag spends 2, and a decomposed `é` (`e` + U+0301) spends 2. Nothing is
+Unicode-normalised on the way in — the decomposed form round-trips decomposed.
+
+Two rules follow that the bounds alone do not imply:
+
+- **A name may not consist only of emoji.** A separate `422`, independent of length: `🐛` is
+  rejected, and so is `🐛` followed by a space, but `🐛 bug` is accepted. Emoji in names are
+  permitted, just never as the whole of one. Worth rejecting locally for the same reason as the
+  bounds — it is otherwise an apply-time failure on every targeted repository.
+- **GitHub trims surrounding whitespace from names.** `"  bug  "` is stored as `"bug"` — the one
+  case in the probe where the stored value differed from what was sent. Validation trims before
+  checking the bound and before comparing against the remote label, so the desired name and the
+  stored name always agree; otherwise a name with a stray space would produce a diff that never
+  converges.
 
 ### Labels work when issues are disabled
 
@@ -1050,11 +1097,13 @@ on. `gh issue list --label parallel-safe` answers "what can I pick up right now"
    thin addition. Revisit if the CI approval-gate workflow becomes desirable.
 4. **GitHub App auth timing.** PAT-as-secret is sufficient for CI initially. An App becomes
    worthwhile if PAT rotation becomes annoying or rate limits bite.
-5. **Description length limit.** Documented as 100 characters; worth confirming the exact API
-   behaviour on overflow (truncate vs `422`) so validation matches reality.
 
-**Answered:** case-insensitive label uniqueness ([#16](https://github.com/specsnl/labelsync/issues/16))
-— see [Label names are case-insensitively unique](#label-names-are-case-insensitively-unique).
+**Answered:**
+
+- Case-insensitive label uniqueness ([#16](https://github.com/specsnl/labelsync/issues/16))
+  — see [Label names are case-insensitively unique](#label-names-are-case-insensitively-unique).
+- Name and description length limits ([#18](https://github.com/specsnl/labelsync/issues/18))
+  — see [Name and description lengths are counted in code points](#name-and-description-lengths-are-counted-in-code-points).
 
 ---
 
