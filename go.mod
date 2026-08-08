@@ -7,6 +7,7 @@ require (
 	github.com/adrg/xdg v0.5.3
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/x/term v0.2.2
+	github.com/danwakefield/fnmatch v0.0.0-20160403171240-cbb64ac3d964
 	github.com/lucasb-eyer/go-colorful v1.4.0
 	github.com/spf13/cobra v1.10.2
 	gopkg.in/yaml.v3 v3.0.1

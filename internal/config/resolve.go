@@ -1,0 +1,500 @@
+package config
+
+import (
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+
+	"github.com/danwakefield/fnmatch"
+
+	"github.com/specsnl/labelsync/internal/labelsync"
+)
+
+// SourceKind names where a selector's repositories come from. There is no kind
+// for include_groups: composition is flattened away during resolution, so what
+// a composed group leaves behind is the selectors of the groups it includes.
+type SourceKind string
+
+// The three selector kinds an enumerator has to know how to walk.
+const (
+	SourceOrg   SourceKind = "org"
+	SourceUser  SourceKind = "user"
+	SourceRepos SourceKind = "repos"
+)
+
+// The source names as the config file spells them, for error messages and for
+// the "exactly one" check.
+const (
+	sourceOrg           = "org"
+	sourceUser          = "user"
+	sourceRepos         = "repos"
+	sourceIncludeGroups = "include_groups"
+)
+
+// Repo is one repository, in as much detail as a selector looks at. It is a
+// plain struct on purpose: the enumerator in internal/github fills one in per
+// repository it sees, and every membership question is answered here, offline.
+type Repo struct {
+	Owner string
+	Name  string
+
+	// Archived, Fork, and Private are only consulted for org and user
+	// selectors. An explicit repos entry names a repository outright, and a
+	// filter that silently dropped a repository the config asked for by name
+	// would be a surprise rather than a safety net.
+	Archived bool
+	Fork     bool
+	Private  bool
+}
+
+// String renders the repository as owner/repo.
+func (r Repo) String() string {
+	return r.Owner + "/" + r.Name
+}
+
+// ParseRepoRef splits an owner/repo reference. Anything else — a bare name, a
+// URL, an empty half — is ErrInvalidRepoRef.
+func ParseRepoRef(raw string) (Repo, error) {
+	owner, name, found := strings.Cut(strings.TrimSpace(raw), "/")
+
+	owner = strings.TrimSpace(owner)
+	name = strings.TrimSpace(name)
+
+	if !found || owner == "" || name == "" || strings.Contains(name, "/") {
+		return Repo{}, fmt.Errorf("%w: %s", labelsync.ErrInvalidRepoRef, raw)
+	}
+
+	return Repo{Owner: owner, Name: name}, nil
+}
+
+// Selector is one group's source, flattened and defaulted: everything the
+// enumerator needs to list repositories, and everything Matches needs to decide
+// whether a repository belongs. It is deliberately not a repository list —
+// producing one needs the network, which is what keeps this package testable
+// without an HTTP mock.
+type Selector struct {
+	// Group is the group this selector came from. A composed group borrows the
+	// selectors of the groups it includes, so this can differ from the group
+	// the caller asked about.
+	Group string
+
+	Kind  SourceKind
+	Owner string // the org or user login; empty for SourceRepos
+	Repos []Repo // the parsed owner/repo list; empty for the other kinds
+
+	// Include and Exclude are globs over the repository name only, never
+	// owner/repo. Exclude is applied after Include.
+	Include []string
+	Exclude []string
+
+	SkipArchived bool
+	SkipForks    bool
+	Visibility   Visibility
+
+	// AuthenticatedUser records which of the two user endpoints enumeration has
+	// to call. GET /user/repos?affiliation=owner sees private repositories but
+	// only for the token's own user; GET /users/{user}/repos works for anyone
+	// and returns public repositories only. The decision needs the
+	// authenticated login, which this package must not go and fetch, so it is
+	// made once here from the login the caller passes to Resolve.
+	AuthenticatedUser bool
+}
+
+// Matches reports whether repo belongs to this selector. It answers the same
+// question the enumerator's filters answer, so a repository listed by the API
+// and a repository handed straight to --repo are judged by one rule.
+func (s Selector) Matches(repo Repo) bool {
+	if s.Kind == SourceRepos {
+		return slices.ContainsFunc(s.Repos, func(want Repo) bool {
+			return strings.EqualFold(want.Owner, repo.Owner) && strings.EqualFold(want.Name, repo.Name)
+		})
+	}
+
+	if !strings.EqualFold(s.Owner, repo.Owner) {
+		return false
+	}
+
+	if s.SkipArchived && repo.Archived {
+		return false
+	}
+
+	if s.SkipForks && repo.Fork {
+		return false
+	}
+
+	if !s.Visibility.matches(repo) {
+		return false
+	}
+
+	return s.matchesGlobs(repo.Name)
+}
+
+// matchesGlobs applies the include allowlist and then the exclude denylist. An
+// empty allowlist means everything, which is why the two cannot collapse into
+// one loop.
+func (s Selector) matchesGlobs(name string) bool {
+	if len(s.Include) > 0 && !anyGlob(s.Include, name) {
+		return false
+	}
+
+	return !anyGlob(s.Exclude, name)
+}
+
+// matches reports whether repo has the visibility this value asks for. An
+// unrecognised value never matches: it is validate.go's job to reject one, and
+// quietly treating it as "all" would widen a selector the file meant to narrow.
+func (v Visibility) matches(repo Repo) bool {
+	switch v {
+	case VisibilityAll:
+		return true
+	case VisibilityPublic:
+		return !repo.Private
+	case VisibilityPrivate:
+		return repo.Private
+	default:
+		return false
+	}
+}
+
+// Warning is something worth saying about a resolution that is not worth
+// failing over. Resolve collects them rather than printing them, because this
+// package has no writer and the caller knows whether the run is pretty or JSON.
+type Warning struct {
+	Group   string
+	Message string
+}
+
+// String renders a warning as the caller would print it.
+func (w Warning) String() string {
+	return fmt.Sprintf("group %q: %s", w.Group, w.Message)
+}
+
+// Resolution is the network-free answer to "which repositories does each group
+// select, and which labels does a given repository want".
+type Resolution struct {
+	labels   []Label
+	groups   map[string][]Selector
+	names    []string
+	warnings []Warning
+}
+
+// Resolve turns the groups section into selectors: one source per group,
+// include_groups flattened into the selectors of the groups it names, and every
+// filter carried along.
+//
+// authenticatedUser is the login the run's token belongs to, and may be empty
+// when it is not known yet. It decides nothing about membership; it only picks
+// which of the two user endpoints a user selector has to use, and whether
+// asking for private repositories of that user is going to come back empty.
+//
+// Resolve checks the group graph and nothing else. A label naming a group that
+// does not exist is ErrUnknownGroup from validate.go, not from here — a label
+// is not part of the graph, and its group simply matches no repository.
+func (c *Config) Resolve(authenticatedUser string) (*Resolution, error) {
+	r := &Resolution{
+		labels: c.Labels,
+		groups: make(map[string][]Selector, len(c.Groups)),
+		names:  slices.Sorted(maps.Keys(c.Groups)),
+	}
+
+	leaves := make(map[string]Selector, len(c.Groups))
+
+	// Every leaf group first, so composition can be flattened in one pass over
+	// a complete map rather than recursing into a group that has not been
+	// checked yet.
+	for _, name := range r.names {
+		group := c.Groups[name]
+
+		sources := sourcesOf(group)
+		if len(sources) != 1 {
+			return nil, fmt.Errorf("%w: group %q sets %s", labelsync.ErrAmbiguousGroupSource, name, describeSources(sources))
+		}
+
+		if sources[0] == sourceIncludeGroups {
+			continue
+		}
+
+		selector, warning, err := leafSelector(name, group, sources[0], authenticatedUser)
+		if err != nil {
+			return nil, err
+		}
+
+		if warning != nil {
+			r.warnings = append(r.warnings, *warning)
+		}
+
+		leaves[name] = selector
+	}
+
+	f := &flattener{
+		groups: c.Groups,
+		leaves: leaves,
+		done:   make(map[string][]Selector, len(c.Groups)),
+		open:   make(map[string]bool, len(c.Groups)),
+	}
+
+	for _, name := range r.names {
+		selectors, err := f.flatten(name, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		r.groups[name] = selectors
+	}
+
+	return r, nil
+}
+
+// Warnings returns what the resolution wants said out loud, in group order.
+func (r *Resolution) Warnings() []Warning {
+	return r.warnings
+}
+
+// Names returns every group name, sorted.
+func (r *Resolution) Names() []string {
+	return slices.Clone(r.names)
+}
+
+// SelectorsFor returns the selectors a single group resolves to. A composed
+// group returns the selectors of every group it reaches, deduplicated; an
+// undefined group returns nothing.
+func (r *Resolution) SelectorsFor(group string) []Selector {
+	return slices.Clone(r.groups[group])
+}
+
+// Selectors returns every distinct selector in the config, sorted by the group
+// that defined it. This is the enumeration work list: one walk per selector
+// covers every group, however many composed groups point at it.
+func (r *Resolution) Selectors() []Selector {
+	seen := make(map[string]bool, len(r.groups))
+
+	var out []Selector
+
+	for _, name := range r.names {
+		for _, selector := range r.groups[name] {
+			if seen[selector.Group] {
+				continue
+			}
+
+			seen[selector.Group] = true
+
+			out = append(out, selector)
+		}
+	}
+
+	slices.SortFunc(out, func(a, b Selector) int { return strings.Compare(a.Group, b.Group) })
+
+	return out
+}
+
+// Matches reports whether group selects repo. A group that does not exist
+// matches nothing.
+func (r *Resolution) Matches(group string, repo Repo) bool {
+	return slices.ContainsFunc(r.groups[group], func(s Selector) bool { return s.Matches(repo) })
+}
+
+// Groups returns the names of the groups that select repo, sorted. An empty
+// result is the safety property: no group resolves to this repository, so
+// nothing about it is ours to touch.
+func (r *Resolution) Groups(repo Repo) []string {
+	var out []string
+
+	for _, name := range r.names {
+		if r.Matches(name, repo) {
+			out = append(out, name)
+		}
+	}
+
+	return out
+}
+
+// Desired returns the labels repo should have, in config order: every label
+// whose groups contain a group that resolves to repo.
+//
+// A repository no group resolves to yields no labels. That is not the same as
+// an empty config, and callers must keep telling the two apart — an empty
+// desired set for an unselected repository means "leave it alone", never
+// "delete everything it has".
+func (r *Resolution) Desired(repo Repo) []Label {
+	matched := r.Groups(repo)
+	if len(matched) == 0 {
+		return nil
+	}
+
+	var out []Label
+
+	for _, label := range r.labels {
+		if slices.ContainsFunc(label.Groups, func(g string) bool { return slices.Contains(matched, g) }) {
+			out = append(out, label)
+		}
+	}
+
+	return out
+}
+
+// flattener resolves include_groups into leaf selectors, and refuses to do so
+// for a cycle.
+type flattener struct {
+	groups Groups
+	leaves map[string]Selector
+	done   map[string][]Selector
+	open   map[string]bool
+}
+
+// flatten returns the selectors group resolves to. path is the chain of
+// include_groups that led here, so a cycle can be reported as the chain a
+// reader has to break rather than as the single name it was noticed at.
+//
+// A group already resolved is returned from done: revisiting a group is a
+// diamond, not a cycle, and only a group still open in this chain is one.
+func (f *flattener) flatten(name string, path []string) ([]Selector, error) {
+	if selectors, ok := f.done[name]; ok {
+		return selectors, nil
+	}
+
+	if f.open[name] {
+		return nil, fmt.Errorf("%w: %s", labelsync.ErrCyclicGroup, strings.Join(append(path, name), " -> "))
+	}
+
+	if selector, ok := f.leaves[name]; ok {
+		f.done[name] = []Selector{selector}
+
+		return f.done[name], nil
+	}
+
+	f.open[name] = true
+	defer delete(f.open, name)
+
+	var (
+		out  []Selector
+		seen = make(map[string]bool)
+	)
+
+	// Config order, not sorted: the file's order is already deterministic, and
+	// it is the order a reader expects the union to be listed in.
+	for _, include := range f.groups[name].IncludeGroups {
+		if _, ok := f.groups[include]; !ok {
+			return nil, fmt.Errorf("%w: group %q includes %q", labelsync.ErrUnknownGroup, name, include)
+		}
+
+		selectors, err := f.flatten(include, append(path, name))
+		if err != nil {
+			return nil, err
+		}
+
+		for _, selector := range selectors {
+			if seen[selector.Group] {
+				continue
+			}
+
+			seen[selector.Group] = true
+
+			out = append(out, selector)
+		}
+	}
+
+	f.done[name] = out
+
+	return out, nil
+}
+
+// leafSelector builds the selector for a group that names repositories itself,
+// and reports the one thing worth warning about while doing so.
+func leafSelector(name string, group Group, source, authenticatedUser string) (Selector, *Warning, error) {
+	selector := Selector{Group: name}
+
+	// The filters apply to org and user sources only. A repos entry names a
+	// repository outright, so it carries none of them, and nothing downstream
+	// has to remember which fields it may read for which kind.
+	filtered := Selector{
+		Group:        name,
+		Include:      group.Include,
+		Exclude:      group.Exclude,
+		SkipArchived: group.SkipArchived,
+		SkipForks:    group.SkipForks,
+		Visibility:   group.Visibility,
+	}
+
+	switch source {
+	case sourceOrg:
+		selector = filtered
+		selector.Kind = SourceOrg
+		selector.Owner = group.Org
+
+	case sourceUser:
+		selector = filtered
+		selector.Kind = SourceUser
+		selector.Owner = group.User
+		selector.AuthenticatedUser = authenticatedUser != "" && strings.EqualFold(group.User, authenticatedUser)
+
+		if group.Visibility == VisibilityPrivate && !selector.AuthenticatedUser {
+			return selector, &Warning{
+				Group: name,
+				Message: fmt.Sprintf(
+					"visibility: private for user %q, who is not the authenticated user — GitHub only lists that user's public repositories, so this group selects nothing",
+					group.User,
+				),
+			}, nil
+		}
+
+	case sourceRepos:
+		selector.Kind = SourceRepos
+
+		for _, raw := range group.Repos {
+			repo, err := ParseRepoRef(raw)
+			if err != nil {
+				return Selector{}, nil, fmt.Errorf("group %q: %w", name, err)
+			}
+
+			selector.Repos = append(selector.Repos, repo)
+		}
+	}
+
+	return selector, nil, nil
+}
+
+// sourcesOf returns the source keys a group sets, in the order the reference
+// table lists them.
+func sourcesOf(g Group) []string {
+	var out []string
+
+	if g.Org != "" {
+		out = append(out, sourceOrg)
+	}
+
+	if g.User != "" {
+		out = append(out, sourceUser)
+	}
+
+	if len(g.Repos) > 0 {
+		out = append(out, sourceRepos)
+	}
+
+	if len(g.IncludeGroups) > 0 {
+		out = append(out, sourceIncludeGroups)
+	}
+
+	return out
+}
+
+// describeSources renders what a group set, for the ErrAmbiguousGroupSource
+// message. A group that set nothing is as ambiguous as one that set three
+// things — neither says which repositories it means.
+func describeSources(sources []string) string {
+	if len(sources) == 0 {
+		return "none of them"
+	}
+
+	return strings.Join(sources, " and ")
+}
+
+// anyGlob reports whether name matches any of the patterns. Matching is
+// case-insensitive because GitHub repository names are: owner/Repo and
+// owner/repo address the same repository, so a pattern that told them apart
+// would exclude a repository depending on how the API happened to spell it.
+func anyGlob(patterns []string, name string) bool {
+	return slices.ContainsFunc(patterns, func(pattern string) bool {
+		return fnmatch.Match(pattern, name, fnmatch.FNM_CASEFOLD)
+	})
+}
