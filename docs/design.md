@@ -592,7 +592,11 @@ which makes it useless as a check.
 | `0`  | In sync — no changes needed / applied successfully with no drift |
 | `1`  | Error (config invalid, auth failure, unrecoverable API error)    |
 | `2`  | Drift detected — `--dry-run` found pending actions               |
-| `3`  | Applied successfully, but one or more repositories were skipped  |
+| `4`  | Applied successfully, but one or more repositories were skipped  |
+
+The outcome codes are disjoint bits and combine: a dry run that finds drift *and* cannot reach a
+repository exits `6`. `1` stays exclusive — a failed run cannot also report on a live state it never
+established.
 
 ### Non-interactive guard
 

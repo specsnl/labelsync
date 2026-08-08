@@ -68,20 +68,62 @@ func TestPrettyWriter_StripsEscapesOffTerminal(t *testing.T) {
 	}
 }
 
-func TestPrettyWriter_RoutesWarnAndErrorToStderr(t *testing.T) {
+// Table is the only method on stdout. Everything else is narration, and
+// narration in a redirected file is the defect this split exists to prevent.
+func TestWriters_OnlyTableReachesStdout(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		make func(stdout, stderr *bytes.Buffer) output.Writer
+	}{
+		{"pretty", func(stdout, stderr *bytes.Buffer) output.Writer {
+			return output.NewPrettyWriter(stdout, stderr, goldenPlain)
+		}},
+		{"json", func(stdout, stderr *bytes.Buffer) output.Writer {
+			return output.NewJSONWriter(stdout, stderr)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+
+			w := tc.make(&stdout, &stderr)
+			w.Info("resolving %d groups", 3)
+			w.Warn("careful")
+			w.Error("broken")
+			w.WriteErr(errors.New("fatal"))
+
+			if stdout.Len() != 0 {
+				t.Errorf("non-table output reached stdout: %q", stdout.String())
+			}
+
+			for _, want := range []string{"resolving 3 groups", "careful", "broken", "fatal"} {
+				if !strings.Contains(stderr.String(), want) {
+					t.Errorf("stderr missing %q, got: %q", want, stderr.String())
+				}
+			}
+		})
+	}
+}
+
+// The reason Info is on stderr rather than a style preference: every line on
+// stdout has to be a data record with the same keys, or a consumer's filter
+// silently yields null for the narration.
+func TestJSONWriter_StdoutIsUniformlyTyped(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
-	w := output.NewPrettyWriter(&stdout, &stderr, goldenPlain)
-	w.Warn("careful")
-	w.Error("broken")
+	writeSampleRun(output.NewJSONWriter(&stdout, &stderr))
 
-	if stdout.Len() != 0 {
-		t.Errorf("warn/error reached stdout: %q", stdout.String())
-	}
+	for i, line := range strings.Split(strings.TrimSuffix(stdout.String(), "\n"), "\n") {
+		var obj map[string]any
+		if err := json.Unmarshal([]byte(line), &obj); err != nil {
+			t.Fatalf("stdout line %d is not a JSON object: %v", i+1, err)
+		}
 
-	for _, want := range []string{"careful", "broken"} {
-		if !strings.Contains(stderr.String(), want) {
-			t.Errorf("stderr missing %q, got: %q", want, stderr.String())
+		if _, ok := obj["group"]; !ok {
+			t.Errorf("stdout line %d is not a data record: %q", i+1, line)
+		}
+
+		if _, ok := obj["level"]; ok {
+			t.Errorf("stdout line %d carries a level, so it is narration: %q", i+1, line)
 		}
 	}
 }
@@ -201,12 +243,12 @@ func TestJSONWriter_WriteErr_UnknownError(t *testing.T) {
 // Label names and descriptions legitimately contain & and <; escaping them to
 // & makes a log harder to read and a `jq` result harder to eyeball.
 func TestJSONWriter_DoesNotEscapeHTML(t *testing.T) {
-	var stdout bytes.Buffer
+	var stderr bytes.Buffer
 
-	output.NewJSONWriter(&stdout, &bytes.Buffer{}).Info("status: %s", "blocked & <waiting>")
+	output.NewJSONWriter(&bytes.Buffer{}, &stderr).Info("status: %s", "blocked & <waiting>")
 
-	if !strings.Contains(stdout.String(), "blocked & <waiting>") {
-		t.Errorf("HTML-escaped output: %q", stdout.String())
+	if !strings.Contains(stderr.String(), "blocked & <waiting>") {
+		t.Errorf("HTML-escaped output: %q", stderr.String())
 	}
 }
 
@@ -226,11 +268,15 @@ func TestPrettyWriter_WriteErr_OmitsKind(t *testing.T) {
 	}
 }
 
-func TestIsTTY(t *testing.T) {
-	if output.IsTTY(&bytes.Buffer{}) {
-		t.Error("IsTTY(bytes.Buffer) = true, want false")
-	}
+// fdReader is stdin's shape: readable, carrying a descriptor, and with no Write
+// method at all. It would not compile against an io.Writer parameter, which is
+// the whole reason IsTTY takes any.
+type fdReader struct{ f *os.File }
 
+func (r fdReader) Read(p []byte) (int, error) { return r.f.Read(p) }
+func (r fdReader) Fd() uintptr                { return r.f.Fd() }
+
+func TestIsTTY(t *testing.T) {
 	f, err := os.CreateTemp(t.TempDir(), "not-a-tty")
 	if err != nil {
 		t.Fatalf("creating temp file: %v", err)
@@ -238,7 +284,19 @@ func TestIsTTY(t *testing.T) {
 
 	t.Cleanup(func() { _ = f.Close() })
 
-	if output.IsTTY(f) {
-		t.Error("IsTTY(regular file) = true, want false")
+	for _, tc := range []struct {
+		name   string
+		stream any
+	}{
+		{"a buffer has no descriptor", &bytes.Buffer{}},
+		{"a regular file is not a terminal", f},
+		{"a read-only stream is answerable", fdReader{f: f}},
+		{"a plain string is not a stream at all", "stdin"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if output.IsTTY(tc.stream) {
+				t.Errorf("IsTTY(%T) = true, want false", tc.stream)
+			}
+		})
 	}
 }

@@ -51,11 +51,16 @@ var (
 
 // Writer is the interface every user-facing message passes through.
 //
-// Informational output and tables go to stdout; warnings and errors go to
-// stderr, so `labelsync groups --output=json | jq` keeps working when something
-// goes wrong halfway.
+// [Writer.Table] is the only method on stdout, and that asymmetry is the point:
+// stdout is the product, and everything else — progress, warnings, failures —
+// is the story of making it. It is what keeps `labelsync groups --output=json |
+// jq` working when a repository turns out to be inaccessible halfway through,
+// and it means a JSON run puts nothing on stdout that a consumer cannot type.
 type Writer interface {
-	// Info reports normal progress on stdout.
+	// Info reports normal progress on stderr. Progress is narration, not the
+	// result the command exists to produce: it must not land in the file when a
+	// user redirects stdout. If a command needs a result line that is not a
+	// table, that is a new method, not this one.
 	Info(format string, args ...any)
 
 	// Warn reports a recoverable problem on stderr — a skipped repository, say.
@@ -112,9 +117,9 @@ func NewDefaultPrettyWriter() *PrettyWriter {
 	return NewPrettyWriter(os.Stdout, os.Stderr, nil)
 }
 
-// Info reports normal progress on stdout.
+// Info reports normal progress on stderr.
 func (w *PrettyWriter) Info(format string, args ...any) {
-	fmt.Fprintln(w.stdout, styleInfo.Render("info")+" "+fmt.Sprintf(format, args...))
+	fmt.Fprintln(w.stderr, styleInfo.Render("info")+" "+fmt.Sprintf(format, args...))
 }
 
 // Warn reports a recoverable problem on stderr.
@@ -142,8 +147,10 @@ func (w *PrettyWriter) Table(headers []string, rows [][]string) {
 // a consumer can parse the stream mid-run instead of waiting for a closing
 // bracket that a killed process would never write.
 //
-// Objects carry a "level" field. Info and tables go to stdout; warnings and
-// errors go to stderr.
+// Objects carry a "level" field. Tables go to stdout; progress, warnings, and
+// errors go to stderr — so every line on stdout is a data record with the same
+// keys, and `jq -r .group` never trips over a narration object that has no
+// group.
 type JSONWriter struct {
 	stdout io.Writer
 	stderr io.Writer
@@ -160,9 +167,9 @@ func NewDefaultJSONWriter() *JSONWriter {
 	return NewJSONWriter(os.Stdout, os.Stderr)
 }
 
-// Info emits an info-level object on stdout.
+// Info emits an info-level object on stderr.
 func (w *JSONWriter) Info(format string, args ...any) {
-	writeJSONLine(w.stdout, map[string]string{
+	writeJSONLine(w.stderr, map[string]string{
 		"level":   "info",
 		"message": fmt.Sprintf(format, args...),
 	})

@@ -1,2 +1,3 @@
+{"level":"info","message":"resolving 3 groups"}
 {"level":"warn","message":"skipping specsnl/old-thing: archived"}
 {"error_kind":"repo_inaccessible","level":"error","message":"repository is inaccessible: specsnl/old-thing"}
