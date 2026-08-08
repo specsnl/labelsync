@@ -51,11 +51,12 @@ var (
 
 // Writer is the interface every user-facing message passes through.
 //
-// [Writer.WriteTable] is the only method on stdout, and that asymmetry is the point:
-// stdout is the product, and everything else — progress, warnings, failures —
-// is the story of making it. It is what keeps `labelsync groups --output=json |
-// jq` working when a repository turns out to be inaccessible halfway through,
-// and it means a JSON run puts nothing on stdout that a consumer cannot type.
+// [Writer.WriteTable] and [Writer.WriteResult] are the only methods on stdout,
+// and that asymmetry is the point: stdout is the product, and everything else —
+// progress, warnings, failures — is the story of making it. It is what keeps
+// `labelsync groups --output=json | jq` working when a repository turns out to
+// be inaccessible halfway through, and it means a JSON run puts nothing on
+// stdout that a consumer cannot type.
 type Writer interface {
 	// Info reports normal progress on stderr. Progress is narration, not the
 	// result the command exists to produce: it must not land in the file when a
@@ -80,6 +81,17 @@ type Writer interface {
 	// cells aligned with the headers and pairs each rendered row with the record
 	// it came from.
 	WriteTable(t TableData)
+
+	// WriteResult renders a single-line result on stdout: the product of a
+	// command whose answer is not a table. Pretty output writes the formatted
+	// text; JSON output marshals record and ignores the text entirely, so the
+	// stdout stream stays one typed object per line.
+	//
+	// This is not a general-purpose print. A command reaches for it only when its
+	// whole answer is one value — `labelsync version` — and a user piping stdout
+	// would expect exactly that value in the file. Anything narrating the work is
+	// [Writer.Info], on stderr.
+	WriteResult(record any, format string, args ...any)
 }
 
 // Both implementations satisfy Writer.
@@ -146,6 +158,17 @@ func (w *PrettyWriter) WriteErr(err error) {
 // are ignored: a human reads the cells.
 func (w *PrettyWriter) WriteTable(t TableData) {
 	fmt.Fprintln(w.stdout, RenderTable(t.Headers, t.Cells))
+}
+
+// WriteResult writes the formatted text on stdout. The record is ignored: a
+// human reads the sentence, not the field names behind it.
+func (w *PrettyWriter) WriteResult(_ any, format string, args ...any) {
+	// Sprintf into a variable rather than nesting it in the Fprintln call: the
+	// nested form is what fmt.Fprintf exists for, and staticcheck says so — but
+	// Fprintf is not on the errcheck exclusion list, and output is best-effort.
+	line := fmt.Sprintf(format, args...)
+
+	fmt.Fprintln(w.stdout, line)
 }
 
 // JSONWriter writes NDJSON: exactly one self-contained JSON object per line, so
@@ -224,6 +247,13 @@ func (w *JSONWriter) WriteTable(t TableData) {
 	for _, record := range t.Records {
 		writeJSONLine(w.stdout, record)
 	}
+}
+
+// WriteResult emits the record as one object on stdout. The formatted text is
+// ignored — it is the human's phrasing of the same value, and splicing prose
+// into the data stream is what puts a line into stdout that `jq` cannot type.
+func (w *JSONWriter) WriteResult(record any, _ string, _ ...any) {
+	writeJSONLine(w.stdout, record)
 }
 
 // writeJSONLine writes v as exactly one line of JSON. json.Encoder.Encode
