@@ -379,23 +379,13 @@ distance** (CIEDE2000 in CIELAB space) from every colour currently in use — i.
 that is *most different from everything else present*.
 
 ```go
-func Allocate(used, reserved []colorful.Color) colorful.Color {
-    var best colorful.Color
-    bestScore := -1.0
-    for _, c := range candidates() {        // deterministically ordered
-        score := math.MaxFloat64
-        for _, u := range append(used, reserved...) {
-            if d := c.DistanceCIEDE2000(u); d < score {
-                score = d
-            }
-        }
-        if score > bestScore {              // strict >, so first wins ties
-            best, bestScore = c, score
-        }
-    }
-    return best
-}
+func Allocate(used, reserved []colorful.Color) Allocation
 ```
+
+**Landed** ([#24](https://github.com/specsnl/labelsync/issues/24)) — see
+[Architecture § The allocation rule](./content/docs/architecture/palette.md#the-allocation-rule).
+The return type is an `Allocation` rather than a bare colour: the exhaustion warning below has to
+reach the caller somehow, and the hex form and the winning score are what the caller reports.
 
 ### Candidates
 
@@ -428,6 +418,9 @@ colours:
 If every candidate is within a minimum-distance floor of an existing colour, the allocator
 returns the best available anyway and the action carries a warning in `Reason`. It never fails
 the run — a suboptimal colour is better than an aborted sync.
+
+The floor is ΔE2000 ≈ 5. `Allocation.Exhausted` reports crossing it; turning that into a `Reason`
+is the plan's half, and is still to come.
 
 ---
 
