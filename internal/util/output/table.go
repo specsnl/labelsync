@@ -2,7 +2,6 @@ package output
 
 import (
 	"strings"
-	"unicode"
 
 	"charm.land/lipgloss/v2"
 )
@@ -44,7 +43,7 @@ func RenderColumns(rows [][]string) string {
 // RenderTable renders headers and rows as a bordered, column-aligned table.
 // Column widths are computed from the content, headers included.
 //
-// This is what [PrettyWriter.Table] uses — list output such as `groups` or
+// This is what [PrettyWriter.WriteTable] uses — list output such as `groups` or
 // `cache info`, where a header row is meaningful. For the diff, see
 // [RenderColumns].
 func RenderTable(headers []string, rows [][]string) string {
@@ -66,42 +65,6 @@ func RenderTable(headers []string, rows [][]string) string {
 		BorderForeground(lipgloss.ANSIColor(240)).
 		Padding(0, 1).
 		Render(sb.String())
-}
-
-// JSONKey normalises a column header into a stable JSON object key: lowercased,
-// with every run of non-alphanumeric characters collapsed to a single
-// underscore.
-//
-//	"Repo"        → "repo"
-//	"New colour"  → "new_colour"
-//	"# of labels" → "of_labels"
-//
-// Pretty and JSON output share one set of headers, and the two have different
-// audiences: a heading is prose that may be reworded, a JSON key is a contract
-// consumers match on. Normalising here means a wording change does not silently
-// break a `jq` filter — only an actual rename does.
-func JSONKey(header string) string {
-	var (
-		sb        strings.Builder
-		pendingUS bool
-	)
-
-	for _, r := range header {
-		switch {
-		case unicode.IsLetter(r) || unicode.IsDigit(r):
-			if pendingUS && sb.Len() > 0 {
-				sb.WriteByte('_')
-			}
-
-			pendingUS = false
-
-			sb.WriteRune(unicode.ToLower(r))
-		default:
-			pendingUS = true
-		}
-	}
-
-	return sb.String()
 }
 
 // columnWidths returns the display width of the widest cell in each column.

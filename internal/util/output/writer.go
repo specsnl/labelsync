@@ -51,7 +51,7 @@ var (
 
 // Writer is the interface every user-facing message passes through.
 //
-// [Writer.Table] is the only method on stdout, and that asymmetry is the point:
+// [Writer.WriteTable] is the only method on stdout, and that asymmetry is the point:
 // stdout is the product, and everything else — progress, warnings, failures —
 // is the story of making it. It is what keeps `labelsync groups --output=json |
 // jq` working when a repository turns out to be inaccessible halfway through,
@@ -73,9 +73,13 @@ type Writer interface {
 	// carries an "error_kind" field when err wraps a known labelsync sentinel.
 	WriteErr(err error)
 
-	// Table renders rows under headers. Pretty output aligns them into a bordered
-	// table; JSON output emits one object per row, keyed by header.
-	Table(headers []string, rows [][]string)
+	// WriteTable renders a prepared table. Pretty output aligns the cells into a
+	// bordered table; JSON output marshals one source record per line.
+	//
+	// Call [Table] rather than this: the generic constructor is what keeps the
+	// cells aligned with the headers and pairs each rendered row with the record
+	// it came from.
+	WriteTable(t TableData)
 }
 
 // Both implementations satisfy Writer.
@@ -138,9 +142,10 @@ func (w *PrettyWriter) WriteErr(err error) {
 	w.Error("%v", err)
 }
 
-// Table renders a bordered, column-aligned table on stdout.
-func (w *PrettyWriter) Table(headers []string, rows [][]string) {
-	fmt.Fprintln(w.stdout, RenderTable(headers, rows))
+// WriteTable renders a bordered, column-aligned table on stdout. The records
+// are ignored: a human reads the cells.
+func (w *PrettyWriter) WriteTable(t TableData) {
+	fmt.Fprintln(w.stdout, RenderTable(t.Headers, t.Cells))
 }
 
 // JSONWriter writes NDJSON: exactly one self-contained JSON object per line, so
@@ -207,27 +212,16 @@ func (w *JSONWriter) WriteErr(err error) {
 	writeJSONLine(w.stderr, payload)
 }
 
-// Table emits one object per row on stdout, keyed by header — not a single
-// array. An array could only be written once the last row was known, which is
-// exactly the mid-run parseability NDJSON exists to preserve.
+// WriteTable emits one object per source record on stdout — not a single array.
+// An array could only be written once the last row was known, which is exactly
+// the mid-run parseability NDJSON exists to preserve.
 //
-// Header text is normalised to a JSON key by [JSONKey], so the machine-readable
-// key does not change when a column heading is reworded for the pretty output.
-func (w *JSONWriter) Table(headers []string, rows [][]string) {
-	keys := make([]string, len(headers))
-	for i, h := range headers {
-		keys[i] = JSONKey(h)
-	}
-
-	for _, row := range rows {
-		record := make(map[string]string, len(keys))
-
-		for i, key := range keys {
-			if i < len(row) {
-				record[key] = row[i]
-			}
-		}
-
+// The records are marshalled as they are, so the keys and the types are the
+// row struct's own: a count stays a number, and a heading reworded for the
+// pretty table cannot disturb a consumer's filter. The headers and cells are
+// ignored here — they are the human's rendering of the same rows.
+func (w *JSONWriter) WriteTable(t TableData) {
+	for _, record := range t.Records {
 		writeJSONLine(w.stdout, record)
 	}
 }

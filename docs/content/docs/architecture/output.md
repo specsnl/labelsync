@@ -42,14 +42,14 @@ and has no idea which stream it belongs on. Three defects, no upside.
 
 ### Choosing between them
 
-| You want to…                                  | Use               | Lands on |
-|-----------------------------------------------|-------------------|----------|
-| Emit the result the command exists to produce | `w.Table(...)`    | stdout   |
-| Tell the user what the code is doing          | `w.Info(...)`     | stderr   |
-| Report a recoverable problem (skipped repo)   | `w.Warn(...)`     | stderr   |
-| Report a failure                              | `w.Error(...)`    | stderr   |
-| Report a failure carrying a sentinel          | `w.WriteErr(err)` | stderr   |
-| Tell a maintainer what the code is doing      | `slog.Debug(...)` | stderr   |
+| You want to…                                  | Use                          | Lands on |
+|-----------------------------------------------|------------------------------|----------|
+| Emit the result the command exists to produce | `output.Table(w, rows, ...)` | stdout   |
+| Tell the user what the code is doing          | `w.Info(...)`                | stderr   |
+| Report a recoverable problem (skipped repo)   | `w.Warn(...)`                | stderr   |
+| Report a failure                              | `w.Error(...)`               | stderr   |
+| Report a failure carrying a sentinel          | `w.WriteErr(err)`            | stderr   |
+| Tell a maintainer what the code is doing      | `slog.Debug(...)`            | stderr   |
 
 `WriteErr` over `Error("%v", err)` whenever you hold an `error`: it runs `labelsync.KindOf` and adds
 `error_kind` to the JSON object. `Error` with a formatted string cannot.
@@ -62,11 +62,11 @@ type Writer interface {
     Warn(format string, args ...any)   // stderr
     Error(format string, args ...any)  // stderr
     WriteErr(err error)                // stderr
-    Table(headers []string, rows [][]string)  // stdout
+    WriteTable(t TableData)            // stdout
 }
 ```
 
-`Table` is the only method on stdout, and the asymmetry is the point: **`Writer` has exactly one
+`WriteTable` is the only method on stdout, and the asymmetry is the point: **`Writer` has exactly one
 product channel, and everything else narrates.** `Info` is progress — "resolving 3 groups",
 "applying 12 actions" — and progress is not what `> out.txt` is for.
 
@@ -75,7 +75,7 @@ that have none of the fields the data objects have:
 
 ```json
 {"level":"info","message":"resolving 3 groups"}
-{"group":"websites","repositories":"12","source":"org: specsnl"}
+{"group":"websites","repositories":12,"source":"org: specsnl"}
 ```
 
 Valid NDJSON, and `jq -r .group` still yields a `null` for the first line. With `Info` on stderr the
@@ -97,6 +97,41 @@ Two implementations back the `--output` flag:
 
 Both take their streams as constructor arguments, so a test captures output by passing
 `bytes.Buffer`s rather than by intercepting the process.
+
+### Tables are typed rows, not strings
+
+Commands do not call `WriteTable` directly. They call `output.Table`, which takes the rows as they
+already exist and a description of how to display them:
+
+```go
+type GroupRow struct {
+    Name         string `json:"group"`
+    Repositories int    `json:"repositories"`
+    Source       string `json:"source"`
+}
+
+output.Table(app.Out, groups,
+    output.Col("Group",        func(g GroupRow) string { return g.Name }),
+    output.Col("Repositories", func(g GroupRow) string { return strconv.Itoa(g.Repositories) }),
+    output.Col("Source",       func(g GroupRow) string { return g.Source }),
+)
+```
+
+**The two audiences get different projections of the same row.** The pretty table comes from the
+columns. The JSON comes from marshalling the row itself, so its keys and its types are the struct's
+own — `{"repositories":12}`, a number a consumer can filter on, not the `"12"` a shared
+string-table would have forced. Those `json` tags are a public contract in the same way
+`error_kind` is: added to, never renamed.
+
+That split is also what lets a column be formatted or computed without the record paying for it. A
+size is an `int64` in the record and `1.2 MiB` in the table; a timestamp is RFC 3339 in the record
+and `3 days ago` in the table. Under a shared `[][]string` the choice was to have one or the other.
+
+`Table` is a generic function rather than a method because Go does not allow type parameters on
+methods. It prepares a `TableData` — headers, cells, and the source records — and that constructor
+is what guarantees every row has exactly one cell per header. The old
+`Table(headers []string, rows [][]string)` could not: a ragged or reordered row was a runtime
+surprise, and the writer had to defend against short rows on every call.
 
 ### Writes are best-effort
 
@@ -167,8 +202,8 @@ written before the kill is still valid.
 stdout carries the data, one object per row, every line the same shape:
 
 ```json
-{"group":"websites","repositories":"12","source":"org: specsnl"}
-{"group":"platform","repositories":"3","source":"repos:"}
+{"group":"websites","repositories":12,"source":"org: specsnl"}
+{"group":"platform","repositories":3,"source":"repos:"}
 ```
 
 stderr carries the narration, every line carrying a `level`:
@@ -183,10 +218,10 @@ stderr carries the narration, every line carrying a `level`:
 [Error Handling](./error-handling.md). The message is prose and may be reworded; `error_kind` is the
 contract.
 
-Table headers are normalised into JSON keys by `output.JSONKey`: lowercased, with runs of
-non-alphanumeric characters collapsed to `_`. `"New colour"` becomes `new_colour`. Pretty and JSON
-output share one set of headers with two different audiences, and normalising here means rewording
-a column heading does not silently break someone's `jq` filter — only an actual rename does.
+Row keys come from the row struct's `json` tags — see
+[Tables are typed rows](#tables-are-typed-rows-not-strings). Nothing derives them from a column
+heading, so rewording a heading cannot disturb a `jq` filter and there is no normalisation step to
+reason about.
 
 HTML escaping is off. Label names legitimately contain `&` and `<`, and rendering them as `&amp;`
 helps nobody reading a log.
@@ -195,10 +230,10 @@ helps nobody reading a log.
 
 Two renderers, because the diff and the list commands want different things:
 
-| Function        | Shape                                 | Used by                                       |
-|-----------------|---------------------------------------|-----------------------------------------------|
-| `RenderColumns` | Aligned columns, no header, no border | The pretty diff                               |
-| `RenderTable`   | Bordered table with a header row      | `PrettyWriter.Table` — `groups`, `cache info` |
+| Function        | Shape                                 | Used by                                            |
+|-----------------|---------------------------------------|----------------------------------------------------|
+| `RenderColumns` | Aligned columns, no header, no border | The pretty diff                                    |
+| `RenderTable`   | Bordered table with a header row      | `PrettyWriter.WriteTable` — `groups`, `cache info` |
 
 The diff is a list, not a table: there is nothing to put in a header row, and a box around it would
 fight the per-repository grouping. But the columns still have to line up down the page or the
@@ -424,6 +459,9 @@ a complete object.
 - [ ] `WriteErr(err)` rather than `Error("%v", err)` whenever an `error` is in hand.
 - [ ] No `os.Exit` outside `main`.
 - [ ] Nothing styled is written around the writer.
+- [ ] Tables go through `output.Table` with a row struct whose `json` tags carry the machine
+      contract — never a hand-built `TableData`, and never a struct field pre-formatted into a
+      string just to make the table read well.
 - [ ] Any new prompt is guarded by a TTY check **on stdin**.
 - [ ] Outcome codes are OR'd, never assigned over each other; `exit.Error` is not OR'd with anything.
 - [ ] A non-zero code that is not a failure returns `&exit.Err{Code: ...}` with no wrapped error, so

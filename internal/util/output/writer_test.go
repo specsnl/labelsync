@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -13,23 +14,57 @@ import (
 	"github.com/specsnl/labelsync/internal/util/output"
 )
 
-// sampleHeaders and sampleRows are the `labelsync groups` shape: the table
-// rendering both writers have to agree on the content of and disagree on the
-// form of.
+// groupRow is the `labelsync groups` shape: the row type both writers project,
+// one into cells and the other into JSON. Repositories is an int on purpose —
+// the count a consumer would want to filter on numerically.
+type groupRow struct {
+	Group        string `json:"group"`
+	Repositories int    `json:"repositories"`
+	Source       string `json:"source"`
+}
+
 var (
-	sampleHeaders = []string{"Group", "Repositories", "Source"}
-	sampleRows    = [][]string{
-		{"websites", "12", "org: specsnl"},
-		{"platform", "3", "repos:"},
-		{"archive", "0", "org: specsnl (excluded)"},
+	sampleRows = []groupRow{
+		{Group: "websites", Repositories: 12, Source: "org: specsnl"},
+		{Group: "platform", Repositories: 3, Source: "repos:"},
+		{Group: "archive", Repositories: 0, Source: "org: specsnl (excluded)"},
+	}
+
+	sampleColumns = []output.Column[groupRow]{
+		output.Col("Group", func(g groupRow) string { return g.Group }),
+		output.Col("Repositories", func(g groupRow) string { return strconv.Itoa(g.Repositories) }),
+		output.Col("Source", func(g groupRow) string { return g.Source }),
 	}
 )
+
+// sampleTable is what the writers receive, prepared the way a command would
+// prepare it.
+func sampleTable() output.TableData {
+	var captured output.TableData
+
+	output.Table(captureWriter{onTable: func(t output.TableData) { captured = t }}, sampleRows, sampleColumns...)
+
+	return captured
+}
+
+// captureWriter records the prepared table and discards everything else, so a
+// test can assert on what output.Table built rather than on how it rendered.
+type captureWriter struct {
+	onTable func(output.TableData)
+}
+
+func (captureWriter) Info(string, ...any)  {}
+func (captureWriter) Warn(string, ...any)  {}
+func (captureWriter) Error(string, ...any) {}
+func (captureWriter) WriteErr(error)       {}
+
+func (w captureWriter) WriteTable(t output.TableData) { w.onTable(t) }
 
 // writeSampleRun exercises every Writer method once, in the order a real run
 // would: progress, a table, a recoverable skip, then a failure.
 func writeSampleRun(w output.Writer) {
 	w.Info("resolving %d groups", 3)
-	w.Table(sampleHeaders, sampleRows)
+	output.Table(w, sampleRows, sampleColumns...)
 	w.Warn("skipping %s: archived", "specsnl/old-thing")
 	w.WriteErr(fmt.Errorf("%w: specsnl/old-thing", labelsync.ErrRepoInaccessible))
 }
@@ -164,43 +199,89 @@ func TestJSONWriter_OneObjectPerLine(t *testing.T) {
 func TestJSONWriter_TableEmitsOneObjectPerRow(t *testing.T) {
 	var stdout bytes.Buffer
 
-	output.NewJSONWriter(&stdout, &bytes.Buffer{}).Table(sampleHeaders, sampleRows)
+	output.NewJSONWriter(&stdout, &bytes.Buffer{}).WriteTable(sampleTable())
 
 	lines := strings.Split(strings.TrimSuffix(stdout.String(), "\n"), "\n")
 	if len(lines) != len(sampleRows) {
 		t.Fatalf("got %d lines, want %d: %q", len(lines), len(sampleRows), stdout.String())
 	}
 
-	var first map[string]string
+	var first map[string]any
 	if err := json.Unmarshal([]byte(lines[0]), &first); err != nil {
 		t.Fatalf("first row is not a JSON object: %v", err)
 	}
 
-	// Headers are normalised to stable keys, so rewording a heading does not
-	// break a consumer's filter.
-	want := map[string]string{"group": "websites", "repositories": "12", "source": "org: specsnl"}
+	// The keys are the row struct's own json tags, not a normalisation of the
+	// column headings, so rewording a heading cannot break a consumer's filter.
+	want := map[string]any{"group": "websites", "repositories": float64(12), "source": "org: specsnl"}
 	for key, value := range want {
 		if first[key] != value {
-			t.Errorf("row[%q] = %q, want %q (got %v)", key, first[key], value, first)
+			t.Errorf("row[%q] = %#v, want %#v (got %v)", key, first[key], value, first)
 		}
 	}
 }
 
-// A row shorter than the header set simply omits those keys rather than padding
-// them with empty strings, which would be indistinguishable from a real "".
-func TestJSONWriter_TableShortRow(t *testing.T) {
+// The reason the JSON side marshals records rather than cells: a count stays a
+// number, so `jq 'select(.repositories > 5)'` works. Rendering it through the
+// table would have made it the string "12".
+func TestJSONWriter_TableKeepsValueTypes(t *testing.T) {
 	var stdout bytes.Buffer
 
-	output.NewJSONWriter(&stdout, &bytes.Buffer{}).
-		Table([]string{"Group", "Repositories"}, [][]string{{"websites"}})
+	output.NewJSONWriter(&stdout, &bytes.Buffer{}).WriteTable(sampleTable())
 
-	var obj map[string]string
-	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout.String())), &obj); err != nil {
-		t.Fatalf("not a JSON object: %v", err)
+	first := strings.SplitN(stdout.String(), "\n", 2)[0]
+	if !strings.Contains(first, `"repositories":12`) {
+		t.Errorf("count was not emitted as a number: %q", first)
+	}
+}
+
+// A row can no longer disagree with its headers: the cells are built from the
+// columns, for every row, by the same loop. This is the defect the [][]string
+// signature could not rule out.
+func TestTable_CellsAlignWithHeaders(t *testing.T) {
+	data := sampleTable()
+
+	if len(data.Headers) != len(sampleColumns) {
+		t.Fatalf("got %d headers, want %d", len(data.Headers), len(sampleColumns))
 	}
 
-	if _, ok := obj["repositories"]; ok {
-		t.Errorf("missing cell produced a key anyway: %v", obj)
+	if len(data.Records) != len(data.Cells) {
+		t.Errorf("got %d records for %d rendered rows", len(data.Records), len(data.Cells))
+	}
+
+	for i, cells := range data.Cells {
+		if len(cells) != len(data.Headers) {
+			t.Errorf("row %d has %d cells for %d headers: %q", i, len(cells), len(data.Headers), cells)
+		}
+	}
+}
+
+// A column need not correspond to a field: the cell function is free to compute,
+// reformat, or ignore the row. That is what lets the human rendering differ from
+// the record without the record giving up its types.
+func TestTable_ComputedColumn(t *testing.T) {
+	var captured output.TableData
+
+	output.Table(
+		captureWriter{onTable: func(t output.TableData) { captured = t }},
+		sampleRows,
+		output.Col("Group", func(g groupRow) string { return g.Group }),
+		output.Col("Empty", func(g groupRow) string {
+			if g.Repositories == 0 {
+				return "yes"
+			}
+
+			return ""
+		}),
+	)
+
+	if got := captured.Cells[2][1]; got != "yes" {
+		t.Errorf("computed cell = %q, want %q", got, "yes")
+	}
+
+	// The record is untouched by the rendering: it has no such field.
+	if got, ok := captured.Records[2].(groupRow); !ok || got.Repositories != 0 {
+		t.Errorf("record was not passed through intact: %#v", captured.Records[2])
 	}
 }
 

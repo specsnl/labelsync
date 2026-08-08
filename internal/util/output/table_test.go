@@ -71,33 +71,14 @@ func TestRenderColumns_WideRunes(t *testing.T) {
 }
 
 func TestRenderTable_Golden(t *testing.T) {
-	assertGolden(t, "table_groups", output.RenderTable(sampleHeaders, sampleRows))
+	data := sampleTable()
+
+	assertGolden(t, "table_groups", output.RenderTable(data.Headers, data.Cells))
 }
 
 func TestRenderTable_NoRows(t *testing.T) {
-	got := output.RenderTable(sampleHeaders, nil)
+	got := output.RenderTable(sampleTable().Headers, nil)
 	if !strings.Contains(got, "Group") {
 		t.Errorf("header row missing from an empty table:\n%s", got)
-	}
-}
-
-func TestJSONKey(t *testing.T) {
-	for _, tc := range []struct {
-		header string
-		want   string
-	}{
-		{"Repo", "repo"},
-		{"New colour", "new_colour"},
-		{"# of labels", "of_labels"},
-		{"error_kind", "error_kind"},
-		{"Last synced (UTC)", "last_synced_utc"},
-		{"", ""},
-		{"---", ""},
-	} {
-		t.Run(tc.header, func(t *testing.T) {
-			if got := output.JSONKey(tc.header); got != tc.want {
-				t.Errorf("JSONKey(%q) = %q, want %q", tc.header, got, tc.want)
-			}
-		})
 	}
 }
