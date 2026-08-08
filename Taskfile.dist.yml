@@ -62,8 +62,12 @@ tasks:
   build:
     desc: Build Labelsync
     vars:
+      # The leading v is stripped so a local build and a release agree on how a
+      # version is spelled: goreleaser injects {{ .Version }}, which is the tag
+      # without it. The fallback is captured before the strip so that a tree git
+      # cannot describe at all yields "dev" rather than an empty version.
       LABELSYNC_VERSION:
-        sh: git describe --tags --always --dirty="-dev" 2>/dev/null || echo "dev"
+        sh: described=$(git describe --tags --always --dirty="-dev" 2>/dev/null || echo "dev"); echo "${described#v}"
     cmds:
       - task: lint
       - >-

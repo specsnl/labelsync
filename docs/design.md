@@ -541,6 +541,11 @@ Exceeding it exits with an error and a summary of what remained.
 
 ## CLI
 
+> **Partly landed.** The root command, the persistent flags, and `version` are implemented in
+> `internal/cmd` — see
+> [Overview § How the tree is wired](./content/docs/architecture/overview.md#how-the-tree-is-wired).
+> The subcommands below are still the plan.
+
 ```text
 labelsync [--config <path>]
           [--debug]

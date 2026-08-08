@@ -53,10 +53,11 @@ type captureWriter struct {
 	onTable func(output.TableData)
 }
 
-func (captureWriter) Info(string, ...any)  {}
-func (captureWriter) Warn(string, ...any)  {}
-func (captureWriter) Error(string, ...any) {}
-func (captureWriter) WriteErr(error)       {}
+func (captureWriter) Info(string, ...any)             {}
+func (captureWriter) Warn(string, ...any)             {}
+func (captureWriter) Error(string, ...any)            {}
+func (captureWriter) WriteErr(error)                  {}
+func (captureWriter) WriteResult(any, string, ...any) {}
 
 func (w captureWriter) WriteTable(t output.TableData) { w.onTable(t) }
 
@@ -103,8 +104,9 @@ func TestPrettyWriter_StripsEscapesOffTerminal(t *testing.T) {
 	}
 }
 
-// Table is the only method on stdout. Everything else is narration, and
-// narration in a redirected file is the defect this split exists to prevent.
+// WriteTable and WriteResult are the only methods on stdout. Everything else is
+// narration, and narration in a redirected file is the defect this split exists
+// to prevent.
 func TestWriters_OnlyTableReachesStdout(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -137,6 +139,47 @@ func TestWriters_OnlyTableReachesStdout(t *testing.T) {
 			}
 		})
 	}
+}
+
+// WriteResult is the product channel for a command whose whole answer is one
+// value. The two audiences get different projections of it: the human gets the
+// sentence, the machine gets the record — and neither leaks into the other.
+func TestWriters_WriteResult(t *testing.T) {
+	type versionRow struct {
+		Version string `json:"version"`
+	}
+
+	record := versionRow{Version: "1.2.3"}
+
+	t.Run("pretty renders the text", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+
+		output.NewPrettyWriter(&stdout, &stderr, goldenPlain).
+			WriteResult(record, "labelsync version %s", record.Version)
+
+		if got, want := stdout.String(), "labelsync version 1.2.3\n"; got != want {
+			t.Errorf("stdout = %q, want %q", got, want)
+		}
+
+		if stderr.Len() != 0 {
+			t.Errorf("a result reached stderr: %q", stderr.String())
+		}
+	})
+
+	t.Run("json marshals the record and drops the prose", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+
+		output.NewJSONWriter(&stdout, &stderr).
+			WriteResult(record, "labelsync version %s", record.Version)
+
+		if got, want := stdout.String(), "{\"version\":\"1.2.3\"}\n"; got != want {
+			t.Errorf("stdout = %q, want %q", got, want)
+		}
+
+		if strings.Contains(stdout.String(), "labelsync version") {
+			t.Errorf("the human phrasing was spliced into the data stream: %q", stdout.String())
+		}
+	})
 }
 
 // The reason Info is on stderr rather than a style preference: every line on

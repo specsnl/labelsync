@@ -41,6 +41,7 @@ labelsync/
 | `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf` |
 | `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes](./output.md)   |
 | `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring        |
+| `internal/cmd`         | partial | Root command, `App`, persistent flags, `version`               |
 | everything else        | planned | See the milestone table in the design plan                     |
 
 ### Why `plan` and `palette` are isolated
@@ -74,6 +75,38 @@ labelsync [--config <path>]
 └── version [--dont-prettify]
 ```
 
+Only the root and `version` exist so far; the rest are the leaves still to be added.
+
+### How the tree is wired
+
+`internal/cmd` is the shell around everything else, and it is deliberately thin:
+
+- **`root.go`** builds the root command, defines every persistent flag, and resolves them once in
+  `PersistentPreRunE`. `Execute` / `ExecuteContext` are what `main` calls; `NewRootCmd` is exported
+  so a test builds the same tree and points `SetOut` / `SetErr` at buffers.
+- **`app.go`** holds the `App`: the output writer, the handle on the debug log level, and the
+  resolved persistent-flag values. Every command closes over one, so a test constructs a single
+  `App` and drives the whole tree through it.
+- **`version.go`** owns `Version`, the variable `.goreleaser.yml` and the `Dockerfile` inject with
+  `-ldflags -X github.com/specsnl/labelsync/internal/cmd.Version`. That path is a build-file string
+  the compiler never checks, so `version_test.go` asserts both files still name it — a rename would
+  otherwise ship every release as `dev`. What each build produces is in
+  [Versioning](./versioning.md).
+
+`labelsync --version` is defined to mean `labelsync version --dont-prettify`, and both call the same
+`writeVersion` so the two cannot drift. It is a hand-rolled flag rather than Cobra's built-in
+`cmd.Version` + `SetVersionTemplate`, because Cobra handles that flag inside `execute()` *before*
+`PersistentPreRunE`. At that point `--output` has not been read and
+`app.Out` is still the fallback writer, so `--output=json --version` would print a bare line into a
+stream that is supposed to be typed JSON objects. Routing it through the root's `RunE` gets it the
+writer the user asked for. Giving the root a `RunE` is also why there is a test that a bare
+`labelsync` still prints help and an unknown subcommand still fails.
+
+Two invariants carry the weight, both detailed in
+[Output & Exit Codes](./output.md#wiring-it-in-cobra): writers and the logger come from
+`cmd.OutOrStdout()` / `cmd.ErrOrStderr()` rather than the `NewDefault*` constructors, and `os.Exit`
+lives in `main` and nowhere else. Commands return errors; `exit.Of` turns them into codes.
+
 ### Exit codes
 
 | Code | Constant       | Meaning                                                            |
@@ -81,9 +114,11 @@ labelsync [--config <path>]
 | `0`  | `exit.OK`      | In sync — no changes needed, or applied successfully with no drift |
 | `1`  | `exit.Error`   | Error (config invalid, auth failure, unrecoverable API error)      |
 | `2`  | `exit.Drift`   | Drift detected — `--dry-run` found pending actions                 |
-| `3`  | `exit.Skipped` | Applied successfully, but one or more repositories were skipped    |
+| `4`  | `exit.Skipped` | Applied successfully, but one or more repositories were skipped    |
 
-Defined in `internal/util/exit`; the rationale is in [Output & Exit Codes](./output.md#exit-codes).
+The outcome codes are disjoint bits and combine — a dry run that both drifts and cannot reach a
+repository exits `6`. Defined in `internal/util/exit`; the rationale is in
+[Output & Exit Codes](./output.md#exit-codes).
 
 ## Configuration
 
@@ -111,7 +146,7 @@ flowchart TD
     F --> G{--dry-run?}
     G -->|yes| H[render diff · exit 0 or 2]
     G -->|no| I["apply.Run — rate-limited writes,\nper-repo failures collected"]
-    I --> J[render summary · exit 0 or 3]
+    I --> J[render summary · exit 0 or 4]
 ```
 
 Steps up to `Compute` never write. Per-repository failures — `403` archived, `404` renamed
@@ -129,3 +164,4 @@ Stdlib `testing` by default — no test framework dependency so far. Run with `t
 | `github`    | `net/http/httptest` fake: pagination, ETag `304`, per-repo skips, `422` reclassification |
 | `ratelimit` | Injected clock: primary vs secondary backoff, `Retry-After`, the `--max-wait` ceiling    |
 | `output`    | Golden files for the pretty and JSON renderings                                          |
+| `cmd`       | The tree driven through `SetOut`/`SetErr` buffers: flags, writer choice, exit codes      |
