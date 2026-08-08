@@ -42,6 +42,7 @@ labelsync/
 | `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes](./output.md)   |
 | `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring        |
 | `internal/cmd`         | partial | Root command, `App`, persistent flags, `version`               |
+| `internal/palette`     | partial | The candidate grid — see [Colour Palette](./palette.md)        |
 | everything else        | planned | See the milestone table in the design plan                     |
 
 ### Why `plan` and `palette` are isolated
@@ -156,12 +157,12 @@ mid-run, `410` — are collected and reported at the end rather than aborting th
 
 Stdlib `testing` by default — no test framework dependency so far. Run with `task test`.
 
-| Package     | Approach                                                                                 |
-|-------------|------------------------------------------------------------------------------------------|
-| `config`    | Table-driven over every validation rule, valid and invalid; group composition and cycles |
-| `plan`      | The core suite: `(desired, current, mode, renames) → expected actions`, plus determinism |
-| `palette`   | Same input → same output, no duplicate allocation, exhaustion, legibility bounds         |
-| `github`    | `net/http/httptest` fake: pagination, ETag `304`, per-repo skips, `422` reclassification |
-| `ratelimit` | Injected clock: primary vs secondary backoff, `Retry-After`, the `--max-wait` ceiling    |
-| `output`    | Golden files for the pretty and JSON renderings                                          |
-| `cmd`       | The tree driven through `SetOut`/`SetErr` buffers: flags, writer choice, exit codes      |
+| Package     | Approach                                                                                                                      |
+|-------------|-------------------------------------------------------------------------------------------------------------------------------|
+| `config`    | Table-driven over every validation rule, valid and invalid; group composition and cycles                                      |
+| `plan`      | The core suite: `(desired, current, mode, renames) → expected actions`, plus determinism                                      |
+| `palette`   | Same input → same output, no duplicate allocation, exhaustion, legibility bounds — see [Colour Palette](./palette.md#testing) |
+| `github`    | `net/http/httptest` fake: pagination, ETag `304`, per-repo skips, `422` reclassification                                      |
+| `ratelimit` | Injected clock: primary vs secondary backoff, `Retry-After`, the `--max-wait` ceiling                                         |
+| `output`    | Golden files for the pretty and JSON renderings                                                                               |
+| `cmd`       | The tree driven through `SetOut`/`SetErr` buffers: flags, writer choice, exit codes                                           |

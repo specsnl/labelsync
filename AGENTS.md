@@ -126,6 +126,7 @@ The full structure, with a file-level breakdown, is in
 | [docs/content/docs/architecture/error-handling.md](./docs/content/docs/architecture/error-handling.md) | Sentinel errors, the wrapping rule, and `error_kind` contract |
 | [docs/content/docs/architecture/output.md](./docs/content/docs/architecture/output.md)                 | `output.Writer`, pretty vs NDJSON, TTY detection, exit codes  |
 | [docs/content/docs/architecture/versioning.md](./docs/content/docs/architecture/versioning.md)         | The linker-injected `Version`, and what each build produces   |
+| [docs/content/docs/architecture/palette.md](./docs/content/docs/architecture/palette.md)               | The HSL candidate grid, legibility bounds, determinism        |
 
 `docs/design.md` is the *plan*; `docs/content/docs/architecture/` describes what has been built. As
 subsystems land, their behaviour moves from the former into the latter.

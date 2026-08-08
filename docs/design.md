@@ -405,6 +405,10 @@ A deterministic HSL grid, filtered for legibility, converted to hex and sorted a
 label text colour automatically from background luminance; near-white and near-black backgrounds
 produce poor contrast.
 
+**Landed** ([#23](https://github.com/specsnl/labelsync/issues/23)) — the grid, its bounds, and the
+determinism guarantees it carries are documented in
+[Architecture § Colour Palette](./content/docs/architecture/palette.md).
+
 ### Determinism
 
 Three things guarantee stable output across runs, which matters because re-running must not churn
