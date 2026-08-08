@@ -4,13 +4,13 @@ weight: 6
 ---
 
 `internal/config` turns a YAML file into the structs every later stage reads. It is deliberately
-three separate concerns in three files, and only the first has landed:
+three separate concerns in three files, all of which have landed:
 
-| File          | Concern                                           | Status  |
-|---------------|---------------------------------------------------|---------|
-| `config.go`   | Find the file, parse it, normalise it             | landed  |
-| `validate.go` | The rules in the design's validation table        | landed  |
-| `resolve.go`  | Groups → repository sets, `include_groups` cycles | planned |
+| File          | Concern                                            | Status |
+|---------------|----------------------------------------------------|--------|
+| `config.go`   | Find the file, parse it, normalise it              | landed |
+| `validate.go` | The rules in the design's validation table         | landed |
+| `resolve.go`  | Groups → selectors, `include_groups` cycles, globs | landed |
 
 Nothing in the package touches the network, and nothing in `config.go` rejects a config: an
 invalid colour parses into the struct exactly as written and is `validate.go`'s answer to give.
@@ -182,6 +182,95 @@ label and not one at once; the chain is checked explicitly all the same, so the 
 chain rather than leaving the user to work out why the middle name is the one being complained
 about.
 
+## Resolution
+
+`resolve.go` turns the `groups` section into **selectors**, not repository lists:
+
+```go
+func (c *Config) Resolve(authenticatedUser string) (*Resolution, error)
+
+func (r *Resolution) Selectors() []Selector          // the enumeration work list
+func (r *Resolution) SelectorsFor(group string) []Selector
+func (r *Resolution) Matches(group string, repo Repo) bool
+func (r *Resolution) Groups(repo Repo) []string      // the groups that select repo
+func (r *Resolution) Desired(repo Repo) []Label      // the resolution rule
+func (r *Resolution) Warnings() []Warning
+```
+
+A repository list would need the network, and the network is what would make composition, cycle
+detection, and glob precedence untestable without an HTTP mock. So a `Selector` carries everything
+an enumerator needs to *list* repositories — kind, owner, filters — and everything `Matches` needs
+to decide whether a repository it was handed *belongs*. Enumeration itself lives in
+`internal/github`.
+
+`Repo` is a plain struct — owner, name, and the three facts the filters look at (`Archived`,
+`Fork`, `Private`). That is what lets the same rule judge a repository the API listed and a
+repository `--repo` named directly.
+
+### One source, then composition
+
+Every group sets **exactly one** of `org`, `user`, `repos`, or `include_groups`. Two is
+`ErrAmbiguousGroupSource`, and so is none: a group that says nothing is no less ambiguous than one
+that says two things, and the message names the group and what it set.
+
+`include_groups` is flattened during resolution, so no kind survives for it — a composed group
+resolves to the selectors of the groups it reaches, deduplicated by the group that defined them.
+That makes `Selectors()` an enumeration work list with no repeated walks, however many composed
+groups point at the same org.
+
+Composition is a DFS with two states rather than one:
+
+| Situation                           | Meaning   | Result                         |
+|-------------------------------------|-----------|--------------------------------|
+| A group reached twice, already done | A diamond | Contributes its selectors once |
+| A group reached while still open    | A cycle   | `ErrCyclicGroup`               |
+
+The cycle error names the whole chain — `a -> b -> c -> a` — because the group it was *noticed* at
+is rarely the one the reader has to change. A group named in `include_groups` that does not exist
+is `ErrUnknownGroup` here; a *label* naming a group that does not exist is `validate.go`'s to
+report, since a label is not part of the graph and simply selects nothing.
+
+### Filters
+
+`include` is an allowlist and `exclude` a denylist applied after it, both through
+`github.com/danwakefield/fnmatch` and both against the **repository name only**, never
+`owner/repo`. An empty `include` means everything, which is why the two cannot collapse into one
+pass. Matching is case-insensitive (`FNM_CASEFOLD`), because GitHub's repository names are:
+`owner/Repo` and `owner/repo` address the same repository, so a case-sensitive pattern would
+include or exclude it depending on how the API happened to spell it.
+
+Filters — the globs, `skip_archived`, `skip_forks`, `visibility` — apply to `org` and `user`
+selectors only. A `repos` entry names a repository outright and carries none of them: a filter that
+silently dropped a repository the config asked for by name is a surprise, not a safety net.
+
+### The `user` split
+
+`user` has two endpoints, and which one applies is a property of the *config*, not of the API call:
+
+| Value                  | Endpoint                            | Sees        |
+|------------------------|-------------------------------------|-------------|
+| The authenticated user | `GET /user/repos?affiliation=owner` | Private too |
+| Anybody else           | `GET /users/{user}/repos`           | Public only |
+
+`Resolve` takes the authenticated login and records the decision as `Selector.AuthenticatedUser`,
+so `internal/github` does not have to ask who the token belongs to a second time. An empty login —
+authentication has not happened yet — resolves to "somebody else", the conservative answer.
+
+Requesting `visibility: private` for anybody else therefore selects nothing at all. That is not an
+error, because the config is well-formed, and it is not silence either: it comes back as a
+`Warning`, which `Resolve` collects rather than prints. This package has no writer, and only the
+caller knows whether the run is pretty or NDJSON.
+
+### The resolution rule
+
+> For repository *R*, the desired set is every label whose resolved groups contain *R*. If no group
+> resolves to *R*, *R* is never touched.
+
+`Desired` returns `nil` for a repository no group selects, and that answer must never be confused
+with an empty config: for an unselected repository it means *leave it alone*, and in `prune` mode
+the difference between the two readings is every label in the repository. The test suite pins the
+case directly for that reason.
+
 ## Testing
 
 - **Validation** is table-driven over every rule, each with a valid case and an invalid one,
@@ -190,13 +279,18 @@ about.
   because the rules assume normalisation has happened. The boundary cases the API probe measured
   are in there by name — a 100-code-point emoji description and a 101, a 50-code-point name mixing
   emoji and ASCII, an emoji-only name, and a name that is only within bounds once trimmed.
-- **Resolution** is table-driven over every branch of the order, including both ambiguity cases
-  and both not-found cases, with the working directory and `XDG_CONFIG_HOME` pointed at temporary
-  directories. Every error case also asserts `KindOf` still names the sentinel through the
-  wrapping.
+- **Finding the file** is table-driven over every branch of the order, including both ambiguity
+  cases and both not-found cases, with the working directory and `XDG_CONFIG_HOME` pointed at
+  temporary directories. Every error case also asserts `KindOf` still names the sentinel through
+  the wrapping.
 - **Normalisation** is pinned by golden files: `testdata/*.yml` in, the normalised struct
   marshalled back to YAML out. A change to any defaulting or tidying rule shows up as a diff in
   the golden rather than as a subtly different plan several stages later.
+- **Group resolution** is table-driven from YAML fragments, so a case reads as the config a user
+  would have written: every source and every way of mixing them, composition and diamonds, the
+  three shapes of cycle with the chain each one reports, glob precedence, the `skip_*` and
+  `visibility` defaults, both sides of the `user` split — and, on its own, that a repository no
+  group selects yields an empty desired set rather than an empty config.
 
 ```sh
 task test:update   # rewrite the goldens, here and in every other golden package

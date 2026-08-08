@@ -67,6 +67,36 @@ descriptions you already have before the first run.
 The full file reference — every field of `groups`, `defaults`, `renames`, and `labels` — is in the
 [design plan](https://github.com/specsnl/labelsync/blob/main/docs/design.md#configuration).
 
+### How a group selects repositories
+
+A group has **exactly one** source — `org`, `user`, `repos`, or `include_groups`. Setting two is an
+error, and so is setting none.
+
+```yaml
+groups:
+  specs-all:
+    org: specsnl
+    include: ["boilr-*"]         # allowlist; empty means everything
+    exclude: ["*-archive"]       # denylist, applied after include
+  personal:
+    user: Ilyes512
+  everything:
+    include_groups: [specs-all, personal]
+```
+
+- `include` and `exclude` are globs over the **repository name only**, never `owner/repo`, and
+  match case-insensitively — GitHub's names do too. `exclude` runs after `include`.
+- `include`, `exclude`, `skip_archived`, `skip_forks`, and `visibility` apply to `org` and `user`
+  groups. A `repos` entry names a repository outright and is never filtered out from under you.
+- `include_groups` is a union, and it may nest. Two groups including each other is an error, and
+  the message prints the whole chain — `a -> b -> c -> a`.
+- `user` sees private repositories **only for the account the token belongs to**. Asking for
+  `visibility: private` for anybody else selects nothing, and says so on stderr rather than
+  quietly doing nothing.
+
+The rule the whole tool rests on: a repository gets every label whose `groups` contain a group that
+selects it — and **if no group selects a repository, `labelsync` never touches it**.
+
 ### What makes a config file invalid
 
 The whole file is checked as it is read, **before any request is sent**, and the run stops at the

@@ -1,8 +1,8 @@
 // Package config finds the labelsync config file, parses it, normalises what it
 // parsed, and validates the result. Nothing here touches the network: the rules
 // in the design's validation table live in validate.go, which LoadFile runs
-// once normalisation is done, and turning groups into repository sets lives in
-// resolve.go.
+// once normalisation is done, and turning groups into repository selectors lives
+// in resolve.go.
 //
 // Parse is the one entry point that stops short of validating, so that a test —
 // or anything else that wants the decoder without the rules — can hand it a
