@@ -86,9 +86,10 @@ stdout stream is uniformly typed and `jq` never sees a record it cannot type —
 `TestJSONWriter_StdoutIsUniformlyTyped` asserts directly, by requiring every stdout line to carry
 the data key and no `level`.
 
-`specs-cli` puts `Info` on stdout and has commands depending on that. labelsync diverges
-deliberately: nothing here called `Info` when the decision was made, so there was no contract to
-break, and inheriting the defect to stay symmetrical is the wrong trade. A command that needs a
+The house CLI this one's conventions are borrowed from puts `Info` on stdout, and has commands
+depending on that. labelsync diverges deliberately: nothing here called `Info` when the decision was
+made, so there was no contract to break, and inheriting the defect to stay symmetrical is the wrong
+trade. A command that needs a
 *result* line which is not a table gets a new product-level method instead — that is
 [`WriteResult`](#a-result-that-is-not-a-table), and `Info` does not move back.
 
@@ -528,23 +529,21 @@ a complete object.
 
 ## Pitfalls, with receipts
 
-Real defects in `specs-cli`, kept here because they are the failure modes these rules exist to
-prevent, not hypotheticals.
+Real defects, observed in a sibling CLI sharing these conventions and kept here because they are the
+failure modes these rules exist to prevent, not hypotheticals.
 
-**Styling written around the wrapped writer.** `HumanWriter.Table` uses `fmt.Fprintln` on the raw
-stream while `RenderTable` applies `Bold` and `ANSIColor(240)`. Escape codes land in redirected files
-and `NO_COLOR` is ignored — the sibling methods are safe only because they happen to use
-`lipgloss.Fprintln`. Wrapping the stream once removes the chance to get this wrong. See
-[specsnl/specs-cli#109](https://github.com/specsnl/specs-cli/issues/109) for a related `Table` issue.
+**Styling written around the wrapped writer.** A human writer's `Table` used `fmt.Fprintln` on the
+raw stream while its `RenderTable` applied `Bold` and `ANSIColor(240)`. Escape codes land in
+redirected files and `NO_COLOR` is ignored — the sibling methods were safe only because they
+happened to use `lipgloss.Fprintln`. Wrapping the stream once removes the chance to get this wrong.
 
-**A default log level that depends on nobody using it.** `specs-cli` defaults to `slog.LevelInfo`, so
-any `slog.Info` anywhere prints on an ordinary run. Nothing leaks today only because the codebase
-happens to log at Debug — an invariant nobody wrote down. `LevelSilent` makes the guarantee
-structural.
+**A default log level that depends on nobody using it.** Defaulting to `slog.LevelInfo` means any
+`slog.Info` anywhere prints on an ordinary run. Nothing leaks only because the codebase happens to
+log at Debug — an invariant nobody wrote down. `LevelSilent` makes the guarantee structural.
 
-**A handler chosen by the wrong condition.** `specs-cli` installs the JSON slog handler only when
-`--debug` **and** `--output=json` are both set, so `--output=json` alone leaves text records on
-stderr. Handler format should follow the output format, independently of verbosity.
+**A handler chosen by the wrong condition.** Installing the JSON slog handler only when `--debug`
+**and** `--output=json` are both set leaves `--output=json` alone emitting text records on stderr.
+Handler format should follow the output format, independently of verbosity.
 
 **`slog` pointed at `os.Stderr` instead of the command's writer.** `cmd.SetErr(buf)` then cannot
 capture `--debug` output, which is precisely the testability the accessors exist to provide.
