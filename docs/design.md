@@ -277,6 +277,14 @@ Pure function, no I/O:
 func Compute(desired []config.Label, current []github.Label, mode Mode, renames []Rename) Plan
 ```
 
+**Partly landed** ([#26](https://github.com/specsnl/labelsync/issues/26)) — steps 2 to 5, append
+mode. Renames ([#27](https://github.com/specsnl/labelsync/issues/27)) and prune
+([#28](https://github.com/specsnl/labelsync/issues/28)) are still to come; the parameters are
+already in the signature. As built, `Compute` takes the repository, takes the current labels as a
+`plan.Label` rather than a `github.Label` — the planner imports no client — and returns the one
+repository's `RepoPlan`, which a run assembles into a `Plan`. All three are documented in
+[Architecture § Planner](./content/docs/architecture/plan.md#the-signature-and-where-it-departs-from-the-design-sketch).
+
 ### Ordering
 
 Actions within a repository are emitted in this order, and the order matters:
