@@ -80,6 +80,74 @@ configured values — which an update reaches:
 - **Case-only drift.** A repository holding `bug` rejects the creation of `Bug`, because GitHub
   holds label names case-insensitively unique.
 
+## Label operations
+
+`internal/github/labels.go` holds the four operations and nothing else. Every one goes through
+`Client.Do`, so an inaccessible repository is recorded and skipped rather than ending the run.
+
+```go
+labels, err := client.ListLabels(ctx, owner, repo)
+err = client.CreateLabel(ctx, owner, repo, github.Label{Name: "bug", Color: "d73a4a"})
+err = client.UpdateLabel(ctx, owner, repo, "bug", github.Label{Name: "defect", Color: "d73a4a"})
+err = client.DeleteLabel(ctx, owner, repo, "wontfix")
+```
+
+`ListLabels` walks every page at 100 per page. More than 100 labels in one repository is rare, but a
+truncated list does not read as "truncated" — it reads as "these labels do not exist", and the plan
+would plan their creation on every run.
+
+`UpdateLabel` takes the **observed** remote name as its own argument and the desired label as the
+body, so the request stays consistent with the state the plan was computed against. The desired name
+always goes out as `new_name`, even when it is identical to the path, which keeps a rename and a
+recolour one code path instead of two.
+
+### The update request is hand-built
+
+go-github's `EditLabel` sends the label's `name` field. GitHub's update endpoint reads **`new_name`**
+and ignores `name`, so `EditLabel` would return a cheerful `200` having renamed nothing and the
+drift would come back on every run. `UpdateLabel` therefore builds its own `PATCH` body:
+
+| Field         | Always sent | Why                                                                     |
+|---------------|-------------|-------------------------------------------------------------------------|
+| `new_name`    | yes         | The rename, and the casing repair. Preserves the label `id`             |
+| `color`       | yes         | The value the config asks for                                           |
+| `description` | yes         | Descriptions are authoritative; omitting it leaves a stale one in place |
+
+A rename is a `PATCH` and **never** a delete plus a create, because `new_name` preserves every issue
+and pull-request association. Delete-and-recreate would strip the label from every issue that used
+it — the damage `DeleteLabel` does, for a rename nobody asked to be destructive.
+
+### `DeleteLabel` is guarded at the call site
+
+Deleting a label removes it from every issue and pull request that carried it, and nothing restores
+that. It is called only in prune mode, on a candidate the user has been shown and has accepted. The
+planner emits removal *candidates* and never decides which are deleted; this function is why that
+separation exists.
+
+### Label names are escaped into paths
+
+`area/api` is an ordinary label name and two path segments if interpolated raw — go-github does not
+escape, so `UpdateLabel` and `DeleteLabel` build their own escaped paths. Getting this wrong on a
+`DELETE` destroys something else entirely. Owner and repository names need no escaping, having been
+through `config.ParseRepoRef`'s character set.
+
+### `github.Label` mirrors `plan.Label`
+
+The planner declares its own `Label`, which is what keeps `internal/plan` free of
+`internal/github` — it takes plain structs and does no HTTP. The client's `Label` has the **same
+fields in the same order**, so bridging the two is a conversion:
+
+```go
+current := make([]plan.Label, len(labels))
+for i, l := range labels {
+    current[i] = plan.Label(l)
+}
+```
+
+A mapping function would compile happily with a field forgotten; a conversion does not. A test pins
+it, so a field renamed or reordered on either side breaks the build rather than surfacing later as a
+silently empty description.
+
 ## Per-repository failures are non-fatal
 
 `Client.Do` **records a per-repository failure before returning it**, so a caller that means to
