@@ -135,6 +135,7 @@ The full structure, with a file-level breakdown, is in
 | [docs/content/docs/architecture/output.md](./docs/content/docs/architecture/output.md)                 | `output.Writer`, pretty vs NDJSON, TTY detection, exit codes  |
 | [docs/content/docs/architecture/versioning.md](./docs/content/docs/architecture/versioning.md)         | The linker-injected `Version`, and what each build produces   |
 | [docs/content/docs/architecture/palette.md](./docs/content/docs/architecture/palette.md)               | The HSL candidate grid, legibility bounds, determinism        |
+| [docs/content/docs/architecture/plan.md](./docs/content/docs/architecture/plan.md)                     | The `Action` / `Plan` vocabulary and its JSON contract        |
 
 `docs/design.md` is the *plan*; `docs/content/docs/architecture/` describes what has been built. As
 subsystems land, their behaviour moves from the former into the latter.

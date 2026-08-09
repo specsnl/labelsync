@@ -44,6 +44,7 @@ labelsync/
 | `internal/cmd`         | partial | Root command, `App`, persistent flags, `version`                               |
 | `internal/config`      | partial | Resolution, YAML load, normalisation — see [Configuration](./configuration.md) |
 | `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette](./palette.md)         |
+| `internal/plan`        | partial | The `Action` / `Plan` vocabulary — see [Planner](./plan.md)                    |
 | everything else        | planned | See the milestone table in the design plan                                     |
 
 ### Why `plan` and `palette` are isolated
