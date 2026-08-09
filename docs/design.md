@@ -274,8 +274,23 @@ Pure function, no I/O:
 
 ```go
 // internal/plan
-func Compute(desired []config.Label, current []github.Label, mode Mode, renames []Rename) Plan
+func Compute(repo string, desired []config.Label, current []plan.Label, mode Mode, renames []config.Rename) RepoPlan
 ```
+
+**Partly landed** ([#26](https://github.com/specsnl/labelsync/issues/26)) — steps 2 to 5, append
+mode. Renames ([#27](https://github.com/specsnl/labelsync/issues/27)) and prune
+([#28](https://github.com/specsnl/labelsync/issues/28)) are still to come; both parameters are
+already in the signature, so they land as a change to that function rather than to every call site.
+
+The signature above is the one that was built, and it is not the one this section originally
+sketched. That sketch read
+`Compute(desired []config.Label, current []github.Label, mode Mode, renames []Rename) Plan`, and
+predated the rule that `internal/plan` never imports `internal/github` — which the planner cannot
+satisfy while taking a `github.Label`. Three consequences, each argued in
+[Architecture § Planner](./content/docs/architecture/plan.md#the-signature-and-where-it-departs-from-the-design-sketch):
+the current labels arrive as a `plan.Label`, `Compute` is told which repository it is reconciling
+because both `Action` and `RepoPlan` carry one, and it returns that single repository's `RepoPlan`
+for a run to assemble into a `Plan`.
 
 ### Ordering
 

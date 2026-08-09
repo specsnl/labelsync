@@ -6,8 +6,8 @@ weight: 7
 `internal/plan` turns "these labels are configured" and "these labels exist" into an ordered list of
 changes. It is pure — nothing in it touches the network, and it never imports `internal/github`.
 
-What has landed so far is the **vocabulary**: `Kind`, `Action`, and `Plan`, in `action.go`. The
-reconciliation itself — `Compute` — is still
+What has landed is the **vocabulary** — `Kind`, `Action`, and `Plan`, in `action.go` — and the
+**reconciler** in `compute.go`, in append mode. Renames and prune are still
 [design.md § Reconciliation algorithm](https://github.com/specsnl/labelsync/blob/main/docs/design.md#reconciliation-algorithm).
 
 ## The types
@@ -118,9 +118,115 @@ An empty plan marshals as `{"repos":null}`: `Repos` carries no `omitempty`, and 
   [`palette.Allocation.Exhausted`](./palette.md#exhaustion-is-a-warning-never-a-failure) reports.
   Turning it into a reason is the planner's half of that contract.
 
+## `Compute`
+
+```go
+func Compute(repo string, desired []config.Label, current []Label, mode Mode, renames []config.Rename) RepoPlan
+```
+
+Pure: no network, no clock, no randomness. The same input always produces the same actions, colours
+included — which is what stops a re-run from churning the squatters the last run recoloured.
+
+### The signature, and where it departs from the design sketch
+
+The design originally sketched
+`Compute(desired []config.Label, current []github.Label, mode Mode, renames []Rename) Plan`.
+[design.md](https://github.com/specsnl/labelsync/blob/main/docs/design.md#reconciliation-algorithm)
+now carries the signature below instead; three things moved, each of them forced by something the
+design says elsewhere:
+
+- **`current []Label`, not `[]github.Label`.** The planner never imports `internal/github`, so the
+  remote half of the input is a plain struct this package declares. Translating an API response into
+  it is the caller's job, and the interesting logic stays testable with two slices and no HTTP mock.
+- **`repo string`.** Both `Action` and `RepoPlan` carry the repository, and a pure function has
+  nowhere else to get it from.
+- **Returns `RepoPlan`, not `Plan`.** `Compute` reconciles *one* repository. A run assembles the
+  `Plan` from the per-repository results, in the order its repositories were resolved.
+
+`Mode` is `append` or `prune`. `mode` and `renames` are accepted but not yet acted on — the rename
+pass and prune land next, and having the parameters now means they are a change to the function
+rather than to every call site.
+
+### `Label`
+
+```go
+type Label struct {
+    Name        string // as the repository stores it, casing included
+    Color       string // six-digit hex; a leading # and upper case are tolerated
+    Description string // empty when it has none
+}
+```
+
+GitHub does not distinguish an absent description from an empty one, so neither does this — which is
+also why `config.Label.Description` can be a plain string while `Action.Description` cannot.
+
+### What it does
+
+1. **Partition.** Every remote label is matched against the configured set by name,
+   *case-insensitively*: GitHub rejects two labels whose names differ only in case, so `Bug` and
+   `bug` are one label wearing different casing rather than two labels. What matches is *matched*;
+   what does not is *unconfigured*.
+2. **Reserve.** Every configured colour is reserved, mapped to the configured label that owns it.
+   Two configured labels may share a colour; the first in ascending name order is the one credited
+   in a `Reason`, which keeps the text deterministic without changing the recolour.
+3. **Recolour squatters.** An unconfigured label sitting on a reserved colour is displaced. In
+   ascending name order, each one is given
+   [`palette.Allocate(used, reserved)`](./palette.md#the-allocation-rule) and the result is fed back
+   into `used` — the allocator is stateless, and feeding it back is the only thing stopping two
+   squatters from being handed the same colour. `used` starts as the colours of the unconfigured
+   labels that are staying put; matched labels contribute nothing, because they are about to hold
+   their configured colour, which is already reserved.
+4. **Converge.** The configured labels in ascending name order: `create` when the repository does
+   not have one, `update` when colour, description, or casing differs, `noop` when nothing does.
+5. **Prune.** Prune mode only, and still to come.
+
+### Order
+
+| Position | Actions                                                                           |
+|----------|-----------------------------------------------------------------------------------|
+| 1        | Renames — *still to come*                                                         |
+| 2        | Squatter recolours, in ascending name order                                       |
+| 3        | Creates, in ascending name order                                                  |
+| 4        | Existing configured labels — updates and no-ops interleaved, ascending name order |
+| 5        | Deletes — prune mode only, *still to come*                                        |
+
+Recolours precede the create or update that claims the colour so that a run aborting mid-repository
+never leaves a configured label sharing its colour with a label that was supposed to have moved off
+it. GitHub permits duplicate colours and accepts either order, so this is about crash-consistency,
+not validity.
+
+Updates and no-ops share one run rather than being separated, because both are outcomes for a label
+that already exists and a no-op is never sent to the API. Keeping them together means a report reads
+straight down the configured labels in name order.
+
+### Casing drift is a rename
+
+A configured `type: bug` against a remote `Type: Bug` is an `update` whose `Name` is `Type: Bug` —
+the key the label is found under — and whose `NewName` is `type: bug`. GitHub has no other way to
+restyle a name. Unlike a configured rename, a case-only correction cannot collide: the only existing
+label its target can match case-insensitively is the label being renamed itself.
+
+### Descriptions are authoritative
+
+A configured label with no description means the description is `""`, and converging on that clears
+whatever the repository holds. That is why `Action.Description` is a `*string`: `new("")` is
+*clear it*, and `nil` is *leave it alone*.
+
+A create always carries both `Color` and `Description`, `""` included — there is no existing value
+for it to leave alone.
+
+### Colours compare normalised
+
+One leading `#` is stripped and the rest lower-cased before any comparison, on both sides. `#D73A4A`
+in a repository is not drift against `d73a4a` in the config, and a squatter is still detected through
+it. Whether what remains is valid hex is
+[config validation's](./configuration.md) question; here an unparseable colour simply never matches
+and never enters a colour set.
+
 ## Testing
 
-Table-driven, in-package, and entirely about serialisation — there is no behaviour here to test yet:
+Table-driven and in-package. `action_test.go` is entirely about serialisation; `compute_test.go` is
+the core suite, `(desired, current) → expected actions`:
 
 | Test                                  | Guards                                                     |
 |---------------------------------------|------------------------------------------------------------|
@@ -131,13 +237,24 @@ Table-driven, in-package, and entirely about serialisation — there is no behav
 | `Plan` round trip                     | Grouping, plus repository and action order                 |
 | marshalling the same plan twice       | Stable bytes — why `Repos` is a slice                      |
 | `Plan{}`                              | That an empty plan is `{"repos":null}` and reads back nil  |
+| `Compute`, fifteen scenarios          | Creates, no-ops, every drift axis, squatters, action order |
+| description clearing                  | That an omitted description emits `new("")`, not `nil`     |
+| casing drift                          | That it travels as `NewName` against the current name      |
+| two squatters                         | Name order, and that they never receive the same colour    |
+| computing the same input six times    | Determinism, colours included                              |
+| a reserved-and-used colour set        | That a recolour avoids both halves of the allocator input  |
+| the whole candidate grid reserved     | That exhaustion still recolours, and says so in `Reason`   |
+| computing twice over one `desired`    | That `Compute` does not reorder the caller's slice         |
 
 The round-trip comparisons use `reflect.DeepEqual`, which follows pointers: it compares the
 pointed-to strings and, separately, nil against non-nil — exactly the distinction the pointer fields
 exist to carry.
 
+The recolour colours are written into the table literally rather than recomputed by calling
+`palette.Allocate` from the test. Recomputing them would assert only that the planner calls the
+allocator; pinning them asserts that a second run over an unchanged repository does not churn a
+colour, which is the property that matters.
+
 ## Still to come
 
-Everything that produces these types. `Compute(desired, current, mode, renames) Plan` — the rename
-pass, squatter detection, the convergence rules, and prune — along with the pretty and NDJSON
-renderings of a plan.
+The rename pass, prune, and the pretty and NDJSON renderings of a plan.

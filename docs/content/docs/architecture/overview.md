@@ -36,16 +36,16 @@ labelsync/
 
 ### Implemented so far
 
-| Package                | Status  | Notes                                                                          |
-|------------------------|---------|--------------------------------------------------------------------------------|
-| `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf`                 |
-| `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes](./output.md)                   |
-| `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                        |
-| `internal/cmd`         | partial | Root command, `App`, persistent flags, `version`                               |
-| `internal/config`      | partial | Resolution, YAML load, normalisation — see [Configuration](./configuration.md) |
-| `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette](./palette.md)         |
-| `internal/plan`        | partial | The `Action` / `Plan` vocabulary — see [Planner](./plan.md)                    |
-| everything else        | planned | See the milestone table in the design plan                                     |
+| Package                | Status  | Notes                                                                                    |
+|------------------------|---------|------------------------------------------------------------------------------------------|
+| `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf`                           |
+| `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes](./output.md)                             |
+| `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                                  |
+| `internal/cmd`         | partial | Root command, `App`, persistent flags, `version`                                         |
+| `internal/config`      | partial | Resolution, YAML load, normalisation — see [Configuration](./configuration.md)           |
+| `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette](./palette.md)                   |
+| `internal/plan`        | partial | The `Action` / `Plan` vocabulary and `Compute` in append mode — see [Planner](./plan.md) |
+| everything else        | planned | See the milestone table in the design plan                                               |
 
 ### Why `plan` and `palette` are isolated
 
@@ -148,7 +148,7 @@ flowchart TD
     B --> C["resolve groups → repository sets\n(no network for `repos:` groups)"]
     C --> D["enumerate org/user repos\n+ filter on the enumeration response"]
     D --> E["read labels per repo\n(bounded parallel, ETag-conditional)"]
-    E --> F["plan.Compute(desired, current, mode, renames)\npure, no I/O"]
+    E --> F["plan.Compute(repo, desired, current, mode, renames)\npure, no I/O"]
     F --> G{--dry-run?}
     G -->|yes| H[render diff · exit 0 or 2]
     G -->|no| I["apply.Run — rate-limited writes,\nper-repo failures collected"]
