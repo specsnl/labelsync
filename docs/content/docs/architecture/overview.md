@@ -45,6 +45,7 @@ labelsync/
 | `internal/config`      | partial | Resolution, YAML load, normalisation — see [Configuration](./configuration.md)           |
 | `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette](./palette.md)                   |
 | `internal/plan`        | partial | The `Action` / `Plan` vocabulary and `Compute` in append mode — see [Planner](./plan.md) |
+| `internal/github`      | partial | The token resolution chain — see [Authentication](./authentication.md)                   |
 | everything else        | planned | See the milestone table in the design plan                                               |
 
 ### Why `plan` and `palette` are isolated

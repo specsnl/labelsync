@@ -988,6 +988,9 @@ without touching call sites.
 
 ## Authentication
 
+> **Landed.** `internal/github/auth.go` is built; what it actually does is documented in
+> [Authentication](./content/docs/architecture/authentication.md).
+
 `internal/github/auth.go`, resolved in order, reporting which source won under `--debug`:
 
 1. `--token` flag *(discouraged — visible in shell history and process lists)*
