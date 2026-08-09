@@ -19,6 +19,7 @@ Every command accepts these.
 | Flag             | Default            | What it does                                                |
 |------------------|--------------------|-------------------------------------------------------------|
 | `-c`, `--config` | search order below | Path to the config file                                     |
+| `--token`        | resolved, below    | GitHub token (discouraged — prefer `GH_TOKEN`)              |
 | `-o`, `--output` | `pretty`           | Output format: `pretty` or `json`                           |
 | `--debug`        | off                | Write debug diagnostics to stderr                           |
 | `--no-cache`     | off                | Ignore the ETag cache for this run                          |
@@ -31,6 +32,30 @@ format, a `--concurrency` or `--write-rate` below `1`, a negative `--max-wait`.
 
 `--version` is a root flag rather than a global one — it answers for the binary, so
 `labelsync sync --version` is not a question `sync` has to have an opinion about.
+
+## Where the token comes from
+
+`labelsync` never asks for a credential. It resolves one from four sources, in order, first
+non-empty wins:
+
+1. `--token`
+2. `GH_TOKEN`, then `GITHUB_TOKEN`
+3. The `gh` config file
+4. `gh auth token`
+
+If you are already logged in with `gh auth login`, steps 3 and 4 cover you and there is nothing to
+set up. Steps 3 and 4 are both needed: `gh` keeps its token in the system keychain on macOS, where
+reading the config file alone would not find it.
+
+`--token` works, and it is **discouraged**: a token on the command line is in your shell history and
+in every process list on the machine. `GH_TOKEN` is the same convenience without either. The value
+is never written to a log, including under `--debug` — that only reports *which* of the four sources
+won, which is worth knowing when a run turns out to have used a different account than you expected.
+
+In CI, note that the `GITHUB_TOKEN` a workflow is handed automatically is scoped to the repository
+the workflow runs in, so it **cannot** write labels to other repositories. Use a PAT in a secret.
+
+With nothing to find, the run fails with `no_token` before any request is sent.
 
 ## Where the config file is found
 

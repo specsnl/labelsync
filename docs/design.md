@@ -605,9 +605,13 @@ It is a note, not a warning and not a skip:
 
 ### Per-repository failures are non-fatal
 
+> **Landed** as the taxonomy in `internal/github/client.go` — see
+> [GitHub Client](./content/docs/architecture/github-client.md).
+
 `403` (archived, or insufficient permission) and `404` (renamed/deleted between enumeration and
 sync) are collected per repository, the run continues, and a summary of skipped repositories
-prints at the end. The process exit code reflects whether any repository failed.
+prints at the end. The process exit code reflects whether any repository failed —
+`exit.Skipped`, which is code `4`.
 
 `410` is handled by the same machinery for robustness, but is not expected on the label endpoints
 under any condition observed so far — see
@@ -987,6 +991,9 @@ without touching call sites.
 ---
 
 ## Authentication
+
+> **Landed.** `internal/github/auth.go` is built; what it actually does is documented in
+> [Authentication](./content/docs/architecture/authentication.md).
 
 `internal/github/auth.go`, resolved in order, reporting which source won under `--debug`:
 

@@ -60,6 +60,14 @@ type App struct {
 	// working directory and then the XDG config directory.
 	ConfigPath string
 
+	// Token is --token: an explicit GitHub credential, or "" to resolve one from
+	// the environment, the gh config, or gh itself. It is the first step of the
+	// chain in internal/github, and the discouraged one — a token on the command
+	// line is in the shell history and in every process list on the machine.
+	//
+	// Never log this value. Only whether it was set.
+	Token string
+
 	// Format is --output, already validated against the known formats.
 	Format output.Format
 

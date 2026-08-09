@@ -14,6 +14,7 @@ import (
 // lookup have to agree on the string.
 const (
 	flagConfig      = "config"
+	flagToken       = "token"
 	flagDebug       = "debug"
 	flagOutput      = "output"
 	flagNoCache     = "no-cache"
@@ -81,6 +82,7 @@ Use "labelsync <command> --help" for more information about a command.`,
 
 	flags := cmd.PersistentFlags()
 	flags.StringP(flagConfig, "c", "", "Path to the config file (default: ./labels.yml, then the XDG config directory)")
+	flags.String(flagToken, "", "GitHub token (discouraged: visible in shell history and process lists — prefer GH_TOKEN)")
 	flags.Bool(flagDebug, false, "Write debug diagnostics to stderr")
 	flags.StringP(flagOutput, "o", string(output.FormatPretty), `Output format: "pretty" or "json"`)
 	flags.Bool(flagNoCache, false, "Ignore the ETag cache for this run")
@@ -123,6 +125,7 @@ func (a *App) resolveFlags(cmd *cobra.Command) error {
 	// file rather than anything a user can cause.
 	format, _ := flags.GetString(flagOutput)
 	a.ConfigPath, _ = flags.GetString(flagConfig)
+	a.Token, _ = flags.GetString(flagToken)
 	a.Debug, _ = flags.GetBool(flagDebug)
 	a.NoCache, _ = flags.GetBool(flagNoCache)
 	a.Concurrency, _ = flags.GetInt(flagConcurrency)
@@ -162,8 +165,13 @@ func (a *App) resolveFlags(cmd *cobra.Command) error {
 		return fmt.Errorf("invalid --%s %s: want a non-negative duration", flagMaxWait, a.MaxWait)
 	}
 
+	// a.Token is deliberately absent from this line. It is the one flag whose
+	// value must never reach a log, and --debug is exactly the situation where a
+	// user is most likely to be pasting output into an issue. Which token source
+	// won is reported by the resolver instead; see internal/github/auth.go.
 	slog.Debug("flags resolved",
 		"config", a.ConfigPath,
+		"token_set", a.Token != "",
 		"output", string(a.Format),
 		"no_cache", a.NoCache,
 		"concurrency", a.Concurrency,
