@@ -63,9 +63,20 @@ const unconfiguredNote = "unconfigured"
 // Compute reconciles one repository. It is pure — no network, no clock, no
 // randomness — so the same input always produces byte-identical output.
 //
-// repo is the owner/repo the actions belong to; it fills [Action.Repo] and
-// [RepoPlan.Repo] and is otherwise untouched. desired is the label set resolved
-// for this repository, current is what the repository holds today.
+// repo is the repository the actions belong to. Its owner/repo fills
+// [Action.Repo] and [RepoPlan.Repo]; its HasIssues fills
+// [RepoPlan.IssuesDisabled] and nothing else. The flag arrives as input and is
+// never asked of GitHub here — that is what keeps this function pure. desired is
+// the label set resolved for this repository, current is what the repository
+// holds today.
+//
+// # Issues being disabled changes nothing
+//
+// A repository with issues off gets exactly the actions it would otherwise get,
+// byte for byte. Label endpoints are ungated on the flag, so such a repository
+// syncs normally and its labels are used by pull requests; the note exists only
+// because label changes on one are surprising enough that a reader would
+// otherwise suspect the config or the group filter.
 //
 // # Order
 //
@@ -122,11 +133,18 @@ const unconfiguredNote = "unconfigured"
 // Descriptions are authoritative. A configured label with no description means
 // the description is "", and converging on that clears whatever the repository
 // has.
-func Compute(repo string, desired []config.Label, current []Label, mode Mode, renames []config.Rename) RepoPlan {
+func Compute(repo config.Repo, desired []config.Label, current []Label, mode Mode, renames []config.Rename) RepoPlan {
+	name := repo.String()
+
+	// Derived from the input and nothing else, so it cannot vary between two
+	// runs over the same repository — the determinism suite depends on that
+	// being true of every field, not only of the actions.
+	issuesDisabled := repo.HasIssues != nil && !*repo.HasIssues
+
 	// The safety property, checked before anything else so that not even a
 	// rename lands on a repository the config does not cover.
 	if len(desired) == 0 {
-		return RepoPlan{Repo: repo}
+		return RepoPlan{Repo: name, IssuesDisabled: issuesDisabled}
 	}
 
 	sorted := slices.Clone(desired)
@@ -134,22 +152,22 @@ func Compute(repo string, desired []config.Label, current []Label, mode Mode, re
 
 	claimants := claimedColors(sorted)
 
-	renamed, current := applyRenames(repo, current, renames)
+	renamed, current := applyRenames(name, current, renames)
 	matched, unconfigured := partition(sorted, current)
 
 	var actions []Action
 
 	actions = append(actions, renamed...)
-	actions = append(actions, recolourSquatters(repo, sorted, unconfigured, claimants)...)
-	creates, converged := converge(repo, sorted, matched)
+	actions = append(actions, recolourSquatters(name, sorted, unconfigured, claimants)...)
+	creates, converged := converge(name, sorted, matched)
 	actions = append(actions, creates...)
 	actions = append(actions, converged...)
 
 	if mode == ModePrune {
-		actions = append(actions, candidates(repo, unconfigured)...)
+		actions = append(actions, candidates(name, unconfigured)...)
 	}
 
-	return RepoPlan{Repo: repo, Actions: actions}
+	return RepoPlan{Repo: name, Actions: actions, IssuesDisabled: issuesDisabled}
 }
 
 // candidates is step 6: every unconfigured label the repository still holds,

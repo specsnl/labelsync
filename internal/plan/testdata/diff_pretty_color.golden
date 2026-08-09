@@ -10,4 +10,9 @@
 [1mspecsnl/example-platform[m
   [38;5;8m=[m  [38;5;8mok[m  (3 labels, no changes)
 
-2 repositories · 1 created · 4 updated · 1 deleted · 4 unchanged
+[1mspecsnl/example-prs-only[m
+  [38;5;8m(issues are disabled — labels still apply to pull requests)[m
+  [38;5;10m+[m  [38;5;10mcreate[m  type: bug       [38;5;167m#d73a4a[m  "Something isn't working"
+  [38;5;8m=[m  [38;5;8mok[m      priority: high
+
+3 repositories · 2 created · 4 updated · 1 deleted · 5 unchanged

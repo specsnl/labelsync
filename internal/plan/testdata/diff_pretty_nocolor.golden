@@ -10,4 +10,9 @@ specsnl/example-website
 specsnl/example-platform
   =  ok  (3 labels, no changes)
 
-2 repositories · 1 created · 4 updated · 1 deleted · 4 unchanged
+specsnl/example-prs-only
+  (issues are disabled — labels still apply to pull requests)
+  +  create  type: bug       #d73a4a  "Something isn't working"
+  =  ok      priority: high
+
+3 repositories · 2 created · 4 updated · 1 deleted · 5 unchanged
