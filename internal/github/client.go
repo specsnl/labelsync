@@ -59,10 +59,12 @@ const (
 type Client struct {
 	rest     *gogithub.Client
 	failures *Failures
+	cache    *cache
 }
 
 // options are the knobs [New] accepts. Zero values mean the production defaults.
 type options struct {
+	cacheDir   string
 	baseURL    string
 	httpClient *http.Client
 	retries    int
@@ -81,6 +83,17 @@ type Option func(*options)
 // path relative to this URL and silently loses the last segment without one.
 func WithBaseURL(raw string) Option {
 	return func(o *options) { o.baseURL = raw }
+}
+
+// WithCacheDir points the ETag cache at a directory, and is what turns caching
+// on: an empty directory — the default — is a client that never reads or writes
+// one. That is how --no-cache arrives, and it is deliberately the absence of a
+// destination rather than a flag threaded through the read path.
+//
+// Production passes labelsync.CacheDir(); a test passes t.TempDir(), which is
+// also what stops a test run from touching the developer's real cache.
+func WithCacheDir(dir string) Option {
+	return func(o *options) { o.cacheDir = dir }
 }
 
 // WithHTTPClient supplies the transport the retry wrapper is layered over.
@@ -157,7 +170,7 @@ func New(token Token, opts ...Option) (*Client, error) {
 
 	slog.Debug("github client built", "token", token, "base_url", rest.BaseURL.String(), "retries", o.retries)
 
-	return &Client{rest: rest, failures: &Failures{}}, nil
+	return &Client{rest: rest, failures: &Failures{}, cache: newCache(o.cacheDir)}, nil
 }
 
 // REST exposes the underlying go-github client, for the request-issuing code in

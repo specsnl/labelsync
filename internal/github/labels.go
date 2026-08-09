@@ -15,6 +15,8 @@ package github
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"net/http"
 	"net/url"
 
 	gogithub "github.com/google/go-github/v76/github"
@@ -45,26 +47,76 @@ type Label struct {
 }
 
 // ListLabels returns every label in the repository, walking every page.
+//
+// # The conditional request
+//
+// When a cached list is available its ETag goes out as If-None-Match, and a 304
+// serves the cached labels **at zero quota cost** — a conditional request that
+// comes back Not Modified does not count against the primary rate limit. That is
+// what makes a repeat dry run over fifty repositories effectively free.
+//
+// Only a **single-page** list is served from cache. An ETag covers the response
+// it came from, which is page one, and a repository with more than a hundred
+// labels can change beyond that page without page one's representation changing
+// at all. Serving that from cache would plan creates for labels that already
+// exist. More than a hundred labels in one repository is rare, so the
+// optimisation keeps the case it is correct for and reads the other one live.
 func (c *Client) ListLabels(ctx context.Context, owner, repo string) ([]Label, error) {
+	key := slug(owner, repo)
+
+	// A miss leaves this empty, which is also what stops the conditional header
+	// from going out. There is no second flag to keep in step with it.
+	var etag string
+
+	cached, hit := c.cache.load(key)
+	if hit && cached.Pages == 1 {
+		etag = cached.ETag
+	}
+
 	var (
-		labels []Label
-		opts   = &gogithub.ListOptions{PerPage: labelsPerPage}
+		labels    []Label
+		pages     int
+		freshETag string
+		opts      = &gogithub.ListOptions{PerPage: labelsPerPage}
 	)
 
 	for {
-		var page []*gogithub.Label
+		var (
+			page        []*gogithub.Label
+			pageETag    string
+			notModified bool
+		)
 
-		err := c.Do(ctx, slug(owner, repo), "list labels", func(ctx context.Context) (*gogithub.Response, error) {
-			var (
-				resp *gogithub.Response
-				err  error
-			)
+		err := c.Do(ctx, key, "list labels", func(ctx context.Context) (*gogithub.Response, error) {
+			req, err := c.rest.NewRequest("GET", labelsPath(owner, repo, opts), nil)
+			if err != nil {
+				return nil, fmt.Errorf("building the label list request: %w", err)
+			}
 
-			page, resp, err = c.rest.Issues.ListLabels(ctx, owner, repo, opts)
+			// Only page one carries the header: the ETag is page one's, and
+			// offering it for page two would ask about a response it never
+			// described.
+			if etag != "" && opts.Page <= 1 {
+				req.Header.Set("If-None-Match", etag)
+			}
 
-			// The next page is read off the response, so the cursor has to move
-			// before the classification below can return.
+			resp, err := c.rest.Do(ctx, req, &page)
+
 			if resp != nil {
+				// Not Modified arrives from go-github as an error, because
+				// anything outside 2xx does. It is the opposite of a failure
+				// here, so it is recognised before the classification and
+				// reported as a hit.
+				if resp.StatusCode == http.StatusNotModified {
+					notModified = true
+
+					return resp, nil
+				}
+
+				pageETag = resp.Header.Get("ETag")
+
+				// The next page is read off the response, so the cursor has to
+				// move before the classification below can return.
 				opts.Page = resp.NextPage
 			}
 
@@ -72,6 +124,21 @@ func (c *Client) ListLabels(ctx context.Context, owner, repo string) ([]Label, e
 		})
 		if err != nil {
 			return nil, err
+		}
+
+		if notModified {
+			slog.Debug("labels served from cache", "repo", key, "labels", len(cached.Labels))
+
+			return cached.Labels, nil
+		}
+
+		pages++
+
+		// Page one's ETag is the one worth keeping, and the conditional header
+		// has now been answered, so it is spent either way.
+		if pages == 1 {
+			freshETag = pageETag
+			etag = ""
 		}
 
 		for _, l := range page {
@@ -83,6 +150,8 @@ func (c *Client) ListLabels(ctx context.Context, owner, repo string) ([]Label, e
 		}
 
 		if opts.Page == 0 {
+			c.cache.save(key, freshETag, pages, labels)
+
 			return labels, nil
 		}
 	}
@@ -183,6 +252,21 @@ func (c *Client) DeleteLabel(ctx context.Context, owner, repo, name string) erro
 
 		return c.rest.Do(ctx, req, nil)
 	})
+}
+
+// labelsPath builds the path of one page of a repository's labels.
+//
+// It is built here rather than through go-github's ListLabels because the
+// conditional request needs the *http.Request in hand to put If-None-Match on
+// it, and go-github does not hand one over.
+func labelsPath(owner, repo string, opts *gogithub.ListOptions) string {
+	path := fmt.Sprintf("repos/%s/%s/labels?per_page=%d", owner, repo, opts.PerPage)
+
+	if opts.Page > 0 {
+		path += fmt.Sprintf("&page=%d", opts.Page)
+	}
+
+	return path
 }
 
 // labelPath builds the path of one label, escaping the name.

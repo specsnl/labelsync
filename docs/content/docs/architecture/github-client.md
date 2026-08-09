@@ -185,6 +185,54 @@ escape, so `UpdateLabel` and `DeleteLabel` build their own escaped paths. Gettin
 `DELETE` destroys something else entirely. Owner and repository names need no escaping, having been
 through `config.ParseRepoRef`'s character set.
 
+## The ETag cache
+
+`internal/github/cache.go` is the single most valuable optimisation in the tool: a conditional
+request that comes back `304 Not Modified` **does not count against the primary rate limit**. Labels
+change rarely, so hit rates are high — which is what makes `sync --dry-run` cheap enough to run on
+every pull request.
+
+`ListLabels` sends the cached `ETag` as `If-None-Match`; a `304` is answered from disk, and the
+labels are never sent again. A `200` stores the new list and its `ETag`.
+
+Entries live under `$XDG_CACHE_HOME/labelsync/`, one file per repository, and carry a **schema
+version**. An entry written by a labelsync whose entry shape meant something else is discarded rather
+than deserialised into the current struct — a new field with a zero value that reads as `false` is
+exactly what the version exists to catch.
+
+The file name is the SHA-256 of the lowercased `owner/repo`, not the reference itself. A repository
+name is not a file name — it carries a slash, and a cache key that can escape its own directory is
+not a cache key. Lowercasing keeps `Owner/Repo` and `owner/repo`, which address the same repository,
+on one entry. The reference is stored *inside* the file, so an entry is still identifiable by eye.
+
+Writes go to a temporary file and are renamed into place, so a run interrupted mid-write leaves the
+previous entry rather than a half-written one for the next run to reject.
+
+### `--no-cache` is the absence of a destination
+
+Caching is on when the client has a cache directory, and `--no-cache` is that directory being empty.
+There is no second flag threaded through the read path to keep in step with it, and a `nil` cache is
+a working cache that never hits and never stores. Under test the directory is `t.TempDir()`, which is
+also what stops a test run from touching the developer's real cache.
+
+### A miss is never an error
+
+Absent, unreadable, corrupt, truncated, or from another schema — all of it is a miss. Nothing in
+`cache.go` returns an error to a caller. The cache is an optimisation, and an optimisation that can
+fail a run is a liability; a miss costs one live request, and the entry is rewritten so the next run
+is a hit again.
+
+### Only a single-page list is served
+
+An `ETag` covers the response it came from, which is **page one**. A repository with more than a
+hundred labels can change beyond page one without page one's representation changing at all, so a
+cached list served there would plan creates for labels that already exist. The entry records how many
+pages the list took, and a multi-page one is always read live. More than 100 labels in one repository
+is rare, so the optimisation keeps the case it is correct for.
+
+For the same reason the header only ever goes out on page one: offering it for page two would ask
+about a response it never described.
+
 ### `github.Label` mirrors `plan.Label`
 
 The planner declares its own `Label`, which is what keeps `internal/plan` free of
