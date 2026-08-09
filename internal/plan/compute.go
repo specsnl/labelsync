@@ -55,6 +55,11 @@ type Label struct {
 // valid and still applied, so this is a warning and never a failure.
 const exhaustionNote = "palette exhausted: no clearly distinct colour remains"
 
+// unconfiguredNote annotates a removal candidate with why it is one: the
+// repository holds the label and the config does not mention it. Like every
+// other reason it is reporting text and never reaches the API.
+const unconfiguredNote = "unconfigured"
+
 // Compute reconciles one repository. It is pure — no network, no clock, no
 // randomness — so the same input always produces byte-identical output.
 //
@@ -76,7 +81,27 @@ const exhaustionNote = "palette exhausted: no clearly distinct colour remains"
 //  3. Creates, for configured labels the repository does not have.
 //  4. Existing configured labels in ascending name order: an update when
 //     colour, description, or casing differs, a no-op when nothing does.
-//  5. Deletes, prune mode only. Not yet implemented.
+//  5. Deletes, prune mode only, in ascending name order.
+//
+// # Modes
+//
+// ModeAppend never emits a delete: whatever the repository holds beyond the
+// configured set is left where it is. ModePrune additionally records every
+// unconfigured label as a removal candidate.
+//
+// A candidate is exactly that. Which candidates are actually deleted is chosen
+// by the caller — an interactive selection, or --prune=all — and the planner
+// takes no part in it, which is what makes prune semantics testable without a
+// terminal.
+//
+// # Repositories the config does not cover
+//
+// An empty desired set means no group resolved to this repository, and such a
+// repository is never touched: Compute returns no actions at all rather than
+// treating every label it holds as unconfigured. This is the tool's primary
+// safety property, and the guard is deliberately on the desired set rather than
+// on how it came to be empty — a repository listed in a group no label opts
+// into is just as uncovered as one no group names.
 //
 // # Renames
 //
@@ -98,9 +123,11 @@ const exhaustionNote = "palette exhausted: no clearly distinct colour remains"
 // the description is "", and converging on that clears whatever the repository
 // has.
 func Compute(repo string, desired []config.Label, current []Label, mode Mode, renames []config.Rename) RepoPlan {
-	// Prune (#28) is not implemented yet: mode is accepted so the signature is
-	// final, and is ignored until it is.
-	_ = mode
+	// The safety property, checked before anything else so that not even a
+	// rename lands on a repository the config does not cover.
+	if len(desired) == 0 {
+		return RepoPlan{Repo: repo}
+	}
 
 	sorted := slices.Clone(desired)
 	slices.SortFunc(sorted, func(a, b config.Label) int { return strings.Compare(a.Name, b.Name) })
@@ -118,7 +145,44 @@ func Compute(repo string, desired []config.Label, current []Label, mode Mode, re
 	actions = append(actions, creates...)
 	actions = append(actions, converged...)
 
+	if mode == ModePrune {
+		actions = append(actions, candidates(repo, unconfigured)...)
+	}
+
 	return RepoPlan{Repo: repo, Actions: actions}
+}
+
+// candidates is step 6: every unconfigured label the repository still holds,
+// recorded as a removal candidate in ascending name order — the order partition
+// already put them in.
+//
+// Every unconfigured label is a candidate, a recoloured squatter included. The
+// recolour and the candidacy answer different questions: the recolour is what
+// has to happen because a configured label wants that colour, and the candidacy
+// is what the user is asked about. Dropping a squatter from the candidate list
+// would make the set of labels offered for removal depend on which colour they
+// happened to be sitting on, which is not a rule anyone could predict.
+//
+// The names are the ones the repository will hold after the rename pass, since
+// unconfigured comes from the rewritten view — a delete is applied last, and by
+// then the rename has landed.
+func candidates(repo string, unconfigured []Label) []Action {
+	if len(unconfigured) == 0 {
+		return nil
+	}
+
+	actions := make([]Action, 0, len(unconfigured))
+
+	for _, u := range unconfigured {
+		actions = append(actions, Action{
+			Kind:   KindDelete,
+			Repo:   repo,
+			Name:   u.Name,
+			Reason: unconfiguredNote,
+		})
+	}
+
+	return actions
 }
 
 // applyRenames is step 1: it emits the renames that can be applied and returns

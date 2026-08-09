@@ -7,9 +7,9 @@ weight: 7
 changes. It is pure — nothing in it touches the network, and it never imports `internal/github`.
 
 What has landed is the **vocabulary** — `Kind`, `Action`, and `Plan`, in `action.go` — the
-**reconciler** in `compute.go`, in append mode and including the rename pass, and the **rendering**
-of a plan in `render.go`. Prune is still
-[design.md § Reconciliation algorithm](https://github.com/specsnl/labelsync/blob/main/docs/design.md#reconciliation-algorithm).
+**reconciler** in `compute.go`, both modes and including the rename pass, and the **rendering** of a
+plan in `render.go`. What the planner does not do is decide which removal candidates are actually
+removed: that is a prompt, and it belongs to the command.
 
 ## The types
 
@@ -144,8 +144,8 @@ design says elsewhere:
 - **Returns `RepoPlan`, not `Plan`.** `Compute` reconciles *one* repository. A run assembles the
   `Plan` from the per-repository results, in the order its repositories were resolved.
 
-`Mode` is `append` or `prune`. `mode` is accepted but not yet acted on — prune lands next, and having
-the parameter now means it is a change to the function rather than to every call site.
+`Mode` is `append` or `prune`, and `append` is the default. The difference is the last step and
+nothing else: see [Prune](#prune).
 
 ### `Label`
 
@@ -181,7 +181,8 @@ also why `config.Label.Description` can be a plain string while `Action.Descript
    their configured colour, which is already reserved.
 5. **Converge.** The configured labels in ascending name order: `create` when the repository does
    not have one, `update` when colour, description, or casing differs, `noop` when nothing does.
-6. **Prune.** Prune mode only, and still to come.
+6. **Prune.** Prune mode only: every label still unconfigured becomes a `delete` — a removal
+   *candidate* — in ascending name order. See [Prune](#prune).
 
 ### Order
 
@@ -191,7 +192,7 @@ also why `config.Label.Description` can be a plain string while `Action.Descript
 | 2        | Squatter recolours, in ascending name order                                       |
 | 3        | Creates, in ascending name order                                                  |
 | 4        | Existing configured labels — updates and no-ops interleaved, ascending name order |
-| 5        | Deletes — prune mode only, *still to come*                                        |
+| 5        | Deletes — prune mode only, in ascending name order                                |
 
 Recolours precede the create or update that claims the colour so that a run aborting mid-repository
 never leaves a configured label sharing its colour with a label that was supposed to have moved off
@@ -264,6 +265,53 @@ in a repository is not drift against `d73a4a` in the config, and a squatter is s
 it. Whether what remains is valid hex is
 [config validation's](./configuration.md) question; here an unparseable colour simply never matches
 and never enters a colour set.
+
+### Prune
+
+`append` — the default — never emits a `delete`. Whatever a repository holds beyond the configured
+set is left where it is, recoloured if it is squatting on a reserved colour and otherwise untouched.
+A test asserts this rather than trusting it, over fixtures that are separately checked to produce
+deletes under `prune`, so a fixture that stops provoking one cannot quietly turn the assertion into a
+test of nothing.
+
+`prune` adds the last step and changes nothing else: every label still unconfigured after the rename
+pass becomes a `delete` carrying `Reason: "unconfigured"`, in ascending name order, behind every
+other action.
+
+**The planner only ever produces candidates.** Which of them are actually deleted is decided by the
+caller — an interactive `huh.MultiSelect`, or `--prune=all` — and `Compute` takes no part in that.
+Keeping the split here is what makes prune semantics unit-testable with two slices and no terminal.
+The `plan → select → apply` shape also means the selection can drop actions from a plan without the
+plan having to be recomputed.
+
+A recoloured squatter is **still a candidate**, and appears in the same plan twice: once as the
+recolour, once as the removal candidate. The two answer different questions. The recolour is what has
+to happen because a configured label wants that colour; the candidacy is what the user is asked
+about. Dropping squatters from the candidate list would make the set of labels offered for removal
+depend on which colour they happened to be sitting on — not a rule anyone could predict from the
+config. If the candidate is accepted, the recolour was a wasted `PATCH` before the `DELETE`; that is
+the price of the split, and it is one API call against a label that is being deleted anyway.
+
+Candidate names are the ones the repository will hold **after** the rename pass, because the
+unconfigured set comes from the rewritten view. A label renamed to a name the config still does not
+mention is a candidate under its new name, which is also the name the delete will be applied to.
+
+### A repository the config does not cover
+
+An empty `desired` set means no group resolved to this repository, and `Compute` returns **no actions
+at all** — not a plan that deletes everything the repository holds. It returns before the rename
+pass, so an uncovered repository is not touched in either mode.
+
+This is the tool's primary safety property, and it is the single most dangerous thing to get wrong:
+the failure mode is a plan that offers to remove every label from a repository that was never meant
+to be in scope. The guard sits on the desired set rather than on *why* it is empty, so a repository
+listed in a group no label opts into is as uncovered as one no group names, and there is no path by
+which a resolution bug upstream turns into a mass deletion here. A test runs both modes against a
+repository full of labels, with a rename configured, and asserts the plan is empty.
+
+The same rule holds one level up in
+[config validation](./configuration.md): an empty config is rejected outright, so "no labels
+configured anywhere" never reaches the planner at all.
 
 ## Rendering
 
@@ -386,8 +434,12 @@ the core suite, `(desired, current) → expected actions`:
 | `Plan` round trip                     | Grouping, plus repository and action order                 |
 | marshalling the same plan twice       | Stable bytes — why `Repos` is a slice                      |
 | `Plan{}`                              | That an empty plan is `{"repos":null}` and reads back nil  |
-| `Compute`, twenty-four scenarios      | Creates, no-ops, every drift axis, squatters, action order |
+| `Compute`, thirty-one scenarios       | Creates, no-ops, every drift axis, squatters, action order |
 | eight rename rows                     | Emit-then-rewrite, both skips, casing, and the ordering    |
+| seven prune rows                      | Candidates and their order, and that deletes sort last     |
+| append over delete-provoking fixtures | That `append` never emits a `delete`, in any shape         |
+| an empty `desired`, both modes        | The safety property: an uncovered repository is untouched  |
+| a prune applied, then recomputed      | Convergence: the pruned repository has nothing left to do  |
 | a rename applied, then recomputed     | Convergence: the second run has nothing to do              |
 | a chained rename                      | That the planner does not lean on validation rejecting it  |
 | description clearing                  | That an omitted description emits `new("")`, not `nil`     |
@@ -431,4 +483,7 @@ Goldens live in `internal/plan/testdata/` and are regenerated with `task test:up
 
 ## Still to come
 
-Prune.
+The selection half of prune: the `--mode` and `--prune` flags, the interactive `huh.MultiSelect`
+over the candidates, and the non-TTY guard that turns `prune` without `--prune=all` into an error
+rather than a hung prompt. All of it sits above `internal/plan`, which hands it a plan and is
+finished.
