@@ -129,9 +129,11 @@ included — which is what stops a re-run from churning the squatters the last r
 
 ### The signature, and where it departs from the design sketch
 
-Three differences from
-[design.md](https://github.com/specsnl/labelsync/blob/main/docs/design.md#reconciliation-algorithm),
-each of them forced by something the design says elsewhere:
+The design originally sketched
+`Compute(desired []config.Label, current []github.Label, mode Mode, renames []Rename) Plan`.
+[design.md](https://github.com/specsnl/labelsync/blob/main/docs/design.md#reconciliation-algorithm)
+now carries the signature below instead; three things moved, each of them forced by something the
+design says elsewhere:
 
 - **`current []Label`, not `[]github.Label`.** The planner never imports `internal/github`, so the
   remote half of the input is a plain struct this package declares. Translating an API response into
