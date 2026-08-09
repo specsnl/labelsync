@@ -43,13 +43,13 @@ labelsync/
 | `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                        |
 | `internal/cmd`         | partial | Root command, `App`, persistent flags, `version`                               |
 | `internal/config`      | partial | Resolution, YAML load, normalisation — see [Configuration](./configuration.md) |
-| `internal/palette`     | partial | The candidate grid — see [Colour Palette](./palette.md)                        |
+| `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette](./palette.md)         |
 | everything else        | planned | See the milestone table in the design plan                                     |
 
 ### Why `plan` and `palette` are isolated
 
 Neither imports `internal/github`. `plan.Compute` takes plain structs and returns plain structs;
-`palette.Allocate` takes colours and returns a colour. Two consequences:
+`palette.Allocate` takes colours and returns one. Two consequences:
 
 1. The interesting logic — group resolution, prune semantics, colour allocation, determinism — is
    testable with table-driven stdlib tests and zero HTTP mocking.
