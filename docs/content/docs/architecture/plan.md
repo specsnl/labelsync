@@ -7,8 +7,8 @@ weight: 7
 changes. It is pure — nothing in it touches the network, and it never imports `internal/github`.
 
 What has landed is the **vocabulary** — `Kind`, `Action`, and `Plan`, in `action.go` — the
-**reconciler** in `compute.go`, in append mode, and the **rendering** of a plan in `render.go`.
-Renames and prune are still
+**reconciler** in `compute.go`, in append mode and including the rename pass, and the **rendering**
+of a plan in `render.go`. Prune is still
 [design.md § Reconciliation algorithm](https://github.com/specsnl/labelsync/blob/main/docs/design.md#reconciliation-algorithm).
 
 ## The types
@@ -144,9 +144,8 @@ design says elsewhere:
 - **Returns `RepoPlan`, not `Plan`.** `Compute` reconciles *one* repository. A run assembles the
   `Plan` from the per-repository results, in the order its repositories were resolved.
 
-`Mode` is `append` or `prune`. `mode` and `renames` are accepted but not yet acted on — the rename
-pass and prune land next, and having the parameters now means they are a change to the function
-rather than to every call site.
+`Mode` is `append` or `prune`. `mode` is accepted but not yet acted on — prune lands next, and having
+the parameter now means it is a change to the function rather than to every call site.
 
 ### `Label`
 
@@ -163,29 +162,32 @@ also why `config.Label.Description` can be a plain string while `Action.Descript
 
 ### What it does
 
-1. **Partition.** Every remote label is matched against the configured set by name,
+1. **Rename.** Each configured `{from, to}` is applied to a local copy of the repository's labels, so
+   everything after this step reasons about the names the repository *will* hold. See
+   [Renames](#renames) below.
+2. **Partition.** Every remote label is matched against the configured set by name,
    *case-insensitively*: GitHub rejects two labels whose names differ only in case, so `Bug` and
    `bug` are one label wearing different casing rather than two labels. What matches is *matched*;
    what does not is *unconfigured*.
-2. **Reserve.** Every configured colour is reserved, mapped to the configured label that owns it.
+3. **Reserve.** Every configured colour is reserved, mapped to the configured label that owns it.
    Two configured labels may share a colour; the first in ascending name order is the one credited
    in a `Reason`, which keeps the text deterministic without changing the recolour.
-3. **Recolour squatters.** An unconfigured label sitting on a reserved colour is displaced. In
+4. **Recolour squatters.** An unconfigured label sitting on a reserved colour is displaced. In
    ascending name order, each one is given
    [`palette.Allocate(used, reserved)`](./palette.md#the-allocation-rule) and the result is fed back
    into `used` — the allocator is stateless, and feeding it back is the only thing stopping two
    squatters from being handed the same colour. `used` starts as the colours of the unconfigured
    labels that are staying put; matched labels contribute nothing, because they are about to hold
    their configured colour, which is already reserved.
-4. **Converge.** The configured labels in ascending name order: `create` when the repository does
+5. **Converge.** The configured labels in ascending name order: `create` when the repository does
    not have one, `update` when colour, description, or casing differs, `noop` when nothing does.
-5. **Prune.** Prune mode only, and still to come.
+6. **Prune.** Prune mode only, and still to come.
 
 ### Order
 
 | Position | Actions                                                                           |
 |----------|-----------------------------------------------------------------------------------|
-| 1        | Renames — *still to come*                                                         |
+| 1        | Renames, in the order the config declares them                                    |
 | 2        | Squatter recolours, in ascending name order                                       |
 | 3        | Creates, in ascending name order                                                  |
 | 4        | Existing configured labels — updates and no-ops interleaved, ascending name order |
@@ -199,6 +201,45 @@ not validity.
 Updates and no-ops share one run rather than being separated, because both are outcomes for a label
 that already exists and a no-op is never sent to the API. Keeping them together means a report reads
 straight down the configured labels in name order.
+
+### Renames
+
+A configured rename becomes an `update` carrying `NewName`, which the applier sends as a `PATCH`.
+That is the whole reason renames are a first-class concept: a `PATCH` with `new_name` preserves the
+label's issue and pull-request associations, and a delete followed by a create does not.
+
+They run **first**, and the planner rewrites its own copy of the repository's labels as it goes, so
+partitioning, squatter detection, and convergence all see the new names. Two things follow from that
+ordering:
+
+- A label that was going to be renamed onto a configured name is *matched*, not treated as an
+  unconfigured squatter sitting on that label's colour. Without the rename pass it would be
+  recoloured and the configured label created next to it.
+- A rename plus a recolour of the same label collapses into two coherent steps —
+  `bug → type: bug`, then a colour update against `type: bug` — rather than a delete and a create.
+
+A rename is emitted **only** when `from` exists and `to` does not, both compared case-insensitively.
+Either check failing skips the entry **silently**:
+
+| Situation                         | Why skipping is right                                                     |
+|-----------------------------------|---------------------------------------------------------------------------|
+| `from` is absent                  | Already applied, or this repo never had the label — a no-op, not an error |
+| `to` already exists               | The `PATCH` would be a `422 already_exists`, exactly as a create would    |
+| `to` exists in a different casing | Same `422`: GitHub's name uniqueness is case-insensitive                  |
+
+Silence is what makes the tool convergent. Re-running an applied rename finds no `from`, produces no
+actions, and the second run of a converged repository is empty — which is the property the whole
+design leans on.
+
+The existence checks run against the **rewritten** view rather than a snapshot of what the API
+returned. Chained renames (`a → b`, `b → c`) are
+[rejected by config validation](./configuration.md), but the planner does not depend on that holding:
+reading the live view means the second entry sees the name the first produced, so a chain resolves to
+`c` in one run instead of two actions fighting over `b`. A half-empty entry is ignored for the same
+defensive reason — renaming a label to `""` is not a request the API can honour.
+
+The copy is a copy: the caller's `current` slice is never rewritten, because those are the labels
+read back from the API and a caller may well still be using them.
 
 ### Casing drift is a rename
 
@@ -345,7 +386,10 @@ the core suite, `(desired, current) → expected actions`:
 | `Plan` round trip                     | Grouping, plus repository and action order                 |
 | marshalling the same plan twice       | Stable bytes — why `Repos` is a slice                      |
 | `Plan{}`                              | That an empty plan is `{"repos":null}` and reads back nil  |
-| `Compute`, fifteen scenarios          | Creates, no-ops, every drift axis, squatters, action order |
+| `Compute`, twenty-four scenarios      | Creates, no-ops, every drift axis, squatters, action order |
+| eight rename rows                     | Emit-then-rewrite, both skips, casing, and the ordering    |
+| a rename applied, then recomputed     | Convergence: the second run has nothing to do              |
+| a chained rename                      | That the planner does not lean on validation rejecting it  |
 | description clearing                  | That an omitted description emits `new("")`, not `nil`     |
 | casing drift                          | That it travels as `NewName` against the current name      |
 | two squatters                         | Name order, and that they never receive the same colour    |
@@ -353,6 +397,7 @@ the core suite, `(desired, current) → expected actions`:
 | a reserved-and-used colour set        | That a recolour avoids both halves of the allocator input  |
 | the whole candidate grid reserved     | That exhaustion still recolours, and says so in `Reason`   |
 | computing twice over one `desired`    | That `Compute` does not reorder the caller's slice         |
+| computing over one `current`          | That the rename pass rewrites a copy, not the caller's     |
 
 The round-trip comparisons use `reflect.DeepEqual`, which follows pointers: it compares the
 pointed-to strings and, separately, nil against non-nil — exactly the distinction the pointer fields
@@ -386,4 +431,4 @@ Goldens live in `internal/plan/testdata/` and are regenerated with `task test:up
 
 ## Still to come
 
-The rename pass and prune.
+Prune.

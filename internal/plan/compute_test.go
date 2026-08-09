@@ -26,6 +26,7 @@ func TestCompute(t *testing.T) {
 		name    string
 		desired []config.Label
 		current []Label
+		renames []config.Rename
 		want    []Action
 	}{
 		{
@@ -183,11 +184,105 @@ func TestCompute(t *testing.T) {
 				{Kind: KindNoOp, Repo: repo, Name: "c: unchanged"},
 			},
 		},
+		{
+			// Without the rename, "bug" is unconfigured and sitting on a
+			// reserved colour, so it would be recoloured as a squatter and
+			// "type: bug" created alongside it.
+			name:    "a rename is emitted before matching, so the label is matched and not squatting",
+			desired: []config.Label{{Name: "type: bug", Color: "d73a4a", Description: "A defect"}},
+			current: []Label{{Name: "bug", Color: "d73a4a", Description: "A defect"}},
+			renames: []config.Rename{{From: "bug", To: "type: bug"}},
+			want: []Action{
+				{Kind: KindUpdate, Repo: repo, Name: "bug", NewName: new("type: bug")},
+				{Kind: KindNoOp, Repo: repo, Name: "type: bug"},
+			},
+		},
+		{
+			name:    "a rename matches the remote name case-insensitively",
+			desired: []config.Label{{Name: "type: bug", Color: "d73a4a"}},
+			current: []Label{{Name: "BUG", Color: "d73a4a"}},
+			renames: []config.Rename{{From: "bug", To: "type: bug"}},
+			want: []Action{
+				{Kind: KindUpdate, Repo: repo, Name: "BUG", NewName: new("type: bug")},
+				{Kind: KindNoOp, Repo: repo, Name: "type: bug"},
+			},
+		},
+		{
+			name:    "a rename and a recolour of one label are two coherent steps",
+			desired: []config.Label{{Name: "type: bug", Color: "d73a4a", Description: "A defect"}},
+			current: []Label{{Name: "bug", Color: "1d76db", Description: "Something is broken"}},
+			renames: []config.Rename{{From: "bug", To: "type: bug"}},
+			want: []Action{
+				{Kind: KindUpdate, Repo: repo, Name: "bug", NewName: new("type: bug")},
+				{Kind: KindUpdate, Repo: repo, Name: "type: bug", Color: new("d73a4a"), Description: new("A defect")},
+			},
+		},
+		{
+			name:    "a rename whose source is absent is skipped silently",
+			desired: []config.Label{{Name: "type: bug", Color: "d73a4a"}},
+			current: []Label{{Name: "type: bug", Color: "d73a4a"}},
+			renames: []config.Rename{{From: "bug", To: "type: bug"}},
+			want: []Action{
+				{Kind: KindNoOp, Repo: repo, Name: "type: bug"},
+			},
+		},
+		{
+			name:    "a rename whose target already exists is skipped, and the source is left alone",
+			desired: []config.Label{{Name: "type: bug", Color: "d73a4a"}},
+			current: []Label{
+				{Name: "bug", Color: "ffffff"},
+				{Name: "type: bug", Color: "d73a4a"},
+			},
+			renames: []config.Rename{{From: "bug", To: "type: bug"}},
+			want: []Action{
+				{Kind: KindNoOp, Repo: repo, Name: "type: bug"},
+			},
+		},
+		{
+			name:    "a rename whose target exists in another casing is skipped too",
+			desired: []config.Label{{Name: "type: bug", Color: "d73a4a"}},
+			current: []Label{
+				{Name: "bug", Color: "ffffff"},
+				{Name: "TYPE: BUG", Color: "d73a4a"},
+			},
+			renames: []config.Rename{{From: "bug", To: "type: bug"}},
+			want: []Action{
+				{Kind: KindUpdate, Repo: repo, Name: "TYPE: BUG", NewName: new("type: bug")},
+			},
+		},
+		{
+			name: "renames are emitted before every other action",
+			desired: []config.Label{
+				{Name: "type: bug", Color: "d73a4a"},
+				{Name: "type: chore", Color: "1d76db"},
+			},
+			current: []Label{
+				{Name: "bug", Color: "ffffff"},
+				{Name: "wontfix", Color: "1d76db"},
+			},
+			renames: []config.Rename{{From: "bug", To: "type: bug"}},
+			want: []Action{
+				{Kind: KindUpdate, Repo: repo, Name: "bug", NewName: new("type: bug")},
+				{Kind: KindUpdate, Repo: repo, Name: "wontfix", Color: new("a4ec13"), Reason: `displaced by "type: chore"`},
+				{Kind: KindCreate, Repo: repo, Name: "type: chore", Color: new("1d76db"), Description: new("")},
+				{Kind: KindUpdate, Repo: repo, Name: "type: bug", Color: new("d73a4a")},
+			},
+		},
+		{
+			name:    "a half-empty rename is ignored",
+			desired: []config.Label{{Name: "type: bug", Color: "d73a4a"}},
+			current: []Label{{Name: "bug", Color: "d73a4a"}},
+			renames: []config.Rename{{From: "bug"}, {To: "type: bug"}},
+			want: []Action{
+				{Kind: KindUpdate, Repo: repo, Name: "bug", Color: new("13ec13"), Reason: `displaced by "type: bug"`},
+				{Kind: KindCreate, Repo: repo, Name: "type: bug", Color: new("d73a4a"), Description: new("")},
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := Compute(repo, tt.desired, tt.current, ModeAppend, nil)
+			got := Compute(repo, tt.desired, tt.current, ModeAppend, tt.renames)
 
 			if got.Repo != repo {
 				t.Errorf("repo = %q, want %q", got.Repo, repo)
@@ -213,6 +308,73 @@ func TestComputeDoesNotMutateInput(t *testing.T) {
 
 	if desired[0].Name != "type: feature" {
 		t.Errorf("desired was reordered: %v", desired)
+	}
+}
+
+// TestComputeRenameIsConvergent is what makes re-running the tool safe: once a
+// rename has been applied, the same config against the renamed repository has
+// nothing left to do. Applying the plan is simulated rather than mocked — the
+// planner is pure, so the second run only needs the labels the first one would
+// have produced.
+func TestComputeRenameIsConvergent(t *testing.T) {
+	desired := []config.Label{{Name: "type: bug", Color: "d73a4a", Description: "A defect"}}
+	renames := []config.Rename{{From: "bug", To: "type: bug"}}
+	current := []Label{{Name: "bug", Color: "1d76db", Description: "Something is broken"}}
+
+	first := Compute(repo, desired, current, ModeAppend, renames).Actions
+	if len(first) == 0 {
+		t.Fatal("the first run should have had work to do")
+	}
+
+	applied := []Label{{Name: "type: bug", Color: "d73a4a", Description: "A defect"}}
+
+	want := []Action{{Kind: KindNoOp, Repo: repo, Name: "type: bug"}}
+	if got := Compute(repo, desired, applied, ModeAppend, renames).Actions; !reflect.DeepEqual(got, want) {
+		t.Errorf("re-running produced\n%s\nwant\n%s", format(got), format(want))
+	}
+}
+
+// TestComputeChainedRenames pins what the planner does with a chain a→b→c.
+// config validation rejects one, but the planner must not quietly depend on
+// that: renaming against the rewritten view means the second entry sees the name
+// the first one produced, so the chain resolves to c instead of two actions
+// fighting over b.
+func TestComputeChainedRenames(t *testing.T) {
+	desired := []config.Label{{Name: "type: bug", Color: "d73a4a"}}
+	renames := []config.Rename{{From: "defect", To: "bug"}, {From: "bug", To: "type: bug"}}
+	current := []Label{{Name: "defect", Color: "d73a4a"}}
+
+	want := []Action{
+		{Kind: KindUpdate, Repo: repo, Name: "defect", NewName: new("bug")},
+		{Kind: KindUpdate, Repo: repo, Name: "bug", NewName: new("type: bug")},
+		{Kind: KindNoOp, Repo: repo, Name: "type: bug"},
+	}
+
+	got := Compute(repo, desired, current, ModeAppend, renames).Actions
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("actions =\n%s\nwant\n%s", format(got), format(want))
+	}
+
+	// And the chain converges: nothing is left to do against the result.
+	applied := []Label{{Name: "type: bug", Color: "d73a4a"}}
+
+	settled := []Action{{Kind: KindNoOp, Repo: repo, Name: "type: bug"}}
+	if again := Compute(repo, desired, applied, ModeAppend, renames).Actions; !reflect.DeepEqual(again, settled) {
+		t.Errorf("re-running the chain produced\n%s\nwant\n%s", format(again), format(settled))
+	}
+}
+
+// TestComputeDoesNotMutateCurrent guards the rename pass's clone: rewriting the
+// local view in place would rename the caller's labels, which are the ones read
+// back from the API and may well be reused for reporting.
+func TestComputeDoesNotMutateCurrent(t *testing.T) {
+	current := []Label{{Name: "bug", Color: "d73a4a"}}
+
+	Compute(repo, []config.Label{{Name: "type: bug", Color: "d73a4a"}}, current,
+		ModeAppend, []config.Rename{{From: "bug", To: "type: bug"}})
+
+	if current[0].Name != "bug" {
+		t.Errorf("current was rewritten: %v", current)
 	}
 }
 

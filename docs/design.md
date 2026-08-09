@@ -277,10 +277,10 @@ Pure function, no I/O:
 func Compute(repo string, desired []config.Label, current []plan.Label, mode Mode, renames []config.Rename) RepoPlan
 ```
 
-**Partly landed** ([#26](https://github.com/specsnl/labelsync/issues/26)) — steps 2 to 5, append
-mode. Renames ([#27](https://github.com/specsnl/labelsync/issues/27)) and prune
-([#28](https://github.com/specsnl/labelsync/issues/28)) are still to come; both parameters are
-already in the signature, so they land as a change to that function rather than to every call site.
+**Partly landed** ([#26](https://github.com/specsnl/labelsync/issues/26),
+[#27](https://github.com/specsnl/labelsync/issues/27)) — steps 1 to 5, append mode. Prune
+([#28](https://github.com/specsnl/labelsync/issues/28)) is still to come; the `mode` parameter is
+already in the signature, so it lands as a change to that function rather than to every call site.
 
 The signature above is the one that was built, and it is not the one this section originally
 sketched. That sketch read
@@ -311,6 +311,10 @@ same `422 already_exists` it uses for creates, so a rename to `Bug` fails when t
 holds `bug`. Skipping the rename when `to` already exists — compared case-insensitively — is what
 keeps that unreachable. A case-only *drift* (step 5) can never collide this way, since the only
 label its target can match is the label being renamed itself.
+
+**Landed** ([#27](https://github.com/specsnl/labelsync/issues/27)) — the rename pass, including why
+skipping is silent and what the planner does with a chain validation would have rejected, is in
+[Architecture § Renames](./content/docs/architecture/plan.md#renames).
 
 ### Steps
 
