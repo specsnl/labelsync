@@ -40,15 +40,15 @@ against every repository in the set.
 only thing that calls it. Everything downstream reasons about `ErrRepoInaccessible` and
 `IsAlreadyExists` instead.
 
-| What came back                       | Classified as                                  | The run                  |
-|--------------------------------------|------------------------------------------------|--------------------------|
-| `403` archived, or no permission     | `RepoError` → `repo_inaccessible`              | continues, repo skipped  |
-| `404` renamed, deleted, or invisible | `RepoError` → `repo_inaccessible`              | continues, repo skipped  |
-| `410` gone                           | `RepoError` → `repo_inaccessible`              | continues, repo skipped  |
-| `422` with `already_exists`          | `IsAlreadyExists` — a create becomes an update | continues                |
-| Rate limit, primary or secondary     | passed through, typed                          | waits — see `ratelimit/` |
-| Cancelled context                    | passed through                                 | stops                    |
-| Anything else (`401`, `5xx`, …)      | passed through                                 | fails                    |
+| What came back                       | Classified as                                  | The run                                         |
+|--------------------------------------|------------------------------------------------|-------------------------------------------------|
+| `403` archived, or no permission     | `RepoError` → `repo_inaccessible`              | continues, repo skipped                         |
+| `404` renamed, deleted, or invisible | `RepoError` → `repo_inaccessible`              | continues, repo skipped                         |
+| `410` gone                           | `RepoError` → `repo_inaccessible`              | continues, repo skipped                         |
+| `422` with `already_exists`          | `IsAlreadyExists` — a create becomes an update | continues                                       |
+| Rate limit, primary or secondary     | passed through, typed                          | waits — see [Rate Limiting](./rate-limiting.md) |
+| Cancelled context                    | passed through                                 | stops                                           |
+| Anything else (`401`, `5xx`, …)      | passed through                                 | fails                                           |
 
 `RepoError` wraps `ErrRepoInaccessible`, so `errors.Is` matches it and `KindOf` renders
 `repo_inaccessible` through the struct, while its fields carry what a summary line needs.
