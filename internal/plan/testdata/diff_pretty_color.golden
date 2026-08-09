@@ -1,0 +1,13 @@
+[1mspecsnl/example-website[m
+  [38;5;11m~[m  [38;5;11mupdate[m    bug → type: bug
+  [38;5;11m~[m  [38;5;11mrecolour[m  wontfix          [38;5;38m#16a3c4[m                             [38;5;8m(displaced by "type: bug")[m
+  [38;5;10m+[m  [38;5;10mcreate[m    type: bug        [38;5;167m#d73a4a[m  "Something isn't working"
+  [38;5;11m~[m  [38;5;11mupdate[m    type: feature    [38;5;28m#0e8a16[m
+  [38;5;11m~[m  [38;5;11mupdate[m    priority: low             ""
+  [38;5;8m=[m  [38;5;8mok[m        priority: high
+  [38;5;9m-[m  [38;5;9mdelete[m    old-label                                            [38;5;8m(unconfigured)[m
+
+[1mspecsnl/example-platform[m
+  [38;5;8m=[m  [38;5;8mok[m  (3 labels, no changes)
+
+2 repositories · 1 created · 4 updated · 1 deleted · 4 unchanged

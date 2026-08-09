@@ -82,6 +82,16 @@ type Writer interface {
 	// it came from.
 	WriteTable(t TableData)
 
+	// WriteDiff renders a prepared diff on stdout. Pretty output writes the
+	// assembled text; JSON output emits one object per record and ignores the
+	// text entirely, so the stdout stream stays one typed object per line.
+	//
+	// This is the third product-level method, and it exists because a diff is
+	// neither a table nor a single value: it is grouped, ragged, and ends in a
+	// summary. Call `plan.Render` rather than this — the vocabulary of actions
+	// belongs to the planner, not to output.
+	WriteDiff(d DiffData)
+
 	// WriteResult renders a single-line result on stdout: the product of a
 	// command whose answer is not a table. Pretty output writes the formatted
 	// text; JSON output marshals record and ignores the text entirely, so the
@@ -158,6 +168,12 @@ func (w *PrettyWriter) WriteErr(err error) {
 // are ignored: a human reads the cells.
 func (w *PrettyWriter) WriteTable(t TableData) {
 	fmt.Fprintln(w.stdout, RenderTable(t.Headers, t.Cells))
+}
+
+// WriteDiff writes the assembled diff text on stdout. The records are ignored:
+// a human reads the rendering, not the objects behind it.
+func (w *PrettyWriter) WriteDiff(d DiffData) {
+	fmt.Fprintln(w.stdout, d.Text)
 }
 
 // WriteResult writes the formatted text on stdout. The record is ignored: a
@@ -245,6 +261,19 @@ func (w *JSONWriter) WriteErr(err error) {
 // ignored here — they are the human's rendering of the same rows.
 func (w *JSONWriter) WriteTable(t TableData) {
 	for _, record := range t.Records {
+		writeJSONLine(w.stdout, record)
+	}
+}
+
+// WriteDiff emits one object per record on stdout — one action per line, then
+// the summary. Not a single document: a killed run leaves everything written so
+// far still parseable, which is the whole reason the stream is NDJSON.
+//
+// The assembled text is ignored. It is the human's rendering of the same
+// records, and splicing it into the data stream is what puts a line on stdout
+// that `jq` cannot type.
+func (w *JSONWriter) WriteDiff(d DiffData) {
+	for _, record := range d.Records {
 		writeJSONLine(w.stdout, record)
 	}
 }

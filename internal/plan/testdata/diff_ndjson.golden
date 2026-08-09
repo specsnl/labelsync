@@ -1,0 +1,11 @@
+{"kind":"update","repo":"specsnl/example-website","name":"bug","new_name":"type: bug"}
+{"kind":"update","repo":"specsnl/example-website","name":"wontfix","color":"16a3c4","reason":"displaced by \"type: bug\""}
+{"kind":"create","repo":"specsnl/example-website","name":"type: bug","color":"d73a4a","description":"Something isn't working"}
+{"kind":"update","repo":"specsnl/example-website","name":"type: feature","color":"0e8a16"}
+{"kind":"update","repo":"specsnl/example-website","name":"priority: low","description":""}
+{"kind":"noop","repo":"specsnl/example-website","name":"priority: high"}
+{"kind":"delete","repo":"specsnl/example-website","name":"old-label","reason":"unconfigured"}
+{"kind":"noop","repo":"specsnl/example-platform","name":"type: bug"}
+{"kind":"noop","repo":"specsnl/example-platform","name":"type: feature"}
+{"kind":"noop","repo":"specsnl/example-platform","name":"priority: high"}
+{"kind":"summary","repositories":2,"created":1,"updated":4,"deleted":1,"unchanged":4}

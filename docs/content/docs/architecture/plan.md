@@ -6,8 +6,9 @@ weight: 7
 `internal/plan` turns "these labels are configured" and "these labels exist" into an ordered list of
 changes. It is pure — nothing in it touches the network, and it never imports `internal/github`.
 
-What has landed is the **vocabulary** — `Kind`, `Action`, and `Plan`, in `action.go` — and the
-**reconciler** in `compute.go`, in append mode. Renames and prune are still
+What has landed is the **vocabulary** — `Kind`, `Action`, and `Plan`, in `action.go` — the
+**reconciler** in `compute.go`, in append mode, and the **rendering** of a plan in `render.go`.
+Renames and prune are still
 [design.md § Reconciliation algorithm](https://github.com/specsnl/labelsync/blob/main/docs/design.md#reconciliation-algorithm).
 
 ## The types
@@ -223,6 +224,113 @@ it. Whether what remains is valid hex is
 [config validation's](./configuration.md) question; here an unparseable colour simply never matches
 and never enters a colour set.
 
+## Rendering
+
+`render.go` projects a plan into the two things a user can read. One call picks between them,
+because which one lands is the writer's business and not the caller's:
+
+```go
+plan.Render(app.Out, p)
+```
+
+Both renderings come out of one pass over the plan. `plan.Diff(p)` returns the same
+[`output.DiffData`](./output.md#a-diff-is-neither-a-table-nor-a-value) without writing it, for a test
+or for a future `plan -o file` that wants the records with no writer in hand.
+
+### The pretty diff
+
+```text
+specsnl/example-website
+  ~  update    bug → type: bug
+  ~  recolour  wontfix          #16a3c4                             (displaced by "type: bug")
+  +  create    type: bug        #d73a4a  "Something isn't working"
+  ~  update    type: feature    #0e8a16
+  ~  update    priority: low             ""
+  =  ok        priority: high
+  -  delete    old-label                                            (unconfigured)
+
+specsnl/example-platform
+  =  ok  (3 labels, no changes)
+
+2 repositories · 1 created · 4 updated · 1 deleted · 4 unchanged
+```
+
+A block per repository, indented two spaces under its heading, aligned by
+[`output.RenderColumns`](./output.md#table-rendering) into six columns: gutter, verb, name, colour,
+description, reason. Every row carries all six cells even when they are empty, so the reason column
+starts at the same offset whether or not the rows above it set a description.
+
+| Gutter | Verb       | Is                                                                |
+|--------|------------|-------------------------------------------------------------------|
+| `+`    | `create`   | `KindCreate`                                                      |
+| `~`    | `update`   | `KindUpdate` — a rename, a recolour, a description change         |
+| `~`    | `recolour` | `KindUpdate` changing only the colour **and** carrying a `Reason` |
+| `-`    | `delete`   | `KindDelete`                                                      |
+| `=`    | `ok`       | `KindNoOp`                                                        |
+| `?`    | *the kind* | A kind this build does not know — only reachable from a plan file |
+
+`recolour` is the [displaced squatter](https://github.com/specsnl/labelsync/blob/main/docs/design.md#steps):
+nobody configured it, and the `Reason` next to it is what makes the change make sense. That is the
+one thing separating it from an ordinary recolour of a configured label, which is why the verb is
+derived from the reason rather than from the fields alone.
+
+Three details that are decisions rather than formatting:
+
+- **A cleared description renders as `""`.** A blank cell means *unchanged*, which is the one thing a
+  `Description: new("")` is not.
+- **A rename shows the transition** — `bug → type: bug` — because `Name` is the lookup key and
+  `NewName` is what the API will store. Both matter to a reader.
+- **The colour is rendered in the colour itself**, so a column of hex codes is scannable. It degrades
+  with the stream like every other style.
+
+The colour cell shows the **new** colour only, not `#1d76db → #0e8a16`. An `Action` carries the
+change, not the state it replaces, and the renderer has no second source to diff against. If the
+before-colour is wanted in the diff later, it has to arrive as a field on `Action` — filled in by
+`Compute` — rather than be reconstructed here.
+
+### Collapsing a converged repository
+
+A repository whose actions are *all* no-ops — or which has no actions at all — collapses to one line:
+
+```text
+specsnl/example-platform
+  =  ok  (3 labels, no changes)
+```
+
+On a converged run that is the difference between one screen and several hundred identical `= ok`
+lines. Nothing is lost that a reader needed: the count says how many labels were checked, and the
+NDJSON stream still carries every one of them by name.
+
+### The NDJSON stream
+
+One action per line, in plan order, then the summary — never a single document, so a run killed
+halfway leaves everything written so far parseable:
+
+```json
+{"kind":"update","repo":"specsnl/example-website","name":"wontfix","color":"16a3c4","reason":"displaced by \"type: bug\""}
+{"kind":"create","repo":"specsnl/example-website","name":"type: bug","color":"d73a4a","description":"Something isn't working"}
+{"kind":"noop","repo":"specsnl/example-platform","name":"type: bug"}
+{"kind":"summary","repositories":2,"created":1,"updated":4,"deleted":1,"unchanged":4}
+```
+
+The stream reports **every** action, no-ops included and nothing collapsed. Collapsing is a kindness
+to a reader; a consumer filters for itself.
+
+`summary` is not an action `Kind` and never appears on an `Action`. It shares the `kind` key so the
+stream has one discriminator rather than two:
+
+```sh
+labelsync sync --dry-run --output=json | jq 'select(.kind == "summary")'
+labelsync sync --dry-run --output=json | jq 'select(.kind != "summary" and .kind != "noop")'
+```
+
+Like the action kinds, `"summary"` is a wire contract: added to, never renamed. `plan.Summarise(p)`
+returns the same counts to a caller that needs them without rendering — deciding an
+[exit code](./output.md#exit-codes), for one: a dry run with anything but no-ops has found drift.
+
+`Unchanged` counts no-ops. They are reported precisely so a clean run says *I looked* rather than
+saying nothing at all — and they are still never sent to the API.
+
 ## Testing
 
 Table-driven and in-package. `action_test.go` is entirely about serialisation; `compute_test.go` is
@@ -255,6 +363,27 @@ The recolour colours are written into the table literally rather than recomputed
 allocator; pinning them asserts that a second run over an unchanged repository does not churn a
 colour, which is the property that matters.
 
+`render_test.go` is external (`package plan_test`), because rendering is exercised through the same
+surface a command uses. One fixture plan carries every action kind — a rename, a displaced squatter,
+a create with a description, a cleared description, a no-op, and a delete — plus a second repository
+that is fully converged, so the collapse is covered by the same fixture:
+
+| Test                                | Guards                                                     |
+|-------------------------------------|------------------------------------------------------------|
+| pretty golden, plain and colour     | The whole rendering, and that plain output is degradation  |
+| NDJSON golden                       | Field names, order, and the final summary object           |
+| one object per line, every line     | The NDJSON contract, and that every line carries a `kind`  |
+| the summary is the last object      | A consumer can treat it as the end of the run              |
+| `Summarise` over three plans        | The counts, including an empty plan and an actionless repo |
+| collapse, both shapes               | All-no-op and no-actions-at-all render the same one-liner  |
+| the verb table                      | Each kind's gutter and verb, `recolour` included           |
+| reasons appear                      | The annotation the field exists for                        |
+| a cleared description shows as `""` | That it cannot be confused with an unchanged one           |
+| no escapes off a terminal           | Styling never lands raw in a redirected file               |
+| rendering twice                     | Byte-identical output — the rendering half of determinism  |
+
+Goldens live in `internal/plan/testdata/` and are regenerated with `task test:update`.
+
 ## Still to come
 
-The rename pass, prune, and the pretty and NDJSON renderings of a plan.
+The rename pass and prune.

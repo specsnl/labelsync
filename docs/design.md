@@ -854,21 +854,30 @@ normal run, and never used for user-facing reporting.
 
 ```text
 specsnl/example-website
-  + create   type: bug           #d73a4a  "Something isn't working"
-  ~ update   type: feature       #1d76db → #0e8a16
-  ~ recolour wontfix             #d73a4a → #16a3c4   (displaced by "type: bug")
-  = ok       priority: high
-  - delete   old-label                                (unconfigured)
+  ~  update    bug → type: bug
+  ~  recolour  wontfix          #16a3c4                             (displaced by "type: bug")
+  +  create    type: bug        #d73a4a  "Something isn't working"
+  ~  update    type: feature    #0e8a16
+  =  ok        priority: high
+  -  delete    old-label                                            (unconfigured)
 
 specsnl/example-platform
-  = ok       (5 labels, no changes)
+  =  ok  (3 labels, no changes)
 
-3 repositories · 2 created · 2 updated · 1 deleted · 6 unchanged
+2 repositories · 1 created · 3 updated · 1 deleted · 4 unchanged
 ```
 
 ### JSON
 
 NDJSON per action plus a final summary object, so it streams and is parseable mid-run.
+
+**Landed** ([#29](https://github.com/specsnl/labelsync/issues/29)) — both renderings, the collapse of
+a converged repository, and the `"kind":"summary"` discriminator are documented in
+[Architecture § Planner](./content/docs/architecture/plan.md#rendering).
+
+The colour cell shows the new colour rather than the `#1d76db → #0e8a16` transition sketched above:
+an `Action` carries the change and not the state it replaces, so the before-colour would have to
+become a field on `Action`, filled in by `Compute`, before the renderer could show it.
 
 ---
 

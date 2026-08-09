@@ -54,6 +54,7 @@ type captureWriter struct {
 }
 
 func (captureWriter) Info(string, ...any)             {}
+func (captureWriter) WriteDiff(output.DiffData)       {}
 func (captureWriter) Warn(string, ...any)             {}
 func (captureWriter) Error(string, ...any)            {}
 func (captureWriter) WriteErr(error)                  {}
@@ -104,9 +105,9 @@ func TestPrettyWriter_StripsEscapesOffTerminal(t *testing.T) {
 	}
 }
 
-// WriteTable and WriteResult are the only methods on stdout. Everything else is
-// narration, and narration in a redirected file is the defect this split exists
-// to prevent.
+// WriteTable, WriteResult, and WriteDiff are the only methods on stdout.
+// Everything else is narration, and narration in a redirected file is the defect
+// this split exists to prevent.
 func TestWriters_OnlyTableReachesStdout(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -178,6 +179,60 @@ func TestWriters_WriteResult(t *testing.T) {
 
 		if strings.Contains(stdout.String(), "labelsync version") {
 			t.Errorf("the human phrasing was spliced into the data stream: %q", stdout.String())
+		}
+	})
+}
+
+// WriteDiff is the third product-level method, and it splits the two audiences
+// the same way WriteResult does: the human gets the assembled text, the machine
+// gets the records, and neither leaks into the other.
+func TestWriters_WriteDiff(t *testing.T) {
+	type actionRecord struct {
+		Kind string `json:"kind"`
+		Name string `json:"name"`
+	}
+
+	data := output.DiffData{
+		Text: "specsnl/labelsync\n  + create  type: bug",
+		Records: []any{
+			actionRecord{Kind: "create", Name: "type: bug"},
+			actionRecord{Kind: "summary", Name: ""},
+		},
+	}
+
+	t.Run("pretty writes the text", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+
+		output.NewPrettyWriter(&stdout, &stderr, goldenPlain).WriteDiff(data)
+
+		if got, want := stdout.String(), data.Text+"\n"; got != want {
+			t.Errorf("stdout = %q, want %q", got, want)
+		}
+
+		if stderr.Len() != 0 {
+			t.Errorf("a diff reached stderr: %q", stderr.String())
+		}
+	})
+
+	t.Run("json emits one object per record and drops the text", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+
+		output.NewJSONWriter(&stdout, &stderr).WriteDiff(data)
+
+		lines := strings.Split(strings.TrimSuffix(stdout.String(), "\n"), "\n")
+		if len(lines) != len(data.Records) {
+			t.Fatalf("got %d lines, want %d: %q", len(lines), len(data.Records), stdout.String())
+		}
+
+		for i, line := range lines {
+			var obj map[string]any
+			if err := json.Unmarshal([]byte(line), &obj); err != nil {
+				t.Errorf("line %d is not a JSON object: %v (%q)", i+1, err, line)
+			}
+		}
+
+		if strings.Contains(stdout.String(), "specsnl/labelsync\n  +") {
+			t.Errorf("the human rendering was spliced into the data stream: %q", stdout.String())
 		}
 	})
 }
