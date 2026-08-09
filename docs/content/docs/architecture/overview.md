@@ -162,12 +162,12 @@ mid-run, `410` — are collected and reported at the end rather than aborting th
 
 Stdlib `testing` by default — no test framework dependency so far. Run with `task test`.
 
-| Package     | Approach                                                                                                                      |
-|-------------|-------------------------------------------------------------------------------------------------------------------------------|
-| `config`    | Table-driven over every validation rule, valid and invalid; group composition and cycles                                      |
-| `plan`      | The core suite: `(desired, current, mode, renames) → expected actions`, plus determinism                                      |
-| `palette`   | Same input → same output, no duplicate allocation, exhaustion, legibility bounds — see [Colour Palette](./palette.md#testing) |
-| `github`    | `net/http/httptest` fake: pagination, ETag `304`, per-repo skips, `422` reclassification                                      |
-| `ratelimit` | Injected clock: primary vs secondary backoff, `Retry-After`, the `--max-wait` ceiling                                         |
-| `output`    | Golden files for the pretty and JSON renderings                                                                               |
-| `cmd`       | The tree driven through `SetOut`/`SetErr` buffers: flags, writer choice, exit codes                                           |
+| Package     | Approach                                                                                                                                    |
+|-------------|---------------------------------------------------------------------------------------------------------------------------------------------|
+| `config`    | Table-driven over every validation rule, valid and invalid; group composition and cycles                                                    |
+| `plan`      | The core suite: `(desired, current, mode, renames) → expected actions`, plus [determinism and convergence](./plan.md#the-determinism-suite) |
+| `palette`   | Same input → same output, no duplicate allocation, exhaustion, legibility bounds — see [Colour Palette](./palette.md#testing)               |
+| `github`    | `net/http/httptest` fake: pagination, ETag `304`, per-repo skips, `422` reclassification                                                    |
+| `ratelimit` | Injected clock: primary vs secondary backoff, `Retry-After`, the `--max-wait` ceiling                                                       |
+| `output`    | Golden files for the pretty and JSON renderings                                                                                             |
+| `cmd`       | The tree driven through `SetOut`/`SetErr` buffers: flags, writer choice, exit codes                                                         |
