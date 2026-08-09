@@ -314,6 +314,12 @@ case directly for that reason.
   cases and both not-found cases, with the working directory and `XDG_CONFIG_HOME` pointed at
   temporary directories. Every error case also asserts `KindOf` still names the sentinel through
   the wrapping.
+- **The repository's own `labels.yml`** is loaded through `LoadFile` as a test of its own, so the
+  worked example the documentation points at has to pass the rules it claims to satisfy. The
+  properties it relies on — globally unique colours, descriptions within the limit, every
+  referenced group defined, every label in at least one group and carrying a description — are
+  re-asserted directly, so neither a change to a rule nor an edit to the file can quietly cost the
+  catalogue one of them.
 - **Normalisation** is pinned by golden files: `testdata/*.yml` in, the normalised struct
   marshalled back to YAML out. A change to any defaulting or tidying rule shows up as a diff in
   the golden rather than as a subtly different plan several stages later.
