@@ -481,6 +481,41 @@ that is fully converged, so the collapse is covered by the same fixture:
 
 Goldens live in `internal/plan/testdata/` and are regenerated with `task test:update`.
 
+### The determinism suite
+
+`determinism_test.go` is external too, and it is the one suite that asserts nothing about a single
+plan. Colour churn on re-run is the most likely subtle regression in the tool and it is invisible to
+a test that checks one plan in isolation: every run looks correct on its own, and only the
+relationship between two of them is wrong. So each test here computes a plan more than once and
+compares.
+
+The fixtures are whole runs — one configured label set and rename list against several repositories
+in different states, one of them uncovered — weighted towards where ordering bugs hide: five
+unconfigured labels sitting on reserved colours at once, renames feeding into recolours, and prune
+candidates on top of both.
+
+| Test                                   | Guards                                                     |
+|----------------------------------------|------------------------------------------------------------|
+| planning each fixture nine times       | Byte-identical pretty *and* NDJSON output, end to end      |
+| shuffling `desired` and `current`, ×16 | That input order never leaks through the planner's sorts   |
+| applying the plan, then planning again | Convergence: nothing but no-ops, and the third run is flat |
+| five squatters competing at once       | Distinct colours, and the same colour per label every run  |
+| an uncovered repository, four runs     | That the safety property holds on every run, not the first |
+
+Rendered output rather than the plan struct, because that is what a human diffs between runs and
+what a machine consumer parses — and because a difference the structs hide, a map iteration leaking
+into a `Reason` for one, still has to show up there. The struct comparison runs as well, so a
+regression says which of the two it is.
+
+Determinism and convergence are separate properties and separate tests. Two runs that each churn the
+same label the same way are perfectly deterministic and still wrong. Applying is simulated rather
+than mocked — the planner is pure, so the second run only needs the labels the first one would have
+produced — and every prune candidate is taken, which is the harshest reading and the one that has to
+settle.
+
+The shuffle is seeded with a fixed value: the permutations have to vary from one another, not from
+one test run to the next, or a failure would not reproduce.
+
 ## Still to come
 
 The selection half of prune: the `--mode` and `--prune` flags, the interactive `huh.MultiSelect`
