@@ -1,0 +1,13 @@
+specsnl/example-website
+  ~  update    bug → type: bug
+  ~  recolour  wontfix          #16a3c4                             (displaced by "type: bug")
+  +  create    type: bug        #d73a4a  "Something isn't working"
+  ~  update    type: feature    #0e8a16
+  ~  update    priority: low             ""
+  =  ok        priority: high
+  -  delete    old-label                                            (unconfigured)
+
+specsnl/example-platform
+  =  ok  (3 labels, no changes)
+
+2 repositories · 1 created · 4 updated · 1 deleted · 4 unchanged

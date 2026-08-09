@@ -47,6 +47,28 @@ type TableData struct {
 	Records []any
 }
 
+// DiffData is a rendered diff prepared for both audiences, the same split
+// [TableData] makes: the assembled text for the human, and the records behind it
+// for the machine.
+//
+// A diff is not a table — it is grouped under repository headings, its rows are
+// ragged, and it ends in a summary line — so it cannot go through [Table]. It is
+// still the *product* of the command that produced it, which is why it has a
+// stdout method of its own rather than being narrated with [Writer.Info].
+//
+// Build it with the renderer that owns the vocabulary — `plan.Render` — rather
+// than by hand. This package deliberately knows nothing about actions.
+type DiffData struct {
+	// Text is the complete pretty rendering, without a trailing newline. Style
+	// it freely: it is written through the wrapped stream, so escapes are
+	// stripped when the destination cannot render them.
+	Text string
+
+	// Records are the machine's projection, one object per NDJSON line in the
+	// order given. Their json tags are the public contract, not the text.
+	Records []any
+}
+
 // Table writes rows as the command's product: a bordered table for a human, one
 // JSON object per row for a machine.
 //

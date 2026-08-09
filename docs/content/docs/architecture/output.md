@@ -46,6 +46,7 @@ and has no idea which stream it belongs on. Three defects, no upside.
 |-----------------------------------------------|------------------------------|----------|
 | Emit the result the command exists to produce | `output.Table(w, rows, ...)` | stdout   |
 | Emit a result that is a single value          | `w.WriteResult(rec, ...)`    | stdout   |
+| Emit a rendered plan                          | `plan.Render(w, p)`          | stdout   |
 | Tell the user what the code is doing          | `w.Info(...)`                | stderr   |
 | Report a recoverable problem (skipped repo)   | `w.Warn(...)`                | stderr   |
 | Report a failure                              | `w.Error(...)`               | stderr   |
@@ -64,11 +65,13 @@ type Writer interface {
     Error(format string, args ...any)                   // stderr
     WriteErr(err error)                                 // stderr
     WriteTable(t TableData)                             // stdout
+    WriteDiff(d DiffData)                               // stdout
     WriteResult(record any, format string, args ...any) // stdout
 }
 ```
 
-`WriteTable` and `WriteResult` are the only methods on stdout, and the asymmetry is the point:
+`WriteTable`, `WriteDiff`, and `WriteResult` are the only methods on stdout, and the asymmetry is the
+point:
 **`Writer`'s product channel is small and closed, and everything else narrates.** `Info` is
 progress — "resolving 3 groups", "applying 12 actions" — and progress is not what `> out.txt` is
 for.
@@ -90,8 +93,9 @@ The house CLI this one's conventions are borrowed from puts `Info` on stdout, an
 depending on that. labelsync diverges deliberately: nothing here called `Info` when the decision was
 made, so there was no contract to break, and inheriting the defect to stay symmetrical is the wrong
 trade. A command that needs a
-*result* line which is not a table gets a new product-level method instead — that is
-[`WriteResult`](#a-result-that-is-not-a-table), and `Info` does not move back.
+*result* which is not a table gets a new product-level method instead — that is
+[`WriteResult`](#a-result-that-is-not-a-table) and [`WriteDiff`](#a-diff-is-neither-a-table-nor-a-value),
+and `Info` does not move back.
 
 Two implementations back the `--output` flag:
 
@@ -165,6 +169,28 @@ rather than a second output path: JSON has no prose in it to strip, so the flag 
 **This is not a general-purpose print.** Reach for it only when the command's whole answer is one
 value and a user piping stdout would expect exactly that value in the file. Rows go through
 `output.Table`; anything narrating the work is `Info`.
+
+### A diff is neither a table nor a value
+
+A rendered plan is the product of `sync --dry-run` — exactly what `> plan.txt` is for — but it is
+grouped under repository headings, its rows are ragged, and it ends in a summary line. `Table` cannot
+express it and `WriteResult` is for a single value, so it gets the third product-level method:
+
+```go
+type DiffData struct {
+    Text    string // the assembled pretty rendering, no trailing newline
+    Records []any  // one object per NDJSON line, in order
+}
+
+w.WriteDiff(d)
+```
+
+The same split as everywhere else: pretty writes `Text`, JSON marshals `Records` one per line and
+ignores the text entirely, so no line of stdout is ever prose.
+
+**Do not build a `DiffData` by hand.** `output` deliberately knows nothing about actions —
+`plan.Render(w, p)` owns the vocabulary and prepares both projections. See
+[Planner § Rendering](./plan.md#rendering).
 
 ### Writes are best-effort
 
@@ -265,7 +291,7 @@ Two renderers, because the diff and the list commands want different things:
 
 | Function        | Shape                                 | Used by                                            |
 |-----------------|---------------------------------------|----------------------------------------------------|
-| `RenderColumns` | Aligned columns, no header, no border | The pretty diff                                    |
+| `RenderColumns` | Aligned columns, no header, no border | The pretty diff, via `plan.Render`                 |
 | `RenderTable`   | Bordered table with a header row      | `PrettyWriter.WriteTable` — `groups`, `cache info` |
 
 The diff is a list, not a table: there is nothing to put in a header row, and a box around it would
@@ -519,6 +545,7 @@ a complete object.
 - [ ] Nothing styled is written around the writer.
 - [ ] A single-value result goes through `WriteResult` with a tagged record — not `Info`, and not a
       one-row table.
+- [ ] A rendered plan goes through `plan.Render`, not a hand-built `DiffData`.
 - [ ] Tables go through `output.Table` with a row struct whose `json` tags carry the machine
       contract — never a hand-built `TableData`, and never a struct field pre-formatted into a
       string just to make the table read well.
