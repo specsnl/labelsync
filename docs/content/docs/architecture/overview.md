@@ -36,17 +36,17 @@ labelsync/
 
 ### Implemented so far
 
-| Package                | Status  | Notes                                                                                    |
-|------------------------|---------|------------------------------------------------------------------------------------------|
-| `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf`                           |
-| `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes](./output.md)                             |
-| `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                                  |
-| `internal/cmd`         | partial | Root command, `App`, persistent flags, `version`                                         |
-| `internal/config`      | partial | Resolution, YAML load, normalisation — see [Configuration](./configuration.md)           |
-| `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette](./palette.md)                   |
-| `internal/plan`        | partial | The `Action` / `Plan` vocabulary and `Compute` in append mode — see [Planner](./plan.md) |
-| `internal/github`      | partial | The token resolution chain — see [Authentication](./authentication.md)                   |
-| everything else        | planned | See the milestone table in the design plan                                               |
+| Package                | Status  | Notes                                                                                                |
+|------------------------|---------|------------------------------------------------------------------------------------------------------|
+| `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf`                                       |
+| `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes](./output.md)                                         |
+| `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                                              |
+| `internal/cmd`         | partial | Root command, `App`, persistent flags, `version`                                                     |
+| `internal/config`      | partial | Resolution, YAML load, normalisation — see [Configuration](./configuration.md)                       |
+| `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette](./palette.md)                               |
+| `internal/plan`        | partial | The `Action` / `Plan` vocabulary and `Compute` in append mode — see [Planner](./plan.md)             |
+| `internal/github`      | partial | Token chain and the client — see [Authentication](./authentication.md), [Client](./github-client.md) |
+| everything else        | planned | See the milestone table in the design plan                                                           |
 
 ### Why `plan` and `palette` are isolated
 

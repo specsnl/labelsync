@@ -21,6 +21,7 @@ lands, its behaviour moves from the design plan into this section.
 | [Configuration](./configuration.md)   | Config file resolution, YAML parsing, and the normalisation rules                 |
 | [Planner](./plan.md)                  | The `Action` / `Plan` vocabulary and its JSON contract                            |
 | [Authentication](./authentication.md) | The four-step token resolution chain, and why tokens are redacted at the type     |
+| [GitHub Client](./github-client.md)   | The go-github wrapper, the per-repository error taxonomy, and the `5xx` retry     |
 
-Pages are added here as the subsystems they document are implemented — the GitHub client with its
-rate limiting still gets its own page.
+Pages are added here as the subsystems they document are implemented — rate limiting still gets its
+own page.
