@@ -66,9 +66,9 @@ const exhaustionNote = "palette exhausted: no clearly distinct colour remains"
 //
 // Actions come back in the order they have to be applied:
 //
-//  1. Renames, so later matching sees the new names. Not yet implemented; the
-//     parameter is here so that adding the pass is a change to this function
-//     and not to every call site.
+//  1. Renames, so later matching sees the new names and a rename plus a
+//     recolour of the same label collapses into coherent steps rather than a
+//     delete and a create.
 //  2. Squatter recolours, before the configured label claims the colour, so
 //     that a run aborting mid-repository leaves no configured label sharing a
 //     colour with a label that was supposed to have moved off it. GitHub
@@ -77,6 +77,13 @@ const exhaustionNote = "palette exhausted: no clearly distinct colour remains"
 //  4. Existing configured labels in ascending name order: an update when
 //     colour, description, or casing differs, a no-op when nothing does.
 //  5. Deletes, prune mode only. Not yet implemented.
+//
+// # Renames
+//
+// A rename is emitted only when from exists and to does not, both compared
+// case-insensitively, and the local view of the repository is rewritten before
+// anything else looks at it. Everything downstream therefore reasons about the
+// names the repository will hold, not the ones it holds now.
 //
 // # Colour ownership
 //
@@ -91,24 +98,96 @@ const exhaustionNote = "palette exhausted: no clearly distinct colour remains"
 // the description is "", and converging on that clears whatever the repository
 // has.
 func Compute(repo string, desired []config.Label, current []Label, mode Mode, renames []config.Rename) RepoPlan {
-	// Renames (#27) and prune (#28) are not implemented yet: mode and renames
-	// are accepted so the signature is final, and are ignored until they are.
-	_, _ = mode, renames
+	// Prune (#28) is not implemented yet: mode is accepted so the signature is
+	// final, and is ignored until it is.
+	_ = mode
 
 	sorted := slices.Clone(desired)
 	slices.SortFunc(sorted, func(a, b config.Label) int { return strings.Compare(a.Name, b.Name) })
 
 	claimants := claimedColors(sorted)
+
+	renamed, current := applyRenames(repo, current, renames)
 	matched, unconfigured := partition(sorted, current)
 
 	var actions []Action
 
+	actions = append(actions, renamed...)
 	actions = append(actions, recolourSquatters(repo, sorted, unconfigured, claimants)...)
 	creates, converged := converge(repo, sorted, matched)
 	actions = append(actions, creates...)
 	actions = append(actions, converged...)
 
 	return RepoPlan{Repo: repo, Actions: actions}
+}
+
+// applyRenames is step 1: it emits the renames that can be applied and returns
+// the repository's labels as they will look once they have been, so that
+// everything downstream matches against the new names.
+//
+// A rename becomes an Update carrying NewName, which is a PATCH — the one thing
+// that preserves the label's issue and pull-request associations, and the entire
+// reason renames exist as a concept rather than being left to a delete and a
+// create.
+//
+// Both existence checks are case-insensitive, because a label's identity is:
+// GitHub rejects a PATCH whose new_name matches an existing label in any casing
+// with the same 422 it uses for a colliding create, so skipping the rename when
+// to already exists is what keeps that unreachable. Skipping is also silent, and
+// deliberately so — an absent from is a rename that has already been applied, or
+// one for a repository that never had the label, and both are exactly the
+// no-second-run-does-anything convergence the tool is built on.
+//
+// The checks run against the rewritten view rather than a snapshot, so the
+// planner needs no help from validation: a chain a→b→c, which
+// [config.Config.Validate] rejects, still produces coherent renames here instead
+// of two actions fighting over one name.
+func applyRenames(repo string, current []Label, renames []config.Rename) (actions []Action, rewritten []Label) {
+	if len(renames) == 0 {
+		return nil, current
+	}
+
+	// Cloned: the rewrite is the planner's own view, and current belongs to the
+	// caller.
+	rewritten = slices.Clone(current)
+
+	at := make(map[string]int, len(rewritten))
+	for i, label := range rewritten {
+		at[strings.ToLower(label.Name)] = i
+	}
+
+	for _, rename := range renames {
+		from, to := strings.ToLower(rename.From), strings.ToLower(rename.To)
+
+		// Validation rejects a half-empty rename; the planner does not rely on
+		// that, since renaming a label to "" is a request the API cannot honour.
+		if from == "" || to == "" {
+			continue
+		}
+
+		i, exists := at[from]
+		if !exists {
+			continue
+		}
+
+		if _, taken := at[to]; taken {
+			continue
+		}
+
+		actions = append(actions, Action{
+			Kind:    KindUpdate,
+			Repo:    repo,
+			Name:    rewritten[i].Name,
+			NewName: new(rename.To),
+		})
+
+		rewritten[i].Name = rename.To
+
+		delete(at, from)
+		at[to] = i
+	}
+
+	return actions, rewritten
 }
 
 // claimedColors maps each reserved colour to the configured label that owns it.
