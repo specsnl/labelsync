@@ -158,6 +158,11 @@ flowchart TD
 Steps up to `Compute` never write. Per-repository failures — `403` archived, `404` renamed
 mid-run, `410` — are collected and reported at the end rather than aborting the run.
 
+A repository with issues disabled is **not** one of those failures: repository-scoped label
+endpoints are ungated on `has_issues`, verified over the full CRUD matrix, so such repositories
+sync normally and `410` never appears on them. See
+[Labels work when issues are disabled](https://github.com/specsnl/labelsync/blob/main/docs/design.md#labels-work-when-issues-are-disabled).
+
 ## Testing
 
 Stdlib `testing` by default — no test framework dependency so far. Run with `task test`.
