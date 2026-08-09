@@ -57,7 +57,35 @@ tests or the Markdown checks.
   one-line docs fix. Changes reach `main` through a pull request.
 - **One issue, one branch, one pull request.** Reference the issue in the PR description so it
   closes on merge.
-- **Run `task checkall` before pushing.**
+- **"Implement milestone X" means "implement every remaining open issue in milestone X".** Start by
+  listing them (`gh issue list --milestone "<X>" --state open`) — closed issues in the milestone are
+  already done and are not reopened or redone.
+- **Work out the order before writing any code, and state it.** Read every open issue in the
+  milestone in full, not just its title, and build the order from three rules, applied in this
+  sequence:
+  1. **Blocked issues come after what blocks them.** Blocking is whatever the issues themselves say
+     — a `Blocked by #N` / `Depends on #N` line, a task-list reference, or a Scope section that
+     plainly needs another issue's output. Topologically sort on that; a cycle or an ambiguous
+     dependency is a question for the user, not something to guess at.
+  2. **A spike or research issue goes first**, ahead of the implementation issues it informs, unless
+     something else blocks the spike — in which case that comes first. Its result must be *merged*
+     before the issues that depend on it are implemented, because those issues are written against
+     conclusions the spike has not reached yet. Do not stack implementation work on an unmerged
+     spike branch, and do not start it in parallel; wait, then re-read the spike's outcome and let
+     it shape the work. If the spike changes an issue's scope, say so rather than implementing the
+     issue as originally written.
+  3. **Otherwise, order for the smallest reviewable diffs** — foundations before the things built on
+     them, so each PR in the stack stands on its own.
+- **The rest of a milestone is delivered as a stack of pull requests**, built with the `gh-stack`
+  skill
+  (`gh stack`). One issue still gets one branch and one PR: the bottom branch of the stack sits on
+  `main`, and each subsequent branch is based on the branch below it, so every issue keeps its own
+  reviewable PR that closes it on merge. Never collapse a milestone into a single branch or PR.
+  The stack is ordered bottom-to-top by the dependency order above, so a blocking issue is always
+  below the issue it blocks. After each rebase or new layer, `gh stack push` to keep the PR bases
+  correct.
+- **Run `task checkall` before pushing.** For a stack, every branch in it must pass on its own — a
+  layer that only goes green once a later layer lands is a sign the split is wrong.
 - **Close the loop against the issue.** Before opening the PR, re-read the issue and check the work
   against its Scope and Done-when sections. Tick the checkboxes that the change actually satisfies,
   and say plainly in the PR what is left unticked and why. An unticked box is a scope decision, not
