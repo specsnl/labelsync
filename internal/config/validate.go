@@ -2,9 +2,7 @@ package config
 
 import (
 	"fmt"
-	"maps"
 	"regexp"
-	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -34,11 +32,6 @@ const zeroWidthJoiner = '‍'
 // case is accepted so that a hand-built Config validates the same way a parsed
 // one does; a parsed colour is lowercase by the time it gets here.
 var colorPattern = regexp.MustCompile(`^[0-9a-fA-F]{6}$`)
-
-// repoRefPattern matches an owner/repo reference. Both halves are GitHub's own
-// character set, which is deliberately narrower than "anything but a slash":
-// a stray space or a trailing ".git" is a typo worth catching at load.
-var repoRefPattern = regexp.MustCompile(`^[\w.-]+/[\w.-]+$`)
 
 // emojiRanges is the pictographic part of Unicode, near enough for the
 // emoji-only name rule. It errs towards *not* matching: a rune this table
@@ -103,107 +96,21 @@ func (c *Config) Validate() error {
 	return c.validateRenames()
 }
 
-// validateGroups checks every group's source, its repository references, and
-// that the graph include_groups describes is acyclic.
+// validateGroups delegates every rule about the group graph — a group's source,
+// its repository references, the groups include_groups names, and the absence
+// of a cycle — to resolve.go, which has to establish all four anyway before it
+// can produce a selector. One implementation, one set of messages: the earlier
+// arrangement had a copy of each rule in both files, and they drifted, printing
+// a cycle chain one way here and another way there.
+//
+// The login is empty because nothing checked here depends on who the token
+// belongs to: it only picks which user endpoint a selector will use, and a
+// selector is not what this call is after. The resolution is discarded — the
+// caller that wants selectors resolves once the login is known.
 func (c *Config) validateGroups() error {
-	for _, name := range sortedKeys(c.Groups) {
-		group := c.Groups[name]
+	_, err := c.Resolve("")
 
-		if err := validateGroupSource(name, group); err != nil {
-			return err
-		}
-
-		for _, ref := range group.Repos {
-			if !repoRefPattern.MatchString(ref) {
-				return fmt.Errorf("%w: group %q: %q", labelsync.ErrInvalidRepoRef, name, ref)
-			}
-		}
-
-		for _, included := range group.IncludeGroups {
-			if _, ok := c.Groups[included]; !ok {
-				return fmt.Errorf("%w: group %q includes %q", labelsync.ErrUnknownGroup, name, included)
-			}
-		}
-	}
-
-	return c.validateNoGroupCycle()
-}
-
-// validateGroupSource enforces exactly one of org, user, repos, or
-// include_groups. Zero sources is the same error as two: a group that selects
-// nothing is a typo, not an empty set someone meant to write.
-func validateGroupSource(name string, group Group) error {
-	sources := []string{}
-
-	if group.Org != "" {
-		sources = append(sources, "org")
-	}
-
-	if group.User != "" {
-		sources = append(sources, "user")
-	}
-
-	if len(group.Repos) > 0 {
-		sources = append(sources, "repos")
-	}
-
-	if len(group.IncludeGroups) > 0 {
-		sources = append(sources, "include_groups")
-	}
-
-	if len(sources) == 1 {
-		return nil
-	}
-
-	if len(sources) == 0 {
-		return fmt.Errorf("%w: group %q sets none", labelsync.ErrAmbiguousGroupSource, name)
-	}
-
-	return fmt.Errorf("%w: group %q sets %s", labelsync.ErrAmbiguousGroupSource, name, strings.Join(sources, " and "))
-}
-
-// validateNoGroupCycle walks include_groups depth first, so that resolve.go can
-// expand a group without a visited set of its own and without a recursion
-// guard. The path is carried along to report the cycle as a cycle rather than
-// as "something went wrong somewhere in these four groups".
-func (c *Config) validateNoGroupCycle() error {
-	const (
-		visiting = 1
-		done     = 2
-	)
-
-	state := make(map[string]int, len(c.Groups))
-
-	var walk func(name string, path []string) error
-
-	walk = func(name string, path []string) error {
-		switch state[name] {
-		case done:
-			return nil
-		case visiting:
-			return fmt.Errorf("%w: %s", labelsync.ErrCyclicGroup, strings.Join(append(path, name), " → "))
-		}
-
-		state[name] = visiting
-
-		for _, included := range c.Groups[name].IncludeGroups {
-			if err := walk(included, append(path, name)); err != nil {
-				return err
-			}
-		}
-
-		state[name] = done
-
-		return nil
-	}
-
-	for _, name := range sortedKeys(c.Groups) {
-		if err := walk(name, nil); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return err
 }
 
 // validateLabels checks each label on its own, then the two rules that are
@@ -364,10 +271,4 @@ func (c *Config) validateRenames() error {
 	}
 
 	return nil
-}
-
-// sortedKeys returns a map's keys in a stable order, so that a config with more
-// than one problem always reports the same one.
-func sortedKeys[V any](m map[string]V) []string {
-	return slices.Sorted(maps.Keys(m))
 }

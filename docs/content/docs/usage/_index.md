@@ -116,7 +116,7 @@ locally is what turns a `422` halfway through a run into a message naming the li
 | A `groups:` entry naming a group that is not defined | Almost always a typo                                                                                  |
 | A group setting both `org:` and `repos:`, or neither | A group has exactly one source                                                                        |
 | `include_groups` that comes back round to itself     | The group cannot be resolved to a set of repositories                                                 |
-| `repos: [labelsync]`                                 | Repositories are written `owner/repo`                                                                 |
+| `repos: [labelsync]`, `repos: ["specs nl/x"]`        | Repositories are written `owner/repo`, in GitHub's own characters                                     |
 | A rename `to:` a name no label declares              | The rename would land on nothing                                                                      |
 | A rename whose `from:` is a label the file declares  | Including a case-only rename such as `bug` → `Bug`, which is unnecessary — casing is converged anyway |
 

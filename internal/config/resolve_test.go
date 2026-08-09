@@ -23,6 +23,9 @@ func TestParseRepoRef(t *testing.T) {
 		{name: "an empty owner", raw: "/labelsync", err: labelsync.ErrInvalidRepoRef},
 		{name: "an empty repo", raw: "specsnl/", err: labelsync.ErrInvalidRepoRef},
 		{name: "a URL is not a reference", raw: "https://github.com/specsnl/labelsync", err: labelsync.ErrInvalidRepoRef},
+		{name: "a space inside the repo half", raw: "specsnl/label sync", err: labelsync.ErrInvalidRepoRef},
+		{name: "a space inside the owner half", raw: "specs nl/labelsync", err: labelsync.ErrInvalidRepoRef},
+		{name: "a trailing .git is not stripped", raw: "specsnl/labelsync.git", want: config.Repo{Owner: "specsnl", Name: "labelsync.git"}},
 		{name: "empty", raw: "", err: labelsync.ErrInvalidRepoRef},
 	}
 
@@ -261,6 +264,65 @@ func TestResolve_IncludeGroupsUnknown(t *testing.T) {
 	_, err := resolve(t, "groups:\n  a:\n    include_groups: [nope]\n", "")
 
 	assertSentinel(t, err, labelsync.ErrUnknownGroup)
+}
+
+// TestValidateReportsTheResolveMessage pins the messages a user actually sees
+// for the two group rules, because Validate is what reports them: it reaches
+// them through Resolve rather than checking them itself, and the reason it does
+// is that the second copy these once had drifted — printing the cycle chain with
+// a different arrow than the docs promise. A change here is a documentation
+// change too, in usage/_index.md and architecture/configuration.md.
+func TestValidateReportsTheResolveMessage(t *testing.T) {
+	const labels = "labels:\n  - name: bug\n    color: d73a4a\n"
+
+	tests := []struct {
+		name string
+		yaml string
+		want string
+		err  error
+	}{
+		{
+			name: "a cycle names the chain with ASCII arrows",
+			yaml: "version: 1\ngroups:\n  a:\n    include_groups: [b]\n  b:\n    include_groups: [a]\n" + labels,
+			want: "a -> b -> a",
+			err:  labelsync.ErrCyclicGroup,
+		},
+		{
+			name: "a group setting two sources names both",
+			yaml: "version: 1\ngroups:\n  a:\n    org: specsnl\n    user: Ilyes512\n" + labels,
+			want: `group "a" sets org and user`,
+			err:  labelsync.ErrAmbiguousGroupSource,
+		},
+		{
+			name: "a group setting no source says so",
+			yaml: "version: 1\ngroups:\n  a:\n" + labels,
+			want: `group "a" sets none of them`,
+			err:  labelsync.ErrAmbiguousGroupSource,
+		},
+		{
+			name: "a bad repository reference names the group",
+			yaml: "version: 1\ngroups:\n  a:\n    repos: [\"specsnl/label sync\"]\n" + labels,
+			want: `group "a": invalid repository reference`,
+			err:  labelsync.ErrInvalidRepoRef,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg, err := config.Parse([]byte(test.yaml))
+			if err != nil {
+				t.Fatalf("Parse returned an unexpected error: %v", err)
+			}
+
+			err = cfg.Validate()
+
+			assertSentinel(t, err, test.err)
+
+			if !strings.Contains(err.Error(), test.want) {
+				t.Errorf("Validate error %q does not contain %q", err, test.want)
+			}
+		})
+	}
 }
 
 func TestSelector_Globs(t *testing.T) {

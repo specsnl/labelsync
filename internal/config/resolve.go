@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -10,6 +11,14 @@ import (
 
 	"github.com/specsnl/labelsync/internal/labelsync"
 )
+
+// repoNamePattern matches one half of an owner/repo reference. It is GitHub's
+// own character set, which is deliberately narrower than "anything but a slash":
+// a space or a colon inside a name is a typo worth catching at load rather than
+// a 404 halfway through a run. A dot is not — `docs.example.com` is a perfectly
+// ordinary repository name, which is also why a trailing ".git" cannot be told
+// apart from a name and is taken literally.
+var repoNamePattern = regexp.MustCompile(`^[\w.-]+$`)
 
 // SourceKind names where a selector's repositories come from. There is no kind
 // for include_groups: composition is flattened away during resolution, so what
@@ -54,14 +63,22 @@ func (r Repo) String() string {
 }
 
 // ParseRepoRef splits an owner/repo reference. Anything else — a bare name, a
-// URL, an empty half — is ErrInvalidRepoRef.
+// URL, an empty half, a space in either half — is ErrInvalidRepoRef.
+//
+// This is the only place a reference is judged, so a repos entry in the config
+// and a --repo on the command line are held to one rule.
+//
+// Whitespace around either half is trimmed rather than rejected: a human typed
+// this into YAML, and `specsnl / labelsync` says which repository it means. A
+// space *inside* a half is a different thing and is rejected, because GitHub has
+// no such name and the reference cannot be what was meant.
 func ParseRepoRef(raw string) (Repo, error) {
-	owner, name, found := strings.Cut(strings.TrimSpace(raw), "/")
+	owner, name, found := strings.Cut(raw, "/")
 
 	owner = strings.TrimSpace(owner)
 	name = strings.TrimSpace(name)
 
-	if !found || owner == "" || name == "" || strings.Contains(name, "/") {
+	if !found || !repoNamePattern.MatchString(owner) || !repoNamePattern.MatchString(name) {
 		return Repo{}, fmt.Errorf("%w: %s", labelsync.ErrInvalidRepoRef, raw)
 	}
 
@@ -206,9 +223,9 @@ func (c *Config) Resolve(authenticatedUser string) (*Resolution, error) {
 	for _, name := range r.names {
 		group := c.Groups[name]
 
-		sources := sourcesOf(group)
-		if len(sources) != 1 {
-			return nil, fmt.Errorf("%w: group %q sets %s", labelsync.ErrAmbiguousGroupSource, name, describeSources(sources))
+		sources, err := checkGroupSource(name, group)
+		if err != nil {
+			return nil, err
 		}
 
 		if sources[0] == sourceIncludeGroups {
@@ -478,15 +495,25 @@ func sourcesOf(g Group) []string {
 	return out
 }
 
-// describeSources renders what a group set, for the ErrAmbiguousGroupSource
-// message. A group that set nothing is as ambiguous as one that set three
-// things — neither says which repositories it means.
-func describeSources(sources []string) string {
-	if len(sources) == 0 {
-		return "none of them"
-	}
+// checkGroupSource enforces exactly one of org, user, repos, or include_groups,
+// and returns the one it found. A group that set nothing is as ambiguous as one
+// that set three things — neither says which repositories it means — so zero
+// sources is the same sentinel as two.
+//
+// validate.go does not repeat this rule: it reaches it through Resolve, so
+// there is one implementation and one message. Two of each is what produced a
+// cycle chain printed two different ways.
+func checkGroupSource(name string, group Group) ([]string, error) {
+	sources := sourcesOf(group)
 
-	return strings.Join(sources, " and ")
+	switch len(sources) {
+	case 1:
+		return sources, nil
+	case 0:
+		return nil, fmt.Errorf("%w: group %q sets none of them", labelsync.ErrAmbiguousGroupSource, name)
+	default:
+		return nil, fmt.Errorf("%w: group %q sets %s", labelsync.ErrAmbiguousGroupSource, name, strings.Join(sources, " and "))
+	}
 }
 
 // anyGlob reports whether name matches any of the patterns. Matching is
