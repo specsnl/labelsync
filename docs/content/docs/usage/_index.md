@@ -67,6 +67,40 @@ descriptions you already have before the first run.
 The full file reference — every field of `groups`, `defaults`, `renames`, and `labels` — is in the
 [design plan](https://github.com/specsnl/labelsync/blob/main/docs/design.md#configuration).
 
+### What makes a config file invalid
+
+The whole file is checked as it is read, **before any request is sent**, and the run stops at the
+first problem with the rule it broke. Every rule here is one GitHub enforces anyway; checking
+locally is what turns a `422` halfway through a run into a message naming the line to fix.
+
+| The file says                                        | Why it is rejected                                                                                    |
+|------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
+| No `version`, or a `version` other than `1`          | The schema version has to be named, not guessed                                                       |
+| No labels                                            | There is nothing to reconcile                                                                         |
+| `bug` and `Bug`                                      | GitHub cannot hold both — names are case-insensitively unique                                         |
+| Two labels with the same colour                      | Colours are unique across the whole file, not per repository                                          |
+| `color: abc`, `color: "#gggggg"`                     | A colour is 6 hex digits, with or without a leading `#`                                               |
+| A name longer than **50 characters**                 | GitHub's own bound                                                                                    |
+| A description longer than **100 characters**         | GitHub's own bound                                                                                    |
+| `name: "🐛"`                                         | A name may contain emoji, but never be only emoji — `🐛 bug` is fine                                  |
+| A `groups:` entry naming a group that is not defined | Almost always a typo                                                                                  |
+| A group setting both `org:` and `repos:`, or neither | A group has exactly one source                                                                        |
+| `include_groups` that comes back round to itself     | The group cannot be resolved to a set of repositories                                                 |
+| `repos: [labelsync]`                                 | Repositories are written `owner/repo`                                                                 |
+| A rename `to:` a name no label declares              | The rename would land on nothing                                                                      |
+| A rename whose `from:` is a label the file declares  | Including a case-only rename such as `bug` → `Bug`, which is unnecessary — casing is converged anyway |
+
+Both length bounds count **characters, not bytes** — a description of 100 emoji is exactly at the
+limit, the same as 100 letters. The counting matches GitHub's, so nothing that passes here is
+rejected later for being too long.
+
+Names are trimmed before any of this, so `"  bug  "` and `"bug"` are the same name, and a name
+that only fits once trimmed is fine.
+
+Under `--output=json`, each of these carries a stable `error_kind` — `duplicate_label_name`,
+`invalid_color`, `cyclic_group`, and so on. The full list is in
+[Error Handling](../architecture/error-handling.md).
+
 ## Commands
 
 Only `version` is implemented so far. `sync`, `export`, `init`, `groups`, and `cache` are the
