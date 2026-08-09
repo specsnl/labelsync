@@ -277,10 +277,13 @@ Pure function, no I/O:
 func Compute(repo string, desired []config.Label, current []plan.Label, mode Mode, renames []config.Rename) RepoPlan
 ```
 
-**Partly landed** ([#26](https://github.com/specsnl/labelsync/issues/26),
-[#27](https://github.com/specsnl/labelsync/issues/27)) — steps 1 to 5, append mode. Prune
-([#28](https://github.com/specsnl/labelsync/issues/28)) is still to come; the `mode` parameter is
-already in the signature, so it lands as a change to that function rather than to every call site.
+**Landed** ([#26](https://github.com/specsnl/labelsync/issues/26),
+[#27](https://github.com/specsnl/labelsync/issues/27),
+[#28](https://github.com/specsnl/labelsync/issues/28)) — all six steps, both modes. Step 6 produces
+removal *candidates* only; choosing which of them to delete is the prompt's job
+([#44](https://github.com/specsnl/labelsync/issues/44)) and does not live in the planner. What was
+built, prune included, is in
+[Architecture § Planner](./content/docs/architecture/plan.md#prune).
 
 The signature above is the one that was built, and it is not the one this section originally
 sketched. That sketch read
@@ -360,6 +363,16 @@ skipping is silent and what the planner does with a chain validation would have 
        non-interactive  → error: prune requires --prune=all without a TTY
      emit Delete for each selected
 ```
+
+**Landed** ([#28](https://github.com/specsnl/labelsync/issues/28)) — step 6, up to and not including
+the selection. `Compute` emits a `Delete` per candidate; `--prune=all` and the interactive
+`MultiSelect` filter that list, and are the command's half.
+
+**Step 6 never runs on a repository with an empty desired set.** `Compute` returns no actions at all
+for one, before step 1, so the
+[resolution rule](#resolution-rule)'s "if no group resolves to *R*, the tool never touches *R*" is a
+guard in the planner and not an assumption about its caller. The reasoning is in
+[Architecture § A repository the config does not cover](./content/docs/architecture/plan.md#a-repository-the-config-does-not-cover).
 
 ### The `Action` type
 
