@@ -364,6 +364,24 @@ type Action struct {
 `Reason` exists for reporting: a recolour that looks arbitrary in a diff becomes obvious when
 annotated with which configured label displaced it.
 
+A `Plan` groups actions per repository, as a slice rather than a map, because the order actions are
+emitted in is the order they have to be applied:
+
+```go
+type Plan struct {
+    Repos []RepoPlan `json:"repos"`
+}
+
+type RepoPlan struct {
+    Repo    string   `json:"repo"` // owner/repo
+    Actions []Action `json:"actions"`
+}
+```
+
+**Landed** ([#25](https://github.com/specsnl/labelsync/issues/25)) — the pointer contract, the wire
+form, and why `Repo` appears on both an action and its group are documented in
+[Architecture § Planner](./content/docs/architecture/plan.md).
+
 ---
 
 ## Colour allocation
