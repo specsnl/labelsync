@@ -80,6 +80,60 @@ configured values — which an update reaches:
 - **Case-only drift.** A repository holding `bug` rejects the creation of `Bug`, because GitHub
   holds label names case-insensitively unique.
 
+## Repository enumeration
+
+`internal/github/repos.go` turns the selectors [`config.Resolve`](./configuration.md#resolution)
+produced into concrete repositories:
+
+```go
+repos, err := client.Enumerate(ctx, resolution.Selectors(), concurrency)
+```
+
+The result is the deduplicated union of every selector, sorted by owner and then name — a map is
+not ordered, and every downstream artefact is compared between runs. Deduplication is
+case-insensitive on `owner/repo`: two groups selecting the same repository is ordinary, and is how
+one ends up with the labels of both.
+
+| Selector kind           | Endpoint                            | Notes                          |
+|-------------------------|-------------------------------------|--------------------------------|
+| `org`                   | `GET /orgs/{org}/repos`             | 100/page                       |
+| `user`, the token's own | `GET /user/repos?affiliation=owner` | The only one that sees private |
+| `user`, anybody else    | `GET /users/{user}/repos`           | Public only                    |
+| `repos`                 | none                                | Passed through unenumerated    |
+
+Which of the two `user` endpoints applies was decided in `config.Resolve` from the authenticated
+login, so this package does not ask who the token belongs to a second time. The authenticated
+request carries `affiliation=owner` and nothing else — GitHub rejects a request carrying both
+`affiliation` and `type`.
+
+### Filtering is free and stays free
+
+A repository listing already carries `archived`, `fork`, `private` and `has_issues` on **every
+entry**, so every filter is answered from the enumeration response. Nothing here issues a
+`GET /repos/{owner}/{repo}` to check an attribute: that would turn one request per hundred
+repositories into one per repository, for information already in hand. A test asserts no such
+request is made, because the cost only shows up as a slow run against a large org.
+
+The filters themselves live in `config.Selector.Matches`, offline and testable without an HTTP mock.
+This file's job is to produce the `config.Repo` values it judges — including `HasIssues`, which is
+carried through and **never** filtered on. Repositories with issues disabled sync normally; the diff
+merely notes them, and excluding one stays the user's choice through the group filters.
+
+Enumeration is the only place `HasIssues` is ever known, which is why it is a `*bool`. An explicit
+`repos:` entry is passed through unenumerated, so its flag stays `nil` — *not known* — rather than
+defaulting to a note about a repository nothing looked at.
+
+### Parallel walks, and what a failure means
+
+Selectors are walked in parallel through `errgroup`, bounded by `--concurrency` (default 8). Reads
+are not subject to the content-creation secondary limit, so the bound is round-trip latency and
+politeness rather than a quota concern.
+
+An owner that cannot be listed is recorded and skipped: one mistyped org in a config naming four
+reports itself in the end-of-run summary rather than taking the other three down with it. Anything
+else — a `401`, a cancelled context — ends the run, because continuing would report a successful run
+that synced nothing.
+
 ## Label operations
 
 `internal/github/labels.go` holds the four operations and nothing else. Every one goes through

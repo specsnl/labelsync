@@ -55,6 +55,23 @@ type Repo struct {
 	Archived bool
 	Fork     bool
 	Private  bool
+
+	// HasIssues is whether the repository has issues enabled, and nil when that
+	// is not known. It is **not** a filter and nothing skips on it: the GH-17
+	// spike confirmed that repository-scoped label endpoints are ungated on it,
+	// so such a repository syncs normally and its labels are genuinely used by
+	// pull requests.
+	//
+	// It is carried because the diff notes it — label changes on a repository
+	// with issues off are surprising enough that a reader would otherwise
+	// suspect the config or the group filter. Filtering those repositories out
+	// stays the user's choice, through the group filters.
+	//
+	// The pointer is what keeps "not known" from rendering as "disabled". An
+	// explicit repos entry is never enumerated, so nothing ever saw the flag for
+	// one, and a plain bool would put an untrue note on every repository the
+	// config names outright.
+	HasIssues *bool
 }
 
 // String renders the repository as owner/repo.

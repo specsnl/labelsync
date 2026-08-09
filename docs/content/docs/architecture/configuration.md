@@ -226,8 +226,18 @@ to decide whether a repository it was handed *belongs*. Enumeration itself lives
 `internal/github`.
 
 `Repo` is a plain struct — owner, name, and the three facts the filters look at (`Archived`,
-`Fork`, `Private`). That is what lets the same rule judge a repository the API listed and a
-repository `--repo` named directly. `ParseRepoRef` is the one place a reference is judged, so a
+`Fork`, `Private`), plus `HasIssues`, which no filter looks at. That is what lets the same rule
+judge a repository the API listed and a repository `--repo` named directly.
+
+`HasIssues` is carried rather than acted on: repository-scoped label endpoints are ungated on it,
+so a repository with issues disabled syncs normally, and the value exists only so the diff can
+*note* it. Enumeration is the only place it enters the program. An explicit `repos:` entry is never
+enumerated, so its `Archived`, `Fork`, `Private` and `HasIssues` are all unknown — nothing may treat
+them as authoritative for one.
+
+That is why `HasIssues` is a `*bool` while the filter flags are plain: `nil` is *not known*. A plain
+bool would make every repository the config names outright look like one with issues disabled, and
+the note would be about nothing. `ParseRepoRef` is the one place a reference is judged, so a
 `repos:` entry and a `--repo` are held to the same rule: whitespace *around* either half is trimmed,
 because `specsnl / labelsync` says which repository it means, and anything outside GitHub's own
 character set — a space or a colon *inside* a half — is `ErrInvalidRepoRef`. A dot is inside that
