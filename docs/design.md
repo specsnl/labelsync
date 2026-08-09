@@ -558,26 +558,61 @@ Two rules follow that the bounds alone do not imply:
 
 ### Labels work when issues are disabled
 
-Repository-scoped label endpoints are **not** gated on issues being enabled. Two pieces of
-evidence:
+Repository-scoped label endpoints are **not** gated on issues being enabled. **Confirmed
+empirically** ([#17](https://github.com/specsnl/labelsync/issues/17)) against a repository with
+`has_issues: false`: the full CRUD matrix behaves exactly as it does on an issues-enabled
+repository, and `410 Gone` never appears.
 
-- The docs list required permissions as *"Issues" (write)* **or** *"Pull requests" (write)* —
-  reflecting that labels are a shared resource between issues and PRs.
-- Repo-scoped label endpoints document `200/201/301/404/422` and **no `410`**, whereas the
-  *issue-scoped* endpoints (`/issues/{n}/labels`) do document `410 Gone`, which is the
-  "issues are disabled" response.
+| Request                         | Status on a `has_issues: false` repo    |
+|---------------------------------|-----------------------------------------|
+| `GET /labels`                   | `200`, full label set                   |
+| `GET /labels/{name}`            | `200`                                   |
+| `POST /labels`                  | `201`                                   |
+| `POST /labels` (duplicate name) | `422 already_exists`                    |
+| `POST /labels` (invalid colour) | `422`                                   |
+| `PATCH /labels/{name}`          | `200` (colour, description, `new_name`) |
+| `DELETE /labels/{name}`         | `204`                                   |
+| any of the above, unknown label | `404`                                   |
 
-A repo with issues off still needs labels for pull requests, which is consistent with this.
+`410` is genuinely reachable on that same repository — `POST /repos/{o}/{r}/issues` returns
+`410 Gone` with `"Issues has been disabled in this repository."` — so its absence from the label
+endpoints is a real distinction, not an artefact of the probe. The split is exactly the one the
+documentation implies: **issue-scoped** endpoints are gated on issues, **repo-scoped** label
+endpoints are not, because labels are a shared resource between issues and pull requests (the
+required permission is *"Issues" (write)* **or** *"Pull requests" (write)*).
 
-**This has not been verified empirically** — treat as high-confidence, not certain. The design
-tolerates being wrong: per-repository failures are non-fatal (see below), so a `410` would be
-recorded and skipped rather than aborting the run.
+`has_issues: false` therefore needs no special handling on the write path. It is reported, not
+avoided — see [Repositories with issues disabled are noted, not skipped](#repositories-with-issues-disabled-are-noted-not-skipped).
+
+### Repositories with issues disabled are noted, not skipped
+
+Syncing works, so the repository is synced — but the diff says so. A repository with
+`has_issues: false` carries an informational note on its `RepoPlan`, rendered once under the
+repository heading in the pretty diff and carried as a field on the repository object in NDJSON.
+
+The reasoning is that label changes on a repository with issues off are *surprising*, and a diff
+that does not explain them invites the reader to assume the config or the group filter is wrong.
+The note costs nothing: `has_issues` already arrives on the enumeration response, so reporting it
+adds no request ([Filtering is free](#filtering-is-free)).
+
+It is a note, not a warning and not a skip:
+
+- It does **not** affect the exit code, and does not mark the repository as failed.
+- It does **not** suppress or alter any action — the labels still exist for pull requests, which
+  is the whole reason the endpoints are ungated.
+- Filtering such repositories out remains the *user's* choice, expressed in the config's group
+  filters, not something the tool decides on their behalf.
 
 ### Per-repository failures are non-fatal
 
-`403` (archived, or insufficient permission), `404` (renamed/deleted between enumeration and
-sync), and `410` are collected per repository, the run continues, and a summary of skipped
-repositories prints at the end. The process exit code reflects whether any repository failed.
+`403` (archived, or insufficient permission) and `404` (renamed/deleted between enumeration and
+sync) are collected per repository, the run continues, and a summary of skipped repositories
+prints at the end. The process exit code reflects whether any repository failed.
+
+`410` is handled by the same machinery for robustness, but is not expected on the label endpoints
+under any condition observed so far — see
+[Labels work when issues are disabled](#labels-work-when-issues-are-disabled). It is a belt-and-braces
+case, not a documented behaviour of the API surface labelsync uses.
 
 A `422 already_exists` on create is **reclassified as an update**, not a failure — this handles
 races and plans computed against slightly stale state.
@@ -1148,14 +1183,9 @@ on. `gh issue list --label parallel-safe` answers "what can I pick up right now"
 
 ## Open questions
 
-1. **Labels on issues-disabled repos.** High confidence they work, unverified. Confirm against a
-   scratch repo with issues disabled. The design already tolerates being wrong.
-2. **`has_issues: false` reporting.** Should such repos produce an informational note in the diff,
-   even though syncing works? Probably yes, since it is surprising to see label changes on a repo
-   with issues off.
-3. **`plan`/`apply` split timing.** Deferred by design, with the planner kept pure so it stays a
+1. **`plan`/`apply` split timing.** Deferred by design, with the planner kept pure so it stays a
    thin addition. Revisit if the CI approval-gate workflow becomes desirable.
-4. **GitHub App auth timing.** PAT-as-secret is sufficient for CI initially. An App becomes
+2. **GitHub App auth timing.** PAT-as-secret is sufficient for CI initially. An App becomes
    worthwhile if PAT rotation becomes annoying or rate limits bite.
 
 **Answered:**
@@ -1164,6 +1194,11 @@ on. `gh issue list --label parallel-safe` answers "what can I pick up right now"
   — see [Label names are case-insensitively unique](#label-names-are-case-insensitively-unique).
 - Name and description length limits ([#18](https://github.com/specsnl/labelsync/issues/18))
   — see [Name and description lengths are counted in code points](#name-and-description-lengths-are-counted-in-code-points).
+- Labels on issues-disabled repos ([#17](https://github.com/specsnl/labelsync/issues/17))
+  — confirmed working, see [Labels work when issues are disabled](#labels-work-when-issues-are-disabled).
+- `has_issues: false` reporting ([#17](https://github.com/specsnl/labelsync/issues/17))
+  — yes, an informational note, see
+  [Repositories with issues disabled are noted, not skipped](#repositories-with-issues-disabled-are-noted-not-skipped).
 
 ---
 
