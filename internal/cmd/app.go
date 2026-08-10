@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/specsnl/labelsync/internal/github"
 	"github.com/specsnl/labelsync/internal/util/output"
 )
 
@@ -87,6 +88,15 @@ type App struct {
 	// MaxWait is --max-wait: the longest a rate-limit backoff may sleep before
 	// the run fails with ErrMaxWaitExceeded.
 	MaxWait time.Duration
+
+	// GitHub are extra options applied last whenever a command builds a client,
+	// after everything the persistent flags decided.
+	//
+	// It is the seam an end-to-end test drives the tree through: a base URL
+	// pointing at net/http/httptest, and a cache directory under t.TempDir() so
+	// that running the suite cannot touch the developer's real cache. Production
+	// leaves it nil.
+	GitHub []github.Option
 }
 
 // NewApp creates an App with the flag defaults and a silent logger.

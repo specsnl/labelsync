@@ -86,13 +86,23 @@ configured values — which an update reaches:
 produced into concrete repositories:
 
 ```go
-repos, err := client.Enumerate(ctx, resolution.Selectors(), concurrency)
+selections, err := client.Select(ctx, resolution.Selectors(), concurrency)   // per selector
+repos, err := client.Enumerate(ctx, resolution.Selectors(), concurrency)     // their union
+func Union(selections []Selection) []config.Repo
 ```
 
-The result is the deduplicated union of every selector, sorted by owner and then name — a map is
-not ordered, and every downstream artefact is compared between runs. Deduplication is
-case-insensitive on `owner/repo`: two groups selecting the same repository is ordinary, and is how
-one ends up with the labels of both.
+`Select` is the primitive and `Enumerate` is `Union(Select(...))`. A run only ever wants the union;
+`labelsync groups` wants the per-selector answer, and having the two share one walk is what stops
+the command that explains enumeration from enumerating differently to the command that uses it.
+
+`Select` returns one `Selection` per selector, **in the caller's order** rather than in whatever
+order the parallel walks finished, because that order is the group order a report reads down.
+
+The union is deduplicated, sorted by owner and then name — a map is not ordered, and every
+downstream artefact is compared between runs. Deduplication is case-insensitive on `owner/repo`:
+two groups selecting the same repository is ordinary, and is how one ends up with the labels of
+both. The **first** spelling seen wins, so which of `Owner/Repo` and `owner/repo` survives is
+decided by selector order rather than by a race.
 
 | Selector kind           | Endpoint                            | Notes                          |
 |-------------------------|-------------------------------------|--------------------------------|
@@ -114,7 +124,7 @@ entry**, so every filter is answered from the enumeration response. Nothing here
 repositories into one per repository, for information already in hand. A test asserts no such
 request is made, because the cost only shows up as a slow run against a large org.
 
-The filters themselves live in `config.Selector.Matches`, offline and testable without an HTTP mock.
+The filters themselves live in `config.Selector.Reject`, offline and testable without an HTTP mock.
 This file's job is to produce the `config.Repo` values it judges — including `HasIssues`, which is
 carried through and **never** filtered on. Repositories with issues disabled sync normally; the diff
 merely notes them, and excluding one stays the user's choice through the group filters.
@@ -123,14 +133,52 @@ Enumeration is the only place `HasIssues` is ever known, which is why it is a `*
 `repos:` entry is passed through unenumerated, so its flag stays `nil` — *not known* — rather than
 defaulting to a note about a repository nothing looked at.
 
+### What was filtered out is kept, not dropped
+
+```go
+type Selection struct {
+    Selector config.Selector
+    Repos    []config.Repo   // selected
+    Rejected []Rejected      // listed, then filtered out, with the reason
+}
+```
+
+A repository the listing returned and a filter removed is carried on the `Selection` rather than
+discarded, because the absence of an expected repository is exactly what `labelsync groups` exists
+to explain. Nothing else reads it: enumeration's answer is `Repos`, and the union ignores
+`Rejected` entirely.
+
+The reason comes from `config.Selector.Reject`, which is `Matches` with its reasoning — `""` when
+the repository belongs, and otherwise which filter removed it. They are one function rather than
+two so that the reason a repository was filtered out cannot disagree with whether it was.
+
+A `repos:` selector never populates `Rejected`. Nothing is enumerated for one, so nothing can be
+filtered out of it — a repository the config named outright is never dropped from under the user.
+
+### Who the token belongs to
+
+```go
+func (c *Client) Login(ctx context.Context) (string, error)
+```
+
+`GET /user`, cached for the life of the client. It exists for one caller:
+[`config.Resolve`](./configuration.md#the-user-split) needs the authenticated login to decide which
+of the two `user` endpoints a selector calls.
+
+A command asks for it **only when the config actually has a `user:` group**, because it costs a
+request and decides nothing for a config without one. A failure is not fatal either: a token that
+cannot read `/user` — a GitHub App installation token, most likely — lists organisations perfectly
+well, and `Resolve` reads an empty login as "somebody else", which is the conservative answer.
+
 ### Parallel walks, and what a failure means
 
 Selectors are walked in parallel through `errgroup`, bounded by `--concurrency` (default 8). Reads
 are not subject to the content-creation secondary limit, so the bound is round-trip latency and
 politeness rather than a quota concern.
 
-An owner that cannot be listed is recorded and skipped: one mistyped org in a config naming four
-reports itself in the end-of-run summary rather than taking the other three down with it. Anything
+An owner that cannot be listed is recorded and skipped, and its selection comes back empty rather
+than missing: one mistyped org in a config naming four reports itself in the end-of-run summary
+rather than taking the other three down with it. Anything
 else — a `401`, a cancelled context — ends the run, because continuing would report a successful run
 that synced nothing.
 

@@ -721,8 +721,8 @@ Exceeding it exits with an error and a summary of what remained.
 
 ## CLI
 
-> **Partly landed.** The root command, the persistent flags, `init`, and `version` are implemented
-> in `internal/cmd` — see
+> **Partly landed.** The root command, the persistent flags, `groups`, `init`, and `version` are
+> implemented in `internal/cmd` — see
 > [Overview § How the tree is wired](./content/docs/architecture/overview.md#how-the-tree-is-wired).
 > The remaining subcommands below are still the plan.
 >
@@ -768,7 +768,11 @@ existing repositories will clear any description not present in the config. `exp
 faithful starting point so that never happens by accident.
 
 `groups` is a pure read command — invaluable for confirming a selector matches what you think
-before running a prune.
+before running a prune. **Landed** ([#39](https://github.com/specsnl/labelsync/issues/39)): the
+table is the product on stdout, and *why* a repository is missing — the filter that removed it, a
+group that resolved to nothing, a `visibility: private` that can only come back empty — is on
+stderr, so a `jq` pipeline keeps the explanation on the terminal. See
+[Usage § `labelsync groups`](./content/docs/usage/_index.md).
 
 ### Exit codes
 

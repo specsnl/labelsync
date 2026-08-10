@@ -487,6 +487,94 @@ func TestSelector_Filters(t *testing.T) {
 	}
 }
 
+// Reject is Matches with its reasoning, and the two are one function so that the
+// reason a repository was filtered out cannot disagree with whether it was. This
+// pins the halves against each other over the same table Matches is checked on,
+// and pins each reason to the filter that produced it — `labelsync groups`
+// prints them, and a reason naming the wrong filter sends a reader to the wrong
+// line of their config.
+func TestSelector_RejectExplainsEveryFilter(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		repo config.Repo
+		want string
+	}{
+		{
+			name: "selected",
+			yaml: "groups:\n  a:\n    org: specsnl\n",
+			repo: config.Repo{Owner: "specsnl", Name: "labelsync"},
+			want: "",
+		},
+		{
+			name: "another owner",
+			yaml: "groups:\n  a:\n    org: specsnl\n",
+			repo: config.Repo{Owner: "acme", Name: "labelsync"},
+			want: "owner",
+		},
+		{
+			name: "archived",
+			yaml: "groups:\n  a:\n    org: specsnl\n",
+			repo: config.Repo{Owner: "specsnl", Name: "old", Archived: true},
+			want: "skip_archived",
+		},
+		{
+			name: "fork",
+			yaml: "groups:\n  a:\n    org: specsnl\n",
+			repo: config.Repo{Owner: "specsnl", Name: "forked", Fork: true},
+			want: "skip_forks",
+		},
+		{
+			name: "visibility",
+			yaml: "groups:\n  a:\n    org: specsnl\n    visibility: public\n",
+			repo: config.Repo{Owner: "specsnl", Name: "secret", Private: true},
+			want: "visibility: public",
+		},
+		{
+			name: "no include glob matched",
+			yaml: "groups:\n  a:\n    org: specsnl\n    include: [\"boilr-*\"]\n",
+			repo: config.Repo{Owner: "specsnl", Name: "labelsync"},
+			want: "include",
+		},
+		{
+			name: "an exclude glob matched",
+			yaml: "groups:\n  a:\n    org: specsnl\n    exclude: [\"*-archive\"]\n",
+			repo: config.Repo{Owner: "specsnl", Name: "old-archive"},
+			want: "exclude",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			res, err := resolve(t, test.yaml, "")
+			if err != nil {
+				t.Fatalf("Resolve returned an unexpected error: %v", err)
+			}
+
+			selectors := res.SelectorsFor("a")
+			if len(selectors) != 1 {
+				t.Fatalf("SelectorsFor(a) returned %d selectors, want 1", len(selectors))
+			}
+
+			got := selectors[0].Reject(test.repo)
+
+			if test.want == "" && got != "" {
+				t.Fatalf("Reject(%s) = %q, want it selected", test.repo, got)
+			}
+
+			if test.want != "" && !strings.Contains(got, test.want) {
+				t.Errorf("Reject(%s) = %q, want it to mention %q", test.repo, got, test.want)
+			}
+
+			// The halves cannot disagree: a repository is rejected exactly when
+			// there is a reason for it.
+			if matched := selectors[0].Matches(test.repo); matched != (got == "") {
+				t.Errorf("Matches(%s) = %t but Reject returned %q", test.repo, matched, got)
+			}
+		})
+	}
+}
+
 // TestResolve_UserSplit pins the decision the two user endpoints turn on. The
 // selector has to carry it: internal/github cannot re-derive it without asking
 // who the token belongs to all over again.

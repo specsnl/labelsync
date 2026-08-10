@@ -135,44 +135,68 @@ type Selector struct {
 	AuthenticatedUser bool
 }
 
+// Rejection reasons, as `labelsync groups` prints them. They are prose for a
+// human — the absence of an expected repository is the thing that command exists
+// to explain — and nothing branches on the string.
+const (
+	rejectedOwner      = "a different owner"
+	rejectedArchived   = "archived, and skip_archived is on"
+	rejectedFork       = "a fork, and skip_forks is on"
+	rejectedNotInclude = "matched by no include glob"
+	rejectedExclude    = "matched by an exclude glob"
+)
+
 // Matches reports whether repo belongs to this selector. It answers the same
 // question the enumerator's filters answer, so a repository listed by the API
 // and a repository handed straight to --repo are judged by one rule.
 func (s Selector) Matches(repo Repo) bool {
-	if s.Kind == SourceRepos {
-		return slices.ContainsFunc(s.Repos, func(want Repo) bool {
-			return strings.EqualFold(want.Owner, repo.Owner) && strings.EqualFold(want.Name, repo.Name)
-		})
-	}
-
-	if !strings.EqualFold(s.Owner, repo.Owner) {
-		return false
-	}
-
-	if s.SkipArchived && repo.Archived {
-		return false
-	}
-
-	if s.SkipForks && repo.Fork {
-		return false
-	}
-
-	if !s.Visibility.matches(repo) {
-		return false
-	}
-
-	return s.matchesGlobs(repo.Name)
+	return s.Reject(repo) == ""
 }
 
-// matchesGlobs applies the include allowlist and then the exclude denylist. An
-// empty allowlist means everything, which is why the two cannot collapse into
-// one loop.
-func (s Selector) matchesGlobs(name string) bool {
-	if len(s.Include) > 0 && !anyGlob(s.Include, name) {
-		return false
+// Reject is [Selector.Matches] with its reasoning: "" when repo belongs, and
+// otherwise why it does not.
+//
+// The two are one function rather than two so that the reason a repository was
+// filtered out cannot disagree with whether it was. `labelsync groups` prints
+// these; enumeration ignores them.
+//
+// A repos selector rejects with no reason at all — a repository is either named
+// or it is not, and "the config does not list it" is not an explanation anyone
+// needs.
+func (s Selector) Reject(repo Repo) string {
+	if s.Kind == SourceRepos {
+		named := slices.ContainsFunc(s.Repos, func(want Repo) bool {
+			return strings.EqualFold(want.Owner, repo.Owner) && strings.EqualFold(want.Name, repo.Name)
+		})
+
+		if named {
+			return ""
+		}
+
+		return rejectedOwner
 	}
 
-	return !anyGlob(s.Exclude, name)
+	switch {
+	case !strings.EqualFold(s.Owner, repo.Owner):
+		return rejectedOwner
+
+	case s.SkipArchived && repo.Archived:
+		return rejectedArchived
+
+	case s.SkipForks && repo.Fork:
+		return rejectedFork
+
+	case !s.Visibility.matches(repo):
+		return "visibility: " + string(s.Visibility)
+
+	case len(s.Include) > 0 && !anyGlob(s.Include, repo.Name):
+		return rejectedNotInclude
+
+	case anyGlob(s.Exclude, repo.Name):
+		return rejectedExclude
+	}
+
+	return ""
 }
 
 // matches reports whether repo has the visibility this value asks for. An

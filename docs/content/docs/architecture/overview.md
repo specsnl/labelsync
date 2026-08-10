@@ -36,17 +36,17 @@ labelsync/
 
 ### Implemented so far
 
-| Package                | Status  | Notes                                                                                                |
-|------------------------|---------|------------------------------------------------------------------------------------------------------|
-| `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf`                                       |
-| `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes](./output.md)                                         |
-| `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                                              |
-| `internal/cmd`         | partial | Root command, `App`, persistent flags, `init`, `version`                                             |
-| `internal/config`      | landed  | Load, validate, resolve, the `init` scaffold — see [Configuration](./configuration.md)               |
-| `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette](./palette.md)                               |
-| `internal/plan`        | partial | The `Action` / `Plan` vocabulary and `Compute` in append mode — see [Planner](./plan.md)             |
-| `internal/github`      | partial | Token chain and the client — see [Authentication](./authentication.md), [Client](./github-client.md) |
-| everything else        | planned | See the milestone table in the design plan                                                           |
+| Package                | Status  | Notes                                                                                    |
+|------------------------|---------|------------------------------------------------------------------------------------------|
+| `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf`                           |
+| `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes](./output.md)                             |
+| `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                                  |
+| `internal/cmd`         | partial | Root command, `App`, persistent flags, `groups`, `init`, `version`                       |
+| `internal/config`      | landed  | Load, validate, resolve, the `init` scaffold — see [Configuration](./configuration.md)   |
+| `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette](./palette.md)                   |
+| `internal/plan`        | partial | The `Action` / `Plan` vocabulary and `Compute` in append mode — see [Planner](./plan.md) |
+| `internal/github`      | landed  | Auth, client, enumeration, labels, ETag cache — see [Client](./github-client.md)         |
+| everything else        | planned | See the milestone table in the design plan                                               |
 
 ### Why `plan` and `palette` are isolated
 
@@ -79,7 +79,7 @@ labelsync [--config <path>]
 └── version [--dont-prettify]
 ```
 
-The root, `init`, and `version` exist so far; the rest are the leaves still to be added.
+The root, `groups`, `init`, and `version` exist so far; the rest are the leaves still to be added.
 
 ### How the tree is wired
 
@@ -96,6 +96,15 @@ The root, `init`, and `version` exist so far; the rest are the leaves still to b
   literal here that nothing checks; see
   [Configuration § The scaffold](./configuration.md#the-scaffold). The command's own share is where
   the file goes and when it refuses to write.
+- **`client.go`** is the shared plumbing every network command runs on: resolve a token, build the
+  client from the persistent flags, load and resolve the config, print whatever the resolution
+  wanted said out loud. It is one function per step so that `--token`, `--no-cache`, `--write-rate`
+  and `--max-wait` cannot mean one thing in one command and another in the next. `App.GitHub` is
+  the seam an end-to-end test drives it through — extra client options, applied last, pointing at
+  `net/http/httptest` and a temporary cache directory.
+- **`groups.go`** resolves group membership and prints it. The product is the table on stdout; the
+  explanation — what each filter removed, which groups came back empty — is on stderr, because
+  `labelsync groups --output=json | jq` has to keep working.
 - **`version.go`** owns `Version`, the variable `.goreleaser.yml` and the `Dockerfile` inject with
   `-ldflags -X github.com/specsnl/labelsync/internal/cmd.Version`. That path is a build-file string
   the compiler never checks, so `version_test.go` asserts both files still name it — a rename would

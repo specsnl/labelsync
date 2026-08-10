@@ -161,8 +161,44 @@ Under `--output=json`, each of these carries a stable `error_kind` — `duplicat
 
 ## Commands
 
-`init` and `version` are implemented so far. `sync`, `export`, `groups`, and `cache` are the
+`groups`, `init`, and `version` are implemented so far. `sync`, `export`, and `cache` are the
 planned tree — see the [design plan](https://github.com/specsnl/labelsync/blob/main/docs/design.md#cli).
+
+### `labelsync groups`
+
+Prints which repositories each group actually resolves to. It writes nothing, and it is the
+command to run before a prune or before the first sync against a new selector.
+
+```sh
+labelsync groups                                        # every group
+labelsync groups --group specs-all --group personal     # only these, repeatable
+labelsync groups --output=json | jq 'select(.repositories == 0)'
+```
+
+**stdout** is the table — one row per group, with the group, where its repositories come from, how
+many it selected, and which ones. In JSON, `repositories` is a **number** and `repos` is an array,
+so a consumer filters on them rather than matching prose:
+
+```json
+{"group":"websites","source":"org: specsnl","repositories":2,"repos":["specsnl/a","specsnl/b"]}
+```
+
+**stderr** is the explanation, and it is most of the point of the command:
+
+- every repository a group's filters removed, with the reason — `archived, and skip_archived is
+  on`, `a fork, and skip_forks is on`, `visibility: public`, `matched by an exclude glob`,
+  `matched by no include glob`. The absence of a repository you expected is the thing this command
+  exists to explain, so it is one line per repository rather than a count;
+- a warning for any group that resolves to **no repositories at all**;
+- a warning when `visibility: private` was asked for a user who is not the one the token belongs
+  to, which GitHub can only ever answer with nothing;
+- the usual end-of-run summary of repositories that could not be reached.
+
+Pipe stdout and you keep all of that on the terminal. `2>/dev/null` keeps only the table.
+
+A `--group` naming a group the config does not define is an error (`unknown_group`), not an empty
+table: reporting nothing for a typo is how a working selector gets blamed. An owner that cannot be
+listed does not stop the run — the other groups still resolve, and the exit code carries `4`.
 
 ### `labelsync init`
 

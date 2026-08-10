@@ -255,6 +255,18 @@ to decide whether a repository it was handed *belongs*. Enumeration itself lives
 `Fork`, `Private`), plus `HasIssues`, which no filter looks at. That is what lets the same rule
 judge a repository the API listed and a repository `--repo` named directly.
 
+`Matches` has a second form that answers with its reasoning:
+
+```go
+func (s Selector) Matches(repo Repo) bool   // belongs?
+func (s Selector) Reject(repo Repo) string  // "" when it belongs, otherwise which filter removed it
+```
+
+`Matches` *is* `Reject(repo) == ""`. One function rather than two, because `labelsync groups` prints
+the reasons and a reason that disagreed with the verdict would send a reader to the wrong line of
+their config. The strings are prose for a human — `archived, and skip_archived is on` — and nothing
+branches on them.
+
 `HasIssues` is carried rather than acted on: repository-scoped label endpoints are ungated on it,
 so a repository with issues disabled syncs normally, and the value exists only so the diff can
 *note* it. Enumeration is the only place it enters the program. An explicit `repos:` entry is never

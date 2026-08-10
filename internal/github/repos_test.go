@@ -547,3 +547,117 @@ func TestEnumerateFailsOnRunErrors(t *testing.T) {
 		t.Errorf("error = %v, want one that is not a per-repository skip", err)
 	}
 }
+
+// TestSelectKeepsWhatItFilteredOut covers the half of enumeration that only
+// `labelsync groups` reads: a repository the listing returned and the filters
+// removed is kept, with the reason, rather than silently dropped.
+func TestSelectKeepsWhatItFilteredOut(t *testing.T) {
+	client, _ := enumerator(t, func(w http.ResponseWriter, _ *http.Request) {
+		write(w, listing(
+			repoEntry{Owner: "specsnl", Name: "labelsync", HasIssues: true},
+			repoEntry{Owner: "specsnl", Name: "retired", Archived: true},
+			repoEntry{Owner: "specsnl", Name: "forked", Fork: true},
+		))
+	})
+
+	filtered := orgSelector("all", "specsnl")
+	filtered.SkipArchived = true
+	filtered.SkipForks = true
+
+	selectors := []config.Selector{
+		filtered,
+		{Group: "named", Kind: config.SourceRepos, Repos: []config.Repo{{Owner: "specsnl", Name: "specs-cli"}}},
+	}
+
+	selections, err := client.Select(t.Context(), selectors, 8)
+	if err != nil {
+		t.Fatalf("Select() error = %v, want nil", err)
+	}
+
+	if len(selections) != len(selectors) {
+		t.Fatalf("Select() returned %d selections, want %d", len(selections), len(selectors))
+	}
+
+	// The order is the caller's, not whichever parallel walk finished first —
+	// the group order a report reads down.
+	for i, selection := range selections {
+		if selection.Selector.Group != selectors[i].Group {
+			t.Errorf("selection %d is for group %q, want %q", i, selection.Selector.Group, selectors[i].Group)
+		}
+	}
+
+	if got := names(selections[0].Repos); !slicesEqual(got, []string{"specsnl/labelsync"}) {
+		t.Errorf("selected = %v, want [specsnl/labelsync]", got)
+	}
+
+	rejected := make(map[string]string, len(selections[0].Rejected))
+	for _, entry := range selections[0].Rejected {
+		rejected[entry.Repo.String()] = entry.Reason
+	}
+
+	for repo, want := range map[string]string{
+		"specsnl/retired": "skip_archived",
+		"specsnl/forked":  "skip_forks",
+	} {
+		if reason, ok := rejected[repo]; !ok || !strings.Contains(reason, want) {
+			t.Errorf("rejected[%s] = %q (present %t), want it to mention %q", repo, reason, ok, want)
+		}
+	}
+
+	// Nothing is enumerated for a repos selector, so nothing can be filtered out
+	// of one — a repository the config named outright is never dropped.
+	if len(selections[1].Rejected) != 0 {
+		t.Errorf("a repos selector rejected %v", selections[1].Rejected)
+	}
+}
+
+// TestSelectSurvivesAnUnlistableOwner covers the reason Select does not simply
+// return an error: one mistyped org must not take the rest of the config down
+// with it, and the group it belongs to has to come back empty rather than
+// missing.
+func TestSelectSurvivesAnUnlistableOwner(t *testing.T) {
+	client, _ := enumerator(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/orgs/nobody/") {
+			w.WriteHeader(http.StatusNotFound)
+			write(w, errorBody("Not Found"))
+
+			return
+		}
+
+		write(w, listing(repoEntry{Owner: "specsnl", Name: "labelsync", HasIssues: true}))
+	})
+
+	selectors := []config.Selector{orgSelector("gone", "nobody"), orgSelector("all", "specsnl")}
+
+	selections, err := client.Select(t.Context(), selectors, 8)
+	if err != nil {
+		t.Fatalf("Select() error = %v, want the run to continue", err)
+	}
+
+	if len(selections[0].Repos) != 0 {
+		t.Errorf("the unlistable owner selected %v, want nothing", names(selections[0].Repos))
+	}
+
+	if got := names(selections[1].Repos); !slicesEqual(got, []string{"specsnl/labelsync"}) {
+		t.Errorf("the other selector = %v, want [specsnl/labelsync]", got)
+	}
+
+	if client.Failures().Len() != 1 {
+		t.Errorf("Failures().Len() = %d, want 1", client.Failures().Len())
+	}
+}
+
+// TestUnionDeduplicatesAndSorts pins what Enumerate is on top of Select. Two
+// groups naming one repository is ordinary — it is how a repository ends up with
+// the labels of both — and enumerating it twice would plan it twice.
+func TestUnionDeduplicatesAndSorts(t *testing.T) {
+	selections := []Selection{
+		{Repos: []config.Repo{{Owner: "specsnl", Name: "labelsync"}, {Owner: "acme", Name: "widget"}}},
+		{Repos: []config.Repo{{Owner: "SpecsNL", Name: "Labelsync"}}},
+	}
+
+	want := []string{"acme/widget", "specsnl/labelsync"}
+	if got := names(Union(selections)); !slicesEqual(got, want) {
+		t.Errorf("Union() = %v, want %v", got, want)
+	}
+}
