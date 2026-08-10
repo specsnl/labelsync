@@ -105,6 +105,7 @@ Use "labelsync <command> --help" for more information about a command.`,
 	cmd.AddCommand(
 		newGroupsCmd(app),
 		newInitCmd(app),
+		newSyncCmd(app),
 		newVersionCmd(app),
 	)
 

@@ -36,17 +36,17 @@ labelsync/
 
 ### Implemented so far
 
-| Package                | Status  | Notes                                                                                    |
-|------------------------|---------|------------------------------------------------------------------------------------------|
-| `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf`                           |
-| `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes](./output.md)                             |
-| `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                                  |
-| `internal/cmd`         | partial | Root command, `App`, persistent flags, `groups`, `init`, `version`                       |
-| `internal/config`      | landed  | Load, validate, resolve, the `init` scaffold — see [Configuration](./configuration.md)   |
-| `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette](./palette.md)                   |
-| `internal/plan`        | partial | The `Action` / `Plan` vocabulary and `Compute` in append mode — see [Planner](./plan.md) |
-| `internal/github`      | landed  | Auth, client, enumeration, labels, ETag cache — see [Client](./github-client.md)         |
-| everything else        | planned | See the milestone table in the design plan                                               |
+| Package                | Status  | Notes                                                                                  |
+|------------------------|---------|----------------------------------------------------------------------------------------|
+| `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf`                         |
+| `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes](./output.md)                           |
+| `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                                |
+| `internal/cmd`         | partial | Root, `App`, persistent flags, `sync --dry-run`, `groups`, `init`, `version`           |
+| `internal/config`      | landed  | Load, validate, resolve, the `init` scaffold — see [Configuration](./configuration.md) |
+| `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette](./palette.md)                 |
+| `internal/plan`        | landed  | `Action`, `Plan`, `Compute` in both modes, rendering — see [Planner](./plan.md)        |
+| `internal/github`      | landed  | Auth, client, enumeration, labels, ETag cache — see [Client](./github-client.md)       |
+| everything else        | planned | See the milestone table in the design plan                                             |
 
 ### Why `plan` and `palette` are isolated
 
@@ -79,7 +79,8 @@ labelsync [--config <path>]
 └── version [--dont-prettify]
 ```
 
-The root, `groups`, `init`, and `version` exist so far; the rest are the leaves still to be added.
+The root, `sync --dry-run`, `groups`, `init`, and `version` exist so far; applying, `export`, and
+`cache` are the leaves still to be added.
 
 ### How the tree is wired
 
@@ -105,6 +106,10 @@ The root, `groups`, `init`, and `version` exist so far; the rest are the leaves 
 - **`groups.go`** resolves group membership and prints it. The product is the table on stdout; the
   explanation — what each filter removed, which groups came back empty — is on stderr, because
   `labelsync groups --output=json | jq` has to keep working.
+- **`sync.go`** is the read pipeline end to end: config, client, groups, enumeration, label reads,
+  `plan.Compute` per repository, render, exit code. It is the only command that assembles a `Plan`,
+  and the only one whose answer is an exit code as much as a rendering — see
+  [Exit codes](#exit-codes) below.
 - **`version.go`** owns `Version`, the variable `.goreleaser.yml` and the `Dockerfile` inject with
   `-ldflags -X github.com/specsnl/labelsync/internal/cmd.Version`. That path is a build-file string
   the compiler never checks, so `version_test.go` asserts both files still name it — a rename would
@@ -138,6 +143,21 @@ The outcome codes are disjoint bits and combine — a dry run that both drifts a
 repository exits `6`. Defined in `internal/util/exit`; the rationale is in
 [Output & Exit Codes](./output.md#exit-codes).
 
+`sync` is where they are assembled, and it assembles them by OR-ing outcomes as they are discovered
+rather than by assigning over a previous value:
+
+```go
+code := exit.OK
+if dryRun && drifted(p) {
+    code |= exit.Drift
+}
+code |= failures.ExitCode()
+```
+
+Drift is "the plan holds something that would change a repository" — creates, updates, or deletes,
+never a no-op, which is a label that was checked and already matched. A non-zero code that is not a
+failure returns `&exit.Err{Code: code}` with no wrapped error, so `main` prints nothing.
+
 ## Configuration
 
 The config file is resolved in this order:
@@ -169,6 +189,11 @@ flowchart TD
     G -->|no| I["apply.Run — rate-limited writes,\nper-repo failures collected"]
     I --> J[render summary · exit 0 or 4]
 ```
+
+**Landed** as `sync --dry-run` through step `H`. Two things the diagram does not show: the
+repositories no configured label selects are dropped *before* the label reads, so no request is
+spent on a repository nothing would be done to; and `GET /rate_limit` is read at startup under
+`--debug` only, because it is free but still a round trip.
 
 Steps up to `Compute` never write. Per-repository failures — `403` archived, `404` renamed
 mid-run, `410` — are collected and reported at the end rather than aborting the run.

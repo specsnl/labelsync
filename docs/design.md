@@ -721,8 +721,8 @@ Exceeding it exits with an error and a summary of what remained.
 
 ## CLI
 
-> **Partly landed.** The root command, the persistent flags, `groups`, `init`, and `version` are
-> implemented in `internal/cmd` — see
+> **Partly landed.** The root command, the persistent flags, `sync --dry-run`, `groups`, `init`, and
+> `version` are implemented in `internal/cmd` — see
 > [Overview § How the tree is wired](./content/docs/architecture/overview.md#how-the-tree-is-wired).
 > The remaining subcommands below are still the plan.
 >
@@ -792,6 +792,12 @@ which makes it useless as a check.
 The outcome codes are disjoint bits and combine: a dry run that finds drift *and* cannot reach a
 repository exits `6`. `1` stays exclusive — a failed run cannot also report on a live state it never
 established.
+
+**Landed** ([#41](https://github.com/specsnl/labelsync/issues/41)) — `sync --dry-run` assembles the
+code by OR-ing outcomes as it discovers them; see
+[Overview § Exit codes](./content/docs/architecture/overview.md#exit-codes). Applying is
+[#43](https://github.com/specsnl/labelsync/issues/43), so `--dry-run` is required until then and a
+bare `sync` refuses rather than printing a plan it will not apply.
 
 ### Non-interactive guard
 

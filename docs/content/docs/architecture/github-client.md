@@ -203,6 +203,22 @@ body, so the request stays consistent with the state the plan was computed again
 always goes out as `new_name`, even when it is identical to the path, which keeps a rename and a
 recolour one code path instead of two.
 
+### Reading many repositories at once
+
+```go
+func (c *Client) ReadLabels(ctx context.Context, repos []config.Repo, concurrency int) ([]RepoLabels, error)
+```
+
+The read half of a run, bounded by `--concurrency` the same way enumeration is. Two properties the
+caller depends on:
+
+- **The order is the caller's**, not the order the parallel reads finished in. The result becomes a
+  plan, and a plan that reshuffled between two identical runs is not one anyone can diff.
+- **A repository that could not be reached is absent**, not present with an empty label set. The two
+  would otherwise be indistinguishable, and the second reading is the dangerous one — an empty label
+  set is exactly what a repository needing every label created looks like. The failure is recorded
+  in `Failures` on the way past, which is what becomes the skipped outcome bit.
+
 ### The update request is hand-built
 
 go-github's `EditLabel` sends the label's `name` field. GitHub's update endpoint reads **`new_name`**

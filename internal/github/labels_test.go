@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
+	"github.com/specsnl/labelsync/internal/config"
 	"github.com/specsnl/labelsync/internal/labelsync"
 	"github.com/specsnl/labelsync/internal/plan"
 )
@@ -336,5 +338,58 @@ func TestLabelConvertsToPlanLabel(t *testing.T) {
 	want := plan.Label{Name: "bug", Color: "d73a4a", Description: "Something is broken"}
 	if converted != want {
 		t.Errorf("plan.Label(label) = %+v, want %+v", converted, want)
+	}
+}
+
+// TestReadLabelsKeepsOrderAndDropsSkippedRepositories covers the two things a
+// caller of ReadLabels depends on. The order is the caller's, because it becomes
+// a plan and a plan that reshuffled between two identical runs is not one anyone
+// can diff. And a repository that could not be reached is *absent*, not present
+// with an empty label set: the second reading is what a repository needing every
+// label created looks like.
+func TestReadLabelsKeepsOrderAndDropsSkippedRepositories(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "forbidden") {
+			w.WriteHeader(http.StatusForbidden)
+			write(w, errorBody("Forbidden"))
+
+			return
+		}
+
+		write(w, `[{"name":"bug","color":"d73a4a","description":"Something is broken"}]`)
+	})
+
+	client, _ := newTestClient(t, handler)
+
+	repos := []config.Repo{
+		{Owner: "specsnl", Name: "zzz-last"},
+		{Owner: "specsnl", Name: "forbidden"},
+		{Owner: "specsnl", Name: "aaa-first"},
+	}
+
+	read, err := client.ReadLabels(t.Context(), repos, 8)
+	if err != nil {
+		t.Fatalf("ReadLabels() error = %v, want the run to continue", err)
+	}
+
+	want := []string{"specsnl/zzz-last", "specsnl/aaa-first"}
+
+	got := make([]string, 0, len(read))
+	for _, entry := range read {
+		got = append(got, entry.Repo.String())
+	}
+
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("ReadLabels() = %v, want %v", got, want)
+	}
+
+	for _, entry := range read {
+		if len(entry.Labels) != 1 || entry.Labels[0].Name != "bug" {
+			t.Errorf("%s labels = %+v, want the one label the API returned", entry.Repo, entry.Labels)
+		}
+	}
+
+	if client.Failures().Len() != 1 {
+		t.Errorf("Failures().Len() = %d, want 1", client.Failures().Len())
 	}
 }

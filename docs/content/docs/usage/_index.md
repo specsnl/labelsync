@@ -161,8 +161,60 @@ Under `--output=json`, each of these carries a stable `error_kind` — `duplicat
 
 ## Commands
 
-`groups`, `init`, and `version` are implemented so far. `sync`, `export`, and `cache` are the
-planned tree — see the [design plan](https://github.com/specsnl/labelsync/blob/main/docs/design.md#cli).
+`sync --dry-run`, `groups`, `init`, and `version` are implemented so far. Applying, `export`, and
+`cache` are the planned tree — see the
+[design plan](https://github.com/specsnl/labelsync/blob/main/docs/design.md#cli).
+
+### `labelsync sync --dry-run`
+
+Computes what it would take to make every selected repository match the config, prints the diff,
+and writes nothing.
+
+```sh
+labelsync sync --dry-run                              # every group
+labelsync sync --dry-run --group websites             # only these groups, repeatable
+labelsync sync --dry-run --repo specsnl/labelsync     # only these repositories, repeatable
+labelsync sync --dry-run --mode prune                 # also list what would be removed
+labelsync sync --dry-run --output=json                # NDJSON, one action per line
+```
+
+| Flag        | Default  | What it does                                                         |
+|-------------|----------|----------------------------------------------------------------------|
+| `--dry-run` | off      | Compute and print, write nothing. **Currently required**             |
+| `--mode`    | `append` | `append` never deletes; `prune` also lists unconfigured labels       |
+| `--group`   | all      | Restrict to a group, repeatable                                      |
+| `--repo`    | —        | Restrict to an `owner/repo`, repeatable, bypassing group enumeration |
+
+**Applying is not implemented yet**, so `--dry-run` is required and a `sync` without it fails
+rather than printing a plan and quietly applying nothing.
+
+`--repo` bypasses *enumeration*, not the config. A repository named on the command line still gets
+only the labels the groups that select it ask for, and a repository no group selects gets nothing
+at all — said out loud on stderr rather than silently. Bypassing that too would make `--repo` the
+one way to touch a repository the config does not cover, which is the safety property the whole
+tool rests on.
+
+`--mode prune` reaches the planner, which lists every unconfigured label as a *removal candidate*.
+Nothing is deleted: choosing which candidates go is a later step, and a dry run writes nothing
+either way.
+
+Run `labelsync export <owner/repo>` before the first sync against repositories that already have
+labels. Descriptions are authoritative, so a label whose description your config does not carry has
+its description cleared.
+
+#### Exit codes
+
+```sh
+labelsync sync --dry-run; rc=$?
+(( rc == 1 ))  && exit 1                                  # the run itself failed
+(( rc & 2 ))   && echo "labels have drifted"
+(( rc & 4 ))   && echo "some repositories were unreachable"
+```
+
+`2` and `4` are **bits and combine** — a dry run that finds drift *and* cannot reach a repository
+exits `6`. Test bits, not equality. `1` stays exclusive: a failed run has no live state to report
+on. Exit `2` prints no error line at all, because the drift *was* the successful result and the
+diff is already on stdout.
 
 ### `labelsync groups`
 
