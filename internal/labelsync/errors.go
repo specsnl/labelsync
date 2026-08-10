@@ -96,6 +96,12 @@ var (
 	// reported per repository and does not abort the run.
 	ErrRepoInaccessible = errors.New("repository is inaccessible")
 
+	// ErrUnsafeCacheDir is returned when a cache command is pointed at a
+	// directory outside the XDG cache home. The path comes from the
+	// environment and the command then deletes what is in it, so the bound is
+	// explicit rather than assumed.
+	ErrUnsafeCacheDir = errors.New("refusing to touch a cache directory outside the cache home")
+
 	// ErrMaxWaitExceeded is returned when a rate-limit backoff would sleep for
 	// longer than the --max-wait ceiling allows.
 	ErrMaxWaitExceeded = errors.New("rate limit wait exceeds --max-wait")
@@ -143,6 +149,8 @@ func KindOf(err error) string {
 		return "interactive_required"
 	case errors.Is(err, ErrRepoInaccessible):
 		return "repo_inaccessible"
+	case errors.Is(err, ErrUnsafeCacheDir):
+		return "unsafe_cache_dir"
 	case errors.Is(err, ErrMaxWaitExceeded):
 		return "max_wait_exceeded"
 	default:

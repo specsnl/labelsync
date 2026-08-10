@@ -36,17 +36,17 @@ labelsync/
 
 ### Implemented so far
 
-| Package                | Status  | Notes                                                                                  |
-|------------------------|---------|----------------------------------------------------------------------------------------|
-| `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf`                         |
-| `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes](./output.md)                           |
-| `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                                |
-| `internal/cmd`         | partial | Root, `App`, flags, `sync --dry-run`, `export`, `groups`, `init`, `version`            |
-| `internal/config`      | landed  | Load, validate, resolve, the `init` scaffold — see [Configuration](./configuration.md) |
-| `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette](./palette.md)                 |
-| `internal/plan`        | landed  | `Action`, `Plan`, `Compute` in both modes, rendering — see [Planner](./plan.md)        |
-| `internal/github`      | landed  | Auth, client, enumeration, labels, ETag cache — see [Client](./github-client.md)       |
-| everything else        | planned | See the milestone table in the design plan                                             |
+| Package                | Status  | Notes                                                                                               |
+|------------------------|---------|-----------------------------------------------------------------------------------------------------|
+| `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf`                                      |
+| `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes](./output.md)                                        |
+| `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                                             |
+| `internal/cmd`         | partial | Every command but applying — root, `sync --dry-run`, `export`, `groups`, `init`, `cache`, `version` |
+| `internal/config`      | landed  | Load, validate, resolve, the `init` scaffold — see [Configuration](./configuration.md)              |
+| `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette](./palette.md)                              |
+| `internal/plan`        | landed  | `Action`, `Plan`, `Compute` in both modes, rendering — see [Planner](./plan.md)                     |
+| `internal/github`      | landed  | Auth, client, enumeration, labels, ETag cache — see [Client](./github-client.md)                    |
+| everything else        | planned | See the milestone table in the design plan                                                          |
 
 ### Why `plan` and `palette` are isolated
 
@@ -75,12 +75,13 @@ labelsync [--config <path>]
 ├── export <owner/repo> [--out <file>]    dump a repo's labels as config YAML
 ├── init [--force]                        scaffold a labels.yml
 ├── groups [--group <name>]...            resolve and list group → repo membership
-├── cache {clear|info}
+├── cache {clear|info}                    inspect and empty the ETag store
 └── version [--dont-prettify]
 ```
 
-The root, `sync --dry-run`, `export`, `groups`, `init`, and `version` exist so far; applying and
-`cache` are the leaves still to be added.
+Everything above exists except applying: `sync` requires `--dry-run` until
+[#43](https://github.com/specsnl/labelsync/issues/43) lands, and refuses rather than printing a
+plan it will not apply.
 
 ### How the tree is wired
 
@@ -114,6 +115,11 @@ The root, `sync --dry-run`, `export`, `groups`, `init`, and `version` exist so f
   to `App.Stdout` rather than through `App.Out`, because its product is a *file* and not a record;
   see [Output § An export is a file](./output.md#an-export-is-a-file-not-a-record). The rendering
   itself belongs to `internal/config`, next to the loader whose normalisation it has to match.
+- **`cache.go`** inspects and empties the ETag store. It is the command that most needs the
+  record/table split — an `int64` of bytes and an RFC 3339 timestamp in the record, `1.2 MiB` and
+  `3 days ago` in the columns — and the only one that deletes anything, which is why the directory
+  it is pointed at is bounded explicitly; see
+  [GitHub Client § Inspecting and clearing](./github-client.md#inspecting-and-clearing-the-cache).
 - **`version.go`** owns `Version`, the variable `.goreleaser.yml` and the `Dockerfile` inject with
   `-ldflags -X github.com/specsnl/labelsync/internal/cmd.Version`. That path is a build-file string
   the compiler never checks, so `version_test.go` asserts both files still name it — a rename would

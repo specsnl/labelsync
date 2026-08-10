@@ -39,6 +39,7 @@ var allSentinels = []struct {
 	{"ErrNoToken", labelsync.ErrNoToken, "no_token"},
 	{"ErrInteractiveRequired", labelsync.ErrInteractiveRequired, "interactive_required"},
 	{"ErrRepoInaccessible", labelsync.ErrRepoInaccessible, "repo_inaccessible"},
+	{"ErrUnsafeCacheDir", labelsync.ErrUnsafeCacheDir, "unsafe_cache_dir"},
 	{"ErrMaxWaitExceeded", labelsync.ErrMaxWaitExceeded, "max_wait_exceeded"},
 }
 

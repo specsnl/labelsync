@@ -161,9 +161,40 @@ Under `--output=json`, each of these carries a stable `error_kind` — `duplicat
 
 ## Commands
 
-`sync --dry-run`, `export`, `groups`, `init`, and `version` are implemented so far. Applying and
-`cache` are the planned tree — see the
+`sync --dry-run`, `export`, `groups`, `init`, `cache`, and `version` are implemented so far. Only
+applying is still to come — see the
 [design plan](https://github.com/specsnl/labelsync/blob/main/docs/design.md#cli).
+
+### `labelsync cache`
+
+The ETag store is what makes repeat dry-runs effectively free: a conditional request that comes
+back `304 Not Modified` does not count against GitHub's primary rate limit, and labels change
+rarely. It lives under `$XDG_CACHE_HOME/labelsync` (default `~/.cache/labelsync`).
+
+```sh
+labelsync cache info                 # where it is, and what is in it
+labelsync cache clear                # empty it
+labelsync cache info --output=json
+```
+
+`cache info` reports the location, the entry count, the total size, the schema version, and how old
+the oldest entry is. The two renderings differ on purpose:
+
+| Field  | In the table | In the JSON record        |
+|--------|--------------|---------------------------|
+| Size   | `1.2 MiB`    | `"bytes": 1258291`        |
+| Oldest | `3 days ago` | `"oldest": "2026-08-08…"` |
+
+A size a consumer cannot compare is not a size, and an age nobody can read is not an age — so each
+audience gets the form it can use, from the same value.
+
+`cache clear` removes every cached label list and reports what went. It is bounded twice over:
+**only inside the resolved cache directory**, which has to sit under the XDG cache home
+(`unsafe_cache_dir` otherwise), and **only the files labelsync itself wrote**. The directory stays,
+nothing is recursed into, and clearing an already-empty cache is a no-op rather than an error.
+
+Nothing here is needed for correctness. `--no-cache` skips the cache for one run, a corrupt entry
+is a miss rather than an error, and clearing it costs the next run one request per repository.
 
 ### `labelsync export`
 

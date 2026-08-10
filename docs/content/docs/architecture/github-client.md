@@ -297,6 +297,36 @@ is rare, so the optimisation keeps the case it is correct for.
 For the same reason the header only ever goes out on page one: offering it for page two would ask
 about a response it never described.
 
+### Inspecting and clearing the cache
+
+`store.go` is the same directory seen from outside the read path — what `labelsync cache` drives:
+
+```go
+func OpenStore(dir, root string) (*Store, error)
+func (s *Store) Info() (CacheInfo, error)
+func (s *Store) Clear() (CacheCleared, error)
+```
+
+`CacheInfo` carries the machine's values — `Bytes int64`, `Oldest time.Time`, the schema version —
+and never a rendering. `1.2 MiB` and `3 days ago` belong in the table's columns; a struct field
+pre-formatted into a string is a number a consumer can no longer compare.
+
+**The bound is an argument, not an assumption.** `cache clear` takes a path that ultimately comes
+from `XDG_CACHE_HOME` and then deletes what is in it, so `OpenStore` is given the root the
+directory must sit under and refuses anything else with `ErrUnsafeCacheDir`. A check that derived
+its own bound from the same environment variable the path came from would be checking nothing —
+and passing it in is also what lets the tests point the whole thing at a temporary directory rather
+than at the developer's real cache.
+
+Containment is `filepath.Rel`, not a string prefix: `/tmp/cache-of-somebody-else` has `/tmp/cache`
+as a prefix and is not inside it. The cache home *itself* is refused too — that is somebody's whole
+cache directory, not ours to empty.
+
+A second bound sits behind the first, because the guard cannot catch a path that is legitimately
+under the cache home: only files whose names this tool writes are removed — a 64-character hex
+entry, or the `.tmp-` file an interrupted write leaves behind. The directory stays, nothing is
+recursed into, and an absent or already-empty cache is a no-op rather than an error.
+
 ### `github.Label` mirrors `plan.Label`
 
 The planner declares its own `Label`, which is what keeps `internal/plan` free of

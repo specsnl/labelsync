@@ -104,6 +104,24 @@ type App struct {
 	// the run fails with ErrMaxWaitExceeded.
 	MaxWait time.Duration
 
+	// CacheDir and CacheRoot are where the cache commands look, and the
+	// directory they are bounded by. Empty means the resolved XDG paths, which
+	// is what production wants.
+	//
+	// They are a test seam, and a narrow one on purpose: `cache clear` deletes
+	// what it finds, so a suite that ran against the developer's real cache
+	// would empty it. Only the cache commands read them — the ETag cache the
+	// client writes is pointed elsewhere through GitHub instead.
+	CacheDir  string
+	CacheRoot string
+
+	// Now is the clock, for the one command that renders an age. Nil means
+	// time.Now.
+	//
+	// Injected rather than read, because "3 days ago" is not something a test
+	// can assert against a real clock.
+	Now func() time.Time
+
 	// GitHub are extra options applied last whenever a command builds a client,
 	// after everything the persistent flags decided.
 	//
@@ -112,6 +130,15 @@ type App struct {
 	// that running the suite cannot touch the developer's real cache. Production
 	// leaves it nil.
 	GitHub []github.Option
+}
+
+// now is the clock, or time.Now when nothing replaced it.
+func (a *App) now() time.Time {
+	if a.Now != nil {
+		return a.Now()
+	}
+
+	return time.Now()
 }
 
 // NewApp creates an App with the flag defaults and a silent logger.

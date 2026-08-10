@@ -658,6 +658,13 @@ and effectively free.
 Cache entries are keyed by `owner/repo` and carry a schema version so a tool upgrade invalidates
 cleanly. `--no-cache` bypasses; `cache clear` purges.
 
+**Landed** ([#35](https://github.com/specsnl/labelsync/issues/35),
+[#42](https://github.com/specsnl/labelsync/issues/42)). `cache clear` takes a path that ultimately
+comes from `XDG_CACHE_HOME` and then deletes what is in it, so the bound is explicit: the directory
+has to sit inside the cache home (`ErrUnsafeCacheDir` otherwise) *and* only the entry files
+labelsync itself wrote are ever removed. See
+[GitHub Client § Inspecting and clearing](./content/docs/architecture/github-client.md#inspecting-and-clearing-the-cache).
+
 ### Bounded parallel reads
 
 Reads via `golang.org/x/sync/errgroup` with a concurrency limit (default 8, `--concurrency`).
@@ -721,8 +728,8 @@ Exceeding it exits with an error and a summary of what remained.
 
 ## CLI
 
-> **Partly landed.** The root command, the persistent flags, `sync --dry-run`, `export`, `groups`,
-> `init`, and `version` are implemented in `internal/cmd` — see
+> **Partly landed.** Every command below except applying is implemented in `internal/cmd` — the
+> root, `sync --dry-run`, `export`, `init`, `groups`, `cache`, and `version`. See
 > [Overview § How the tree is wired](./content/docs/architecture/overview.md#how-the-tree-is-wired).
 > The remaining subcommands below are still the plan.
 >
