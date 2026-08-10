@@ -31,8 +31,9 @@ type Plan struct {
 }
 
 type RepoPlan struct {
-    Repo    string   `json:"repo"` // owner/repo
-    Actions []Action `json:"actions"`
+    Repo           string   `json:"repo"` // owner/repo
+    Actions        []Action `json:"actions"`
+    IssuesDisabled bool     `json:"issues_disabled,omitempty"`
 }
 ```
 
@@ -40,6 +41,9 @@ All of it is plain data: no methods, no client handle, nothing that needs constr
 point. Writing a plan out is `json.Marshal` and reading one back is `json.Unmarshal`, so the
 `plan -o file` / `apply file` split the design leaves room for is a serialisation shell rather than a
 restructuring exercise.
+
+`IssuesDisabled` is a **note**, and the only field on a plan that describes a repository rather than a
+change to one. See [repositories with issues disabled](#repositories-with-issues-disabled).
 
 `Name` is the label's *current* name, and the key an action is looked up under in the repository's
 existing labels. A rename changes the name the API ends up storing — `NewName` — but never the name
@@ -341,7 +345,12 @@ specsnl/example-website
 specsnl/example-platform
   =  ok  (3 labels, no changes)
 
-2 repositories · 1 created · 4 updated · 1 deleted · 4 unchanged
+specsnl/example-prs-only
+  (issues are disabled — labels still apply to pull requests)
+  +  create  type: bug       #d73a4a  "Something isn't working"
+  =  ok      priority: high
+
+3 repositories · 2 created · 4 updated · 1 deleted · 5 unchanged
 ```
 
 A block per repository, indented two spaces under its heading, aligned by
@@ -377,6 +386,38 @@ change, not the state it replaces, and the renderer has no second source to diff
 before-colour is wanted in the diff later, it has to arrive as a field on `Action` — filled in by
 `Compute` — rather than be reconstructed here.
 
+### Repositories with issues disabled
+
+Label changes on a repository with issues turned off are surprising. Without a note, a reader is
+invited to assume the config or the group filter is wrong — so the diff says what is going on:
+
+```text
+specsnl/example-prs-only
+  (issues are disabled — labels still apply to pull requests)
+```
+
+It is a **note, not a warning**. The
+[GH-17 spike](https://github.com/specsnl/labelsync/issues/17) confirmed that repository-scoped label
+endpoints are ungated on `has_issues` — the full CRUD matrix behaves identically and `410` never
+appears — so these repositories sync normally and their labels are genuinely used by pull requests.
+Concretely:
+
+- It does **not** affect the exit code, and does not move a single count in the summary.
+- It does **not** mark the repository failed, and does not reach the warning stream.
+- It does **not** suppress, add, or alter any action. A test asserts the action list is identical to
+  the one the same repository gets with issues enabled.
+- Filtering these repositories out stays the user's choice, through the group filters. The tool
+  reports; it does not decide.
+
+`Compute` sets it from `config.Repo.HasIssues`, which enumeration carries through. The planner stays
+pure: the flag arrives as *input* and is never asked of GitHub here. Because it is derived from
+input, it cannot vary between two runs, which is what keeps the
+[determinism suite](#the-determinism-suite) meaningful with the note in it.
+
+`HasIssues` is a `*bool`, and `nil` — *not known* — produces no note. An explicit `repos:` entry is
+never enumerated, so nothing ever saw the flag for one, and a note about a repository nothing looked
+at would be worse than no note at all.
+
 ### Collapsing a converged repository
 
 A repository whose actions are *all* no-ops — or which has no actions at all — collapses to one line:
@@ -404,6 +445,19 @@ halfway leaves everything written so far parseable:
 
 The stream reports **every** action, no-ops included and nothing collapsed. Collapsing is a kindness
 to a reader; a consumer filters for itself.
+
+A repository with something to say about *itself* gets its own record, ahead of its actions:
+
+```json
+{"kind":"repository","repo":"specsnl/example-prs-only","issues_disabled":true}
+```
+
+It is a record rather than a field on an action because it is a property of the repository: on every
+action it would be repeated, and on one action a reader would wonder what was special about that one.
+It is emitted **only** when it carries something, so an ordinary run's stream is exactly what it was
+before. `"repository"` is a wire contract like the action kinds: added to, never renamed — and, like
+`"summary"`, it is not something to apply. A consumer that acts on a stream filters for the action
+kinds it knows rather than for everything that is not a summary.
 
 `summary` is not an action `Kind` and never appears on an `Action`. It shares the `kind` key so the
 stream has one discriminator rather than two:
@@ -474,6 +528,9 @@ that is fully converged, so the collapse is covered by the same fixture:
 | `Summarise` over three plans        | The counts, including an empty plan and an actionless repo |
 | collapse, both shapes               | All-no-op and no-actions-at-all render the same one-liner  |
 | the verb table                      | Each kind's gutter and verb, `recolour` included           |
+| the note is rendered once           | It is a property of the repository, not of an action       |
+| the note is a repository record     | It never appears among the actions a consumer applies      |
+| no note without the flag            | A repository with issues on renders as it always did       |
 | reasons appear                      | The annotation the field exists for                        |
 | a cleared description shows as `""` | That it cannot be confused with an unchanged one           |
 | no escapes off a terminal           | Styling never lands raw in a redirected file               |

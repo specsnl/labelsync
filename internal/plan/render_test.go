@@ -6,6 +6,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -26,7 +27,8 @@ var goldenColor = []string{"CLICOLOR_FORCE=1", "TERM=xterm-256color"}
 
 // samplePlan is the fixture behind every golden here: one repository exercising
 // all four kinds — including a rename, a displaced squatter, and a cleared
-// description — and one fully converged repository that has to collapse.
+// description — one fully converged repository that has to collapse, and one
+// with issues disabled, which is noted once and otherwise changes nothing.
 func samplePlan() plan.Plan {
 	return plan.Plan{Repos: []plan.RepoPlan{
 		{
@@ -68,6 +70,17 @@ func samplePlan() plan.Plan {
 				{Kind: plan.KindNoOp, Repo: "specsnl/example-platform", Name: "type: bug"},
 				{Kind: plan.KindNoOp, Repo: "specsnl/example-platform", Name: "type: feature"},
 				{Kind: plan.KindNoOp, Repo: "specsnl/example-platform", Name: "priority: high"},
+			},
+		},
+		{
+			Repo:           "specsnl/example-prs-only",
+			IssuesDisabled: true,
+			Actions: []plan.Action{
+				{
+					Kind: plan.KindCreate, Repo: "specsnl/example-prs-only",
+					Name: "type: bug", Color: new("d73a4a"), Description: new("Something isn't working"),
+				},
+				{Kind: plan.KindNoOp, Repo: "specsnl/example-prs-only", Name: "priority: high"},
 			},
 		},
 	}}
@@ -119,10 +132,10 @@ func TestRender_NDJSONIsOneObjectPerLine(t *testing.T) {
 
 	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
 
-	// Seven actions, three no-ops, and the summary. The collapsed repository is a
-	// choice the pretty rendering makes for a reader; the stream reports every
-	// action the planner decided on.
-	if want := 7 + 3 + 1; len(lines) != want {
+	// Twelve actions, one repository note, and the summary. The collapsed
+	// repository is a choice the pretty rendering makes for a reader; the stream
+	// reports every action the planner decided on.
+	if want := 12 + 1 + 1; len(lines) != want {
 		t.Fatalf("got %d lines, want %d: %q", len(lines), want, out)
 	}
 
@@ -155,8 +168,8 @@ func TestRender_SummaryIsTheFinalObject(t *testing.T) {
 	}
 
 	want := plan.Summary{
-		Kind: plan.SummaryKind, Repositories: 2,
-		Created: 1, Updated: 4, Deleted: 1, Unchanged: 4,
+		Kind: plan.SummaryKind, Repositories: 3,
+		Created: 2, Updated: 4, Deleted: 1, Unchanged: 5,
 	}
 	if got != want {
 		t.Errorf("summary = %+v, want %+v", got, want)
@@ -183,8 +196,8 @@ func TestSummarise(t *testing.T) {
 			name: "every kind at once",
 			plan: samplePlan(),
 			want: plan.Summary{
-				Kind: plan.SummaryKind, Repositories: 2,
-				Created: 1, Updated: 4, Deleted: 1, Unchanged: 4,
+				Kind: plan.SummaryKind, Repositories: 3,
+				Created: 2, Updated: 4, Deleted: 1, Unchanged: 5,
 			},
 		},
 	}
@@ -396,5 +409,124 @@ func assertGolden(t *testing.T, name, got string) {
 
 	if got != string(want) {
 		t.Errorf("output does not match %s\n--- got ---\n%s\n--- want ---\n%s", path, got, string(want))
+	}
+}
+
+// The note is a property of the repository, so it is rendered once under the
+// heading — not on every action, which would repeat it, and not on one action,
+// which would make a reader wonder what was special about that one.
+func TestRender_IssuesDisabledNoteIsRenderedOnce(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	plan.Render(output.NewPrettyWriter(&stdout, &stderr, goldenPlain), samplePlan())
+
+	pretty := stdout.String()
+	if got := strings.Count(pretty, "issues are disabled"); got != 1 {
+		t.Errorf("the note appears %d times, want exactly 1:\n%s", got, pretty)
+	}
+
+	// A note is not a warning: it explains the diff, and the diff is the
+	// product. Sending it to stderr would put it in a different stream from the
+	// repository it is about.
+	if stderr.Len() != 0 {
+		t.Errorf("the note belongs with the diff on stdout, but stderr got: %q", stderr.String())
+	}
+
+	// Directly under the heading and above the actions, which is where a reader
+	// meets it before having to make sense of what follows.
+	lines := strings.Split(pretty, "\n")
+
+	heading := slices.IndexFunc(lines, func(line string) bool {
+		return strings.TrimSpace(line) == "specsnl/example-prs-only"
+	})
+	if heading == -1 {
+		t.Fatalf("the noted repository has no heading:\n%s", pretty)
+	}
+
+	if !strings.Contains(lines[heading+1], "issues are disabled") {
+		t.Errorf("the line under the heading is %q, want the note:\n%s", lines[heading+1], pretty)
+	}
+}
+
+// In the stream the note is a record about the repository, never a synthetic
+// action: it is not something to apply, and a consumer walking actions must not
+// find it among them.
+func TestRender_IssuesDisabledIsARepositoryRecord(t *testing.T) {
+	var stdout bytes.Buffer
+
+	plan.Render(output.NewJSONWriter(&stdout, &bytes.Buffer{}), samplePlan())
+
+	lines := strings.Split(strings.TrimSuffix(stdout.String(), "\n"), "\n")
+
+	var (
+		notes    int
+		position int
+	)
+
+	for i, line := range lines {
+		var obj map[string]any
+		if err := json.Unmarshal([]byte(line), &obj); err != nil {
+			t.Fatalf("line %d is not a JSON object: %v", i+1, err)
+		}
+
+		if obj["kind"] != plan.RepositoryKind {
+			continue
+		}
+
+		notes++
+		position = i
+
+		if obj["repo"] != "specsnl/example-prs-only" {
+			t.Errorf("the note is on %v, want specsnl/example-prs-only", obj["repo"])
+		}
+
+		if obj["issues_disabled"] != true {
+			t.Errorf("issues_disabled = %v, want true", obj["issues_disabled"])
+		}
+
+		// Nothing about it is applicable, so it carries none of an action's
+		// fields.
+		for _, field := range []string{"name", "new_name", "color", "description"} {
+			if _, ok := obj[field]; ok {
+				t.Errorf("the record carries %q, which belongs to an action", field)
+			}
+		}
+	}
+
+	if notes != 1 {
+		t.Fatalf("got %d repository records, want 1", notes)
+	}
+
+	// Ahead of the actions it is about, so a consumer reading the stream in
+	// order is told before it has to make sense of them.
+	var next map[string]any
+	if err := json.Unmarshal([]byte(lines[position+1]), &next); err != nil {
+		t.Fatalf("no line follows the note: %v", err)
+	}
+
+	if next["repo"] != "specsnl/example-prs-only" {
+		t.Errorf("the note is not followed by its own repository's actions: %v", next["repo"])
+	}
+}
+
+// A repository with issues enabled renders exactly as it did before the note
+// existed. Every other assertion here is about the noted repository; this one is
+// about the ones that must be untouched.
+func TestRender_NoNoteWithoutTheFlag(t *testing.T) {
+	quiet := plan.Plan{Repos: []plan.RepoPlan{{
+		Repo:    "specsnl/example-website",
+		Actions: []plan.Action{{Kind: plan.KindNoOp, Repo: "specsnl/example-website", Name: "type: bug"}},
+	}}}
+
+	var stdout bytes.Buffer
+
+	plan.Render(output.NewJSONWriter(&stdout, &bytes.Buffer{}), quiet)
+
+	if strings.Contains(stdout.String(), plan.RepositoryKind) {
+		t.Errorf("a repository record was emitted for a repository with nothing to say:\n%s", stdout.String())
+	}
+
+	if strings.Contains(stdout.String(), "issues_disabled") {
+		t.Errorf("issues_disabled leaked into the stream:\n%s", stdout.String())
 	}
 }

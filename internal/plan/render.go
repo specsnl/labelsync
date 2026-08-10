@@ -27,6 +27,20 @@ import (
 // kinds, the string is a wire contract — it may be added to, never renamed.
 const SummaryKind = "summary"
 
+// RepositoryKind is the "kind" of an NDJSON record that says something about a
+// repository rather than about a label.
+//
+// Like [SummaryKind] it is not an action [Kind] and is never sent to the API. A
+// consumer applying a stream filters on the action kinds it knows; a record
+// carrying this one is a note about the repository the actions belong to. The
+// string is a wire contract: added to, never renamed.
+const RepositoryKind = "repository"
+
+// issuesDisabledNote is what the pretty diff says about a repository with issues
+// turned off. The second half is the part that stops it reading as a warning:
+// nothing is wrong, and nothing is being skipped.
+const issuesDisabledNote = "issues are disabled — labels still apply to pull requests"
+
 var (
 	styleRepo   = lipgloss.NewStyle().Bold(true)
 	styleCreate = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(10)) // bright green
@@ -53,6 +67,19 @@ type Summary struct {
 	Updated      int    `json:"updated"`
 	Deleted      int    `json:"deleted"`
 	Unchanged    int    `json:"unchanged"`
+}
+
+// Repository is an NDJSON record about a repository rather than about one of its
+// labels. It is emitted only when there is something to say — today, that issues
+// are disabled — and it carries no counts and nothing to apply.
+//
+// It is a record and not a field on an action because it is a property of the
+// repository: putting it on every action would repeat it, and putting it on one
+// action would make a reader wonder what was special about that one.
+type Repository struct {
+	Kind           string `json:"kind"` // always RepositoryKind
+	Repo           string `json:"repo"` // owner/repo
+	IssuesDisabled bool   `json:"issues_disabled,omitempty"`
 }
 
 // Summarise counts a plan. It is exported because the counts are also what a
@@ -91,9 +118,20 @@ func Render(w output.Writer, p Plan) {
 func Diff(p Plan) output.DiffData {
 	summary := Summarise(p)
 
-	records := make([]any, 0, countActions(p)+1)
+	records := make([]any, 0, countActions(p)+countNotes(p)+1)
 
 	for _, repo := range p.Repos {
+		// Ahead of the repository's own actions, so a consumer reading the
+		// stream in order knows what it is about to be told about before it is
+		// told.
+		if repo.IssuesDisabled {
+			records = append(records, Repository{
+				Kind:           RepositoryKind,
+				Repo:           repo.Repo,
+				IssuesDisabled: true,
+			})
+		}
+
 		for _, a := range repo.Actions {
 			records = append(records, a)
 		}
@@ -117,6 +155,20 @@ func countActions(p Plan) int {
 	return n
 }
 
+// countNotes is how many repository records the stream will carry. One per
+// repository with something to say, and today there is one thing to say.
+func countNotes(p Plan) int {
+	n := 0
+
+	for _, repo := range p.Repos {
+		if repo.IssuesDisabled {
+			n++
+		}
+	}
+
+	return n
+}
+
 // renderText assembles the pretty diff: a block per repository, then the
 // summary line, separated by blank lines and with no trailing newline — the
 // writer adds that.
@@ -124,12 +176,31 @@ func renderText(p Plan, summary Summary) string {
 	blocks := make([]string, 0, len(p.Repos)+1)
 
 	for _, repo := range p.Repos {
-		blocks = append(blocks, styleRepo.Render(repo.Repo)+"\n"+renderRepo(repo))
+		blocks = append(blocks, styleRepo.Render(repo.Repo)+"\n"+renderNotes(repo)+renderRepo(repo))
 	}
 
 	blocks = append(blocks, renderSummary(summary))
 
 	return strings.Join(blocks, "\n\n")
+}
+
+// renderNotes renders what is true of the repository itself, once, under the
+// heading and above the actions — not per action, which would repeat it on every
+// line and read as though it were about the label.
+//
+// It is dimmed like a reason, because it is one: an explanation for something a
+// reader might otherwise take for a mistake. It is not styled as a warning, does
+// not use the warning stream, and does not touch the exit code, because nothing
+// here is wrong.
+//
+// The trailing newline belongs to the note, so a repository with nothing to say
+// renders exactly as it did before this existed.
+func renderNotes(repo RepoPlan) string {
+	if !repo.IssuesDisabled {
+		return ""
+	}
+
+	return indent + styleReason.Render("("+issuesDisabledNote+")") + "\n"
 }
 
 // renderRepo renders one repository's actions, indented under its heading.

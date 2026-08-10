@@ -86,4 +86,19 @@ type Plan struct {
 type RepoPlan struct {
 	Repo    string   `json:"repo"` // owner/repo
 	Actions []Action `json:"actions"`
+
+	// IssuesDisabled reports that the repository has issues turned off. It is a
+	// **note**, not a warning and not a skip: it changes no action, no exit
+	// code, and nothing that is sent to the API. Label endpoints are ungated on
+	// the flag, so the repository syncs normally and its labels are used by pull
+	// requests.
+	//
+	// It sits on the repository rather than being a synthetic action because it
+	// is not something to apply. omitempty keeps it out of the stream for the
+	// ordinary case, and out of the goldens of every test that predates it.
+	//
+	// False also covers "not known": an explicit repos entry is never
+	// enumerated, and a note about a repository nothing looked at would be worse
+	// than no note at all.
+	IssuesDisabled bool `json:"issues_disabled,omitempty"`
 }

@@ -11,8 +11,13 @@ import (
 )
 
 // repo is the repository every test computes against. Compute does nothing with
-// it but copy it onto the actions, so one value is enough.
-const repo = "specsnl/labelsync"
+// it but copy its name onto the actions, so one value is enough. HasIssues is
+// left nil — not known — which is the state every explicit repos entry is in and
+// the one that must produce no note.
+var repo = config.Repo{Owner: "specsnl", Name: "labelsync"}
+
+// repoName is the same repository as the actions carry it: owner/repo.
+const repoName = "specsnl/labelsync"
 
 // TestCompute is the core suite: (desired, current) in, ordered actions out.
 //
@@ -40,15 +45,15 @@ func TestCompute(t *testing.T) {
 				{Name: "type: bug", Color: "d73a4a", Description: "Something is broken"},
 			},
 			want: []Action{
-				{Kind: KindCreate, Repo: repo, Name: "type: bug", Color: new("d73a4a"), Description: new("Something is broken")},
-				{Kind: KindCreate, Repo: repo, Name: "type: feature", Color: new("a2eeef"), Description: new("New functionality")},
+				{Kind: KindCreate, Repo: repoName, Name: "type: bug", Color: new("d73a4a"), Description: new("Something is broken")},
+				{Kind: KindCreate, Repo: repoName, Name: "type: feature", Color: new("a2eeef"), Description: new("New functionality")},
 			},
 		},
 		{
 			name:    "a label with no description is created with an empty one",
 			desired: []config.Label{{Name: "bug", Color: "d73a4a"}},
 			want: []Action{
-				{Kind: KindCreate, Repo: repo, Name: "bug", Color: new("d73a4a"), Description: new("")},
+				{Kind: KindCreate, Repo: repoName, Name: "bug", Color: new("d73a4a"), Description: new("")},
 			},
 		},
 		{
@@ -56,7 +61,7 @@ func TestCompute(t *testing.T) {
 			desired: []config.Label{{Name: "bug", Color: "d73a4a", Description: "Something is broken"}},
 			current: []Label{{Name: "bug", Color: "d73a4a", Description: "Something is broken"}},
 			want: []Action{
-				{Kind: KindNoOp, Repo: repo, Name: "bug"},
+				{Kind: KindNoOp, Repo: repoName, Name: "bug"},
 			},
 		},
 		{
@@ -64,7 +69,7 @@ func TestCompute(t *testing.T) {
 			desired: []config.Label{{Name: "bug", Color: "d73a4a", Description: "Something is broken"}},
 			current: []Label{{Name: "bug", Color: "1d76db", Description: "Something is broken"}},
 			want: []Action{
-				{Kind: KindUpdate, Repo: repo, Name: "bug", Color: new("d73a4a")},
+				{Kind: KindUpdate, Repo: repoName, Name: "bug", Color: new("d73a4a")},
 			},
 		},
 		{
@@ -72,7 +77,7 @@ func TestCompute(t *testing.T) {
 			desired: []config.Label{{Name: "bug", Color: "d73a4a", Description: "A defect"}},
 			current: []Label{{Name: "bug", Color: "d73a4a", Description: "Something is broken"}},
 			want: []Action{
-				{Kind: KindUpdate, Repo: repo, Name: "bug", Description: new("A defect")},
+				{Kind: KindUpdate, Repo: repoName, Name: "bug", Description: new("A defect")},
 			},
 		},
 		{
@@ -80,7 +85,7 @@ func TestCompute(t *testing.T) {
 			desired: []config.Label{{Name: "bug", Color: "d73a4a"}},
 			current: []Label{{Name: "bug", Color: "d73a4a", Description: "Something is broken"}},
 			want: []Action{
-				{Kind: KindUpdate, Repo: repo, Name: "bug", Description: new("")},
+				{Kind: KindUpdate, Repo: repoName, Name: "bug", Description: new("")},
 			},
 		},
 		{
@@ -88,7 +93,7 @@ func TestCompute(t *testing.T) {
 			desired: []config.Label{{Name: "type: bug", Color: "d73a4a"}},
 			current: []Label{{Name: "Type: Bug", Color: "d73a4a"}},
 			want: []Action{
-				{Kind: KindUpdate, Repo: repo, Name: "Type: Bug", NewName: new("type: bug")},
+				{Kind: KindUpdate, Repo: repoName, Name: "Type: Bug", NewName: new("type: bug")},
 			},
 		},
 		{
@@ -96,7 +101,7 @@ func TestCompute(t *testing.T) {
 			desired: []config.Label{{Name: "type: bug", Color: "d73a4a", Description: "A defect"}},
 			current: []Label{{Name: "TYPE: BUG", Color: "1d76db", Description: "Something is broken"}},
 			want: []Action{
-				{Kind: KindUpdate, Repo: repo, Name: "TYPE: BUG", NewName: new("type: bug"), Color: new("d73a4a"), Description: new("A defect")},
+				{Kind: KindUpdate, Repo: repoName, Name: "TYPE: BUG", NewName: new("type: bug"), Color: new("d73a4a"), Description: new("A defect")},
 			},
 		},
 		{
@@ -104,7 +109,7 @@ func TestCompute(t *testing.T) {
 			desired: []config.Label{{Name: "bug", Color: "d73a4a"}},
 			current: []Label{{Name: "bug", Color: "#D73A4A"}},
 			want: []Action{
-				{Kind: KindNoOp, Repo: repo, Name: "bug"},
+				{Kind: KindNoOp, Repo: repoName, Name: "bug"},
 			},
 		},
 		{
@@ -115,7 +120,7 @@ func TestCompute(t *testing.T) {
 				{Name: "wontfix", Color: "ffffff"},
 			},
 			want: []Action{
-				{Kind: KindNoOp, Repo: repo, Name: "bug"},
+				{Kind: KindNoOp, Repo: repoName, Name: "bug"},
 			},
 		},
 		{
@@ -123,8 +128,8 @@ func TestCompute(t *testing.T) {
 			desired: []config.Label{{Name: "type: bug", Color: "d73a4a"}},
 			current: []Label{{Name: "wontfix", Color: "d73a4a"}},
 			want: []Action{
-				{Kind: KindUpdate, Repo: repo, Name: "wontfix", Color: new("13ec13"), Reason: `displaced by "type: bug"`},
-				{Kind: KindCreate, Repo: repo, Name: "type: bug", Color: new("d73a4a"), Description: new("")},
+				{Kind: KindUpdate, Repo: repoName, Name: "wontfix", Color: new("13ec13"), Reason: `displaced by "type: bug"`},
+				{Kind: KindCreate, Repo: repoName, Name: "type: bug", Color: new("d73a4a"), Description: new("")},
 			},
 		},
 		{
@@ -132,8 +137,8 @@ func TestCompute(t *testing.T) {
 			desired: []config.Label{{Name: "type: bug", Color: "d73a4a"}},
 			current: []Label{{Name: "wontfix", Color: "#D73A4A"}},
 			want: []Action{
-				{Kind: KindUpdate, Repo: repo, Name: "wontfix", Color: new("13ec13"), Reason: `displaced by "type: bug"`},
-				{Kind: KindCreate, Repo: repo, Name: "type: bug", Color: new("d73a4a"), Description: new("")},
+				{Kind: KindUpdate, Repo: repoName, Name: "wontfix", Color: new("13ec13"), Reason: `displaced by "type: bug"`},
+				{Kind: KindCreate, Repo: repoName, Name: "type: bug", Color: new("d73a4a"), Description: new("")},
 			},
 		},
 		{
@@ -147,10 +152,10 @@ func TestCompute(t *testing.T) {
 				{Name: "duplicate", Color: "d73a4a"},
 			},
 			want: []Action{
-				{Kind: KindUpdate, Repo: repo, Name: "duplicate", Color: new("a4ec13"), Reason: `displaced by "type: bug"`},
-				{Kind: KindUpdate, Repo: repo, Name: "wontfix", Color: new("318167"), Reason: `displaced by "type: chore"`},
-				{Kind: KindCreate, Repo: repo, Name: "type: bug", Color: new("d73a4a"), Description: new("")},
-				{Kind: KindCreate, Repo: repo, Name: "type: chore", Color: new("1d76db"), Description: new("")},
+				{Kind: KindUpdate, Repo: repoName, Name: "duplicate", Color: new("a4ec13"), Reason: `displaced by "type: bug"`},
+				{Kind: KindUpdate, Repo: repoName, Name: "wontfix", Color: new("318167"), Reason: `displaced by "type: chore"`},
+				{Kind: KindCreate, Repo: repoName, Name: "type: bug", Color: new("d73a4a"), Description: new("")},
+				{Kind: KindCreate, Repo: repoName, Name: "type: chore", Color: new("1d76db"), Description: new("")},
 			},
 		},
 		{
@@ -161,9 +166,9 @@ func TestCompute(t *testing.T) {
 			},
 			current: []Label{{Name: "wontfix", Color: "d73a4a"}},
 			want: []Action{
-				{Kind: KindUpdate, Repo: repo, Name: "wontfix", Color: new("13ec13"), Reason: `displaced by "a: first"`},
-				{Kind: KindCreate, Repo: repo, Name: "a: first", Color: new("d73a4a"), Description: new("")},
-				{Kind: KindCreate, Repo: repo, Name: "z: last", Color: new("d73a4a"), Description: new("")},
+				{Kind: KindUpdate, Repo: repoName, Name: "wontfix", Color: new("13ec13"), Reason: `displaced by "a: first"`},
+				{Kind: KindCreate, Repo: repoName, Name: "a: first", Color: new("d73a4a"), Description: new("")},
+				{Kind: KindCreate, Repo: repoName, Name: "z: last", Color: new("d73a4a"), Description: new("")},
 			},
 		},
 		{
@@ -179,10 +184,10 @@ func TestCompute(t *testing.T) {
 				{Name: "squatter", Color: "d73a4a"},
 			},
 			want: []Action{
-				{Kind: KindUpdate, Repo: repo, Name: "squatter", Color: new("eca413"), Reason: `displaced by "a: created"`},
-				{Kind: KindCreate, Repo: repo, Name: "a: created", Color: new("d73a4a"), Description: new("")},
-				{Kind: KindUpdate, Repo: repo, Name: "b: updated", Color: new("1d76db")},
-				{Kind: KindNoOp, Repo: repo, Name: "c: unchanged"},
+				{Kind: KindUpdate, Repo: repoName, Name: "squatter", Color: new("eca413"), Reason: `displaced by "a: created"`},
+				{Kind: KindCreate, Repo: repoName, Name: "a: created", Color: new("d73a4a"), Description: new("")},
+				{Kind: KindUpdate, Repo: repoName, Name: "b: updated", Color: new("1d76db")},
+				{Kind: KindNoOp, Repo: repoName, Name: "c: unchanged"},
 			},
 		},
 		{
@@ -194,8 +199,8 @@ func TestCompute(t *testing.T) {
 			current: []Label{{Name: "bug", Color: "d73a4a", Description: "A defect"}},
 			renames: []config.Rename{{From: "bug", To: "type: bug"}},
 			want: []Action{
-				{Kind: KindUpdate, Repo: repo, Name: "bug", NewName: new("type: bug")},
-				{Kind: KindNoOp, Repo: repo, Name: "type: bug"},
+				{Kind: KindUpdate, Repo: repoName, Name: "bug", NewName: new("type: bug")},
+				{Kind: KindNoOp, Repo: repoName, Name: "type: bug"},
 			},
 		},
 		{
@@ -204,8 +209,8 @@ func TestCompute(t *testing.T) {
 			current: []Label{{Name: "BUG", Color: "d73a4a"}},
 			renames: []config.Rename{{From: "bug", To: "type: bug"}},
 			want: []Action{
-				{Kind: KindUpdate, Repo: repo, Name: "BUG", NewName: new("type: bug")},
-				{Kind: KindNoOp, Repo: repo, Name: "type: bug"},
+				{Kind: KindUpdate, Repo: repoName, Name: "BUG", NewName: new("type: bug")},
+				{Kind: KindNoOp, Repo: repoName, Name: "type: bug"},
 			},
 		},
 		{
@@ -214,8 +219,8 @@ func TestCompute(t *testing.T) {
 			current: []Label{{Name: "bug", Color: "1d76db", Description: "Something is broken"}},
 			renames: []config.Rename{{From: "bug", To: "type: bug"}},
 			want: []Action{
-				{Kind: KindUpdate, Repo: repo, Name: "bug", NewName: new("type: bug")},
-				{Kind: KindUpdate, Repo: repo, Name: "type: bug", Color: new("d73a4a"), Description: new("A defect")},
+				{Kind: KindUpdate, Repo: repoName, Name: "bug", NewName: new("type: bug")},
+				{Kind: KindUpdate, Repo: repoName, Name: "type: bug", Color: new("d73a4a"), Description: new("A defect")},
 			},
 		},
 		{
@@ -224,7 +229,7 @@ func TestCompute(t *testing.T) {
 			current: []Label{{Name: "type: bug", Color: "d73a4a"}},
 			renames: []config.Rename{{From: "bug", To: "type: bug"}},
 			want: []Action{
-				{Kind: KindNoOp, Repo: repo, Name: "type: bug"},
+				{Kind: KindNoOp, Repo: repoName, Name: "type: bug"},
 			},
 		},
 		{
@@ -236,7 +241,7 @@ func TestCompute(t *testing.T) {
 			},
 			renames: []config.Rename{{From: "bug", To: "type: bug"}},
 			want: []Action{
-				{Kind: KindNoOp, Repo: repo, Name: "type: bug"},
+				{Kind: KindNoOp, Repo: repoName, Name: "type: bug"},
 			},
 		},
 		{
@@ -248,7 +253,7 @@ func TestCompute(t *testing.T) {
 			},
 			renames: []config.Rename{{From: "bug", To: "type: bug"}},
 			want: []Action{
-				{Kind: KindUpdate, Repo: repo, Name: "TYPE: BUG", NewName: new("type: bug")},
+				{Kind: KindUpdate, Repo: repoName, Name: "TYPE: BUG", NewName: new("type: bug")},
 			},
 		},
 		{
@@ -263,10 +268,10 @@ func TestCompute(t *testing.T) {
 			},
 			renames: []config.Rename{{From: "bug", To: "type: bug"}},
 			want: []Action{
-				{Kind: KindUpdate, Repo: repo, Name: "bug", NewName: new("type: bug")},
-				{Kind: KindUpdate, Repo: repo, Name: "wontfix", Color: new("a4ec13"), Reason: `displaced by "type: chore"`},
-				{Kind: KindCreate, Repo: repo, Name: "type: chore", Color: new("1d76db"), Description: new("")},
-				{Kind: KindUpdate, Repo: repo, Name: "type: bug", Color: new("d73a4a")},
+				{Kind: KindUpdate, Repo: repoName, Name: "bug", NewName: new("type: bug")},
+				{Kind: KindUpdate, Repo: repoName, Name: "wontfix", Color: new("a4ec13"), Reason: `displaced by "type: chore"`},
+				{Kind: KindCreate, Repo: repoName, Name: "type: chore", Color: new("1d76db"), Description: new("")},
+				{Kind: KindUpdate, Repo: repoName, Name: "type: bug", Color: new("d73a4a")},
 			},
 		},
 		{
@@ -275,8 +280,8 @@ func TestCompute(t *testing.T) {
 			current: []Label{{Name: "bug", Color: "d73a4a"}},
 			renames: []config.Rename{{From: "bug"}, {To: "type: bug"}},
 			want: []Action{
-				{Kind: KindUpdate, Repo: repo, Name: "bug", Color: new("13ec13"), Reason: `displaced by "type: bug"`},
-				{Kind: KindCreate, Repo: repo, Name: "type: bug", Color: new("d73a4a"), Description: new("")},
+				{Kind: KindUpdate, Repo: repoName, Name: "bug", Color: new("13ec13"), Reason: `displaced by "type: bug"`},
+				{Kind: KindCreate, Repo: repoName, Name: "type: bug", Color: new("d73a4a"), Description: new("")},
 			},
 		},
 		{
@@ -289,9 +294,9 @@ func TestCompute(t *testing.T) {
 				{Name: "duplicate", Color: "cccccc"},
 			},
 			want: []Action{
-				{Kind: KindNoOp, Repo: repo, Name: "bug"},
-				{Kind: KindDelete, Repo: repo, Name: "duplicate", Reason: "unconfigured"},
-				{Kind: KindDelete, Repo: repo, Name: "wontfix", Reason: "unconfigured"},
+				{Kind: KindNoOp, Repo: repoName, Name: "bug"},
+				{Kind: KindDelete, Repo: repoName, Name: "duplicate", Reason: "unconfigured"},
+				{Kind: KindDelete, Repo: repoName, Name: "wontfix", Reason: "unconfigured"},
 			},
 		},
 		{
@@ -307,11 +312,11 @@ func TestCompute(t *testing.T) {
 				{Name: "zz: leftover", Color: "cccccc"},
 			},
 			want: []Action{
-				{Kind: KindUpdate, Repo: repo, Name: "squatter", Color: new("318131"), Reason: `displaced by "a: created"`},
-				{Kind: KindCreate, Repo: repo, Name: "a: created", Color: new("d73a4a"), Description: new("")},
-				{Kind: KindUpdate, Repo: repo, Name: "b: updated", Color: new("1d76db")},
-				{Kind: KindDelete, Repo: repo, Name: "squatter", Reason: "unconfigured"},
-				{Kind: KindDelete, Repo: repo, Name: "zz: leftover", Reason: "unconfigured"},
+				{Kind: KindUpdate, Repo: repoName, Name: "squatter", Color: new("318131"), Reason: `displaced by "a: created"`},
+				{Kind: KindCreate, Repo: repoName, Name: "a: created", Color: new("d73a4a"), Description: new("")},
+				{Kind: KindUpdate, Repo: repoName, Name: "b: updated", Color: new("1d76db")},
+				{Kind: KindDelete, Repo: repoName, Name: "squatter", Reason: "unconfigured"},
+				{Kind: KindDelete, Repo: repoName, Name: "zz: leftover", Reason: "unconfigured"},
 			},
 		},
 		{
@@ -323,9 +328,9 @@ func TestCompute(t *testing.T) {
 			desired: []config.Label{{Name: "type: bug", Color: "d73a4a"}},
 			current: []Label{{Name: "wontfix", Color: "d73a4a"}},
 			want: []Action{
-				{Kind: KindUpdate, Repo: repo, Name: "wontfix", Color: new("13ec13"), Reason: `displaced by "type: bug"`},
-				{Kind: KindCreate, Repo: repo, Name: "type: bug", Color: new("d73a4a"), Description: new("")},
-				{Kind: KindDelete, Repo: repo, Name: "wontfix", Reason: "unconfigured"},
+				{Kind: KindUpdate, Repo: repoName, Name: "wontfix", Color: new("13ec13"), Reason: `displaced by "type: bug"`},
+				{Kind: KindCreate, Repo: repoName, Name: "type: bug", Color: new("d73a4a"), Description: new("")},
+				{Kind: KindDelete, Repo: repoName, Name: "wontfix", Reason: "unconfigured"},
 			},
 		},
 		{
@@ -334,7 +339,7 @@ func TestCompute(t *testing.T) {
 			desired: []config.Label{{Name: "bug", Color: "d73a4a"}},
 			current: []Label{{Name: "bug", Color: "d73a4a"}},
 			want: []Action{
-				{Kind: KindNoOp, Repo: repo, Name: "bug"},
+				{Kind: KindNoOp, Repo: repoName, Name: "bug"},
 			},
 		},
 		{
@@ -364,9 +369,9 @@ func TestCompute(t *testing.T) {
 			current: []Label{{Name: "old", Color: "ffffff"}},
 			renames: []config.Rename{{From: "old", To: "legacy"}},
 			want: []Action{
-				{Kind: KindUpdate, Repo: repo, Name: "old", NewName: new("legacy")},
-				{Kind: KindCreate, Repo: repo, Name: "type: bug", Color: new("d73a4a"), Description: new("")},
-				{Kind: KindDelete, Repo: repo, Name: "legacy", Reason: "unconfigured"},
+				{Kind: KindUpdate, Repo: repoName, Name: "old", NewName: new("legacy")},
+				{Kind: KindCreate, Repo: repoName, Name: "type: bug", Color: new("d73a4a"), Description: new("")},
+				{Kind: KindDelete, Repo: repoName, Name: "legacy", Reason: "unconfigured"},
 			},
 		},
 	}
@@ -380,8 +385,8 @@ func TestCompute(t *testing.T) {
 
 			got := Compute(repo, tt.desired, tt.current, mode, tt.renames)
 
-			if got.Repo != repo {
-				t.Errorf("repo = %q, want %q", got.Repo, repo)
+			if got.Repo != repo.String() {
+				t.Errorf("repo = %q, want %q", got.Repo, repo.String())
 			}
 
 			if !reflect.DeepEqual(got.Actions, tt.want) {
@@ -481,7 +486,7 @@ func TestComputePruneIsConvergent(t *testing.T) {
 	// needed applying either.
 	pruned := []Label{{Name: "type: bug", Color: "d73a4a", Description: "A defect"}}
 
-	want := []Action{{Kind: KindNoOp, Repo: repo, Name: "type: bug"}}
+	want := []Action{{Kind: KindNoOp, Repo: repoName, Name: "type: bug"}}
 	if got := Compute(repo, desired, pruned, ModePrune, nil).Actions; !reflect.DeepEqual(got, want) {
 		t.Errorf("re-running produced\n%s\nwant\n%s", format(got), format(want))
 	}
@@ -531,7 +536,7 @@ func TestComputeRenameIsConvergent(t *testing.T) {
 
 	applied := []Label{{Name: "type: bug", Color: "d73a4a", Description: "A defect"}}
 
-	want := []Action{{Kind: KindNoOp, Repo: repo, Name: "type: bug"}}
+	want := []Action{{Kind: KindNoOp, Repo: repoName, Name: "type: bug"}}
 	if got := Compute(repo, desired, applied, ModeAppend, renames).Actions; !reflect.DeepEqual(got, want) {
 		t.Errorf("re-running produced\n%s\nwant\n%s", format(got), format(want))
 	}
@@ -548,9 +553,9 @@ func TestComputeChainedRenames(t *testing.T) {
 	current := []Label{{Name: "defect", Color: "d73a4a"}}
 
 	want := []Action{
-		{Kind: KindUpdate, Repo: repo, Name: "defect", NewName: new("bug")},
-		{Kind: KindUpdate, Repo: repo, Name: "bug", NewName: new("type: bug")},
-		{Kind: KindNoOp, Repo: repo, Name: "type: bug"},
+		{Kind: KindUpdate, Repo: repoName, Name: "defect", NewName: new("bug")},
+		{Kind: KindUpdate, Repo: repoName, Name: "bug", NewName: new("type: bug")},
+		{Kind: KindNoOp, Repo: repoName, Name: "type: bug"},
 	}
 
 	got := Compute(repo, desired, current, ModeAppend, renames).Actions
@@ -561,7 +566,7 @@ func TestComputeChainedRenames(t *testing.T) {
 	// And the chain converges: nothing is left to do against the result.
 	applied := []Label{{Name: "type: bug", Color: "d73a4a"}}
 
-	settled := []Action{{Kind: KindNoOp, Repo: repo, Name: "type: bug"}}
+	settled := []Action{{Kind: KindNoOp, Repo: repoName, Name: "type: bug"}}
 	if again := Compute(repo, desired, applied, ModeAppend, renames).Actions; !reflect.DeepEqual(again, settled) {
 		t.Errorf("re-running the chain produced\n%s\nwant\n%s", format(again), format(settled))
 	}
@@ -703,4 +708,86 @@ func field(label string, value *string) string {
 	}
 
 	return label + `"` + *value + `"`
+}
+
+// TestComputeNotesIssuesDisabled is the whole of GH-72's planner half: the note
+// is set from the input flag, and it is the *only* thing that differs.
+//
+// The nil case is the one worth having: an explicit repos entry is never
+// enumerated, so nothing ever saw the flag for it, and a bool would put the note
+// on every repository the config names outright.
+func TestComputeNotesIssuesDisabled(t *testing.T) {
+	desired := []config.Label{
+		{Name: "type: bug", Color: "d73a4a", Description: "Something is broken"},
+		{Name: "priority: high", Color: "b60205"},
+	}
+
+	current := []Label{
+		{Name: "type: bug", Color: "1d76db"},
+		{Name: "old-label", Color: "cccccc"},
+	}
+
+	tests := []struct {
+		name      string
+		hasIssues *bool
+		want      bool
+	}{
+		{name: "issues enabled", hasIssues: new(true), want: false},
+		{name: "issues disabled", hasIssues: new(false), want: true},
+		{name: "not known", hasIssues: nil, want: false},
+	}
+
+	// The reference the other two are compared against, so "identical actions"
+	// is asserted rather than assumed.
+	reference := Compute(
+		config.Repo{Owner: "specsnl", Name: "labelsync", HasIssues: new(true)},
+		desired, current, ModePrune, nil,
+	)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Compute(
+				config.Repo{Owner: "specsnl", Name: "labelsync", HasIssues: tt.hasIssues},
+				desired, current, ModePrune, nil,
+			)
+
+			if got.IssuesDisabled != tt.want {
+				t.Errorf("IssuesDisabled = %t, want %t", got.IssuesDisabled, tt.want)
+			}
+
+			// The note explains the actions; it never changes them. A repository
+			// with issues off syncs exactly like one with issues on, because the
+			// label endpoints are ungated on the flag.
+			if !reflect.DeepEqual(got.Actions, reference.Actions) {
+				t.Errorf("actions differ from the issues-enabled plan:\n%s\nwant:\n%s",
+					format(got.Actions), format(reference.Actions))
+			}
+
+			// The summary is what an exit code is decided from, so an unchanged
+			// summary is an unchanged exit code.
+			gotSummary := Summarise(Plan{Repos: []RepoPlan{got}})
+			if want := Summarise(Plan{Repos: []RepoPlan{reference}}); gotSummary != want {
+				t.Errorf("summary = %+v, want %+v: a note may not move a count", gotSummary, want)
+			}
+		})
+	}
+}
+
+// TestComputeNotesIssuesDisabledOnAnUncoveredRepository covers the early return.
+// A repository no group resolves to gets no actions at all — and the note is
+// still true of it, which is what a reader looking at an empty block wants to
+// know.
+func TestComputeNotesIssuesDisabledOnAnUncoveredRepository(t *testing.T) {
+	got := Compute(
+		config.Repo{Owner: "specsnl", Name: "labelsync", HasIssues: new(false)},
+		nil, []Label{{Name: "old-label", Color: "cccccc"}}, ModePrune, nil,
+	)
+
+	if len(got.Actions) != 0 {
+		t.Fatalf("actions = %s, want none: an uncovered repository is never touched", format(got.Actions))
+	}
+
+	if !got.IssuesDisabled {
+		t.Error("IssuesDisabled = false, want true")
+	}
 }

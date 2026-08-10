@@ -40,15 +40,15 @@ against every repository in the set.
 only thing that calls it. Everything downstream reasons about `ErrRepoInaccessible` and
 `IsAlreadyExists` instead.
 
-| What came back                       | Classified as                                  | The run                  |
-|--------------------------------------|------------------------------------------------|--------------------------|
-| `403` archived, or no permission     | `RepoError` → `repo_inaccessible`              | continues, repo skipped  |
-| `404` renamed, deleted, or invisible | `RepoError` → `repo_inaccessible`              | continues, repo skipped  |
-| `410` gone                           | `RepoError` → `repo_inaccessible`              | continues, repo skipped  |
-| `422` with `already_exists`          | `IsAlreadyExists` — a create becomes an update | continues                |
-| Rate limit, primary or secondary     | passed through, typed                          | waits — see `ratelimit/` |
-| Cancelled context                    | passed through                                 | stops                    |
-| Anything else (`401`, `5xx`, …)      | passed through                                 | fails                    |
+| What came back                       | Classified as                                  | The run                                         |
+|--------------------------------------|------------------------------------------------|-------------------------------------------------|
+| `403` archived, or no permission     | `RepoError` → `repo_inaccessible`              | continues, repo skipped                         |
+| `404` renamed, deleted, or invisible | `RepoError` → `repo_inaccessible`              | continues, repo skipped                         |
+| `410` gone                           | `RepoError` → `repo_inaccessible`              | continues, repo skipped                         |
+| `422` with `already_exists`          | `IsAlreadyExists` — a create becomes an update | continues                                       |
+| Rate limit, primary or secondary     | passed through, typed                          | waits — see [Rate Limiting](./rate-limiting.md) |
+| Cancelled context                    | passed through                                 | stops                                           |
+| Anything else (`401`, `5xx`, …)      | passed through                                 | fails                                           |
 
 `RepoError` wraps `ErrRepoInaccessible`, so `errors.Is` matches it and `KindOf` renders
 `repo_inaccessible` through the struct, while its fields carry what a summary line needs.
@@ -79,6 +79,176 @@ configured values — which an update reaches:
 - A plan computed against state that has since changed, including two runs overlapping.
 - **Case-only drift.** A repository holding `bug` rejects the creation of `Bug`, because GitHub
   holds label names case-insensitively unique.
+
+## Repository enumeration
+
+`internal/github/repos.go` turns the selectors [`config.Resolve`](./configuration.md#resolution)
+produced into concrete repositories:
+
+```go
+repos, err := client.Enumerate(ctx, resolution.Selectors(), concurrency)
+```
+
+The result is the deduplicated union of every selector, sorted by owner and then name — a map is
+not ordered, and every downstream artefact is compared between runs. Deduplication is
+case-insensitive on `owner/repo`: two groups selecting the same repository is ordinary, and is how
+one ends up with the labels of both.
+
+| Selector kind           | Endpoint                            | Notes                          |
+|-------------------------|-------------------------------------|--------------------------------|
+| `org`                   | `GET /orgs/{org}/repos`             | 100/page                       |
+| `user`, the token's own | `GET /user/repos?affiliation=owner` | The only one that sees private |
+| `user`, anybody else    | `GET /users/{user}/repos`           | Public only                    |
+| `repos`                 | none                                | Passed through unenumerated    |
+
+Which of the two `user` endpoints applies was decided in `config.Resolve` from the authenticated
+login, so this package does not ask who the token belongs to a second time. The authenticated
+request carries `affiliation=owner` and nothing else — GitHub rejects a request carrying both
+`affiliation` and `type`.
+
+### Filtering is free and stays free
+
+A repository listing already carries `archived`, `fork`, `private` and `has_issues` on **every
+entry**, so every filter is answered from the enumeration response. Nothing here issues a
+`GET /repos/{owner}/{repo}` to check an attribute: that would turn one request per hundred
+repositories into one per repository, for information already in hand. A test asserts no such
+request is made, because the cost only shows up as a slow run against a large org.
+
+The filters themselves live in `config.Selector.Matches`, offline and testable without an HTTP mock.
+This file's job is to produce the `config.Repo` values it judges — including `HasIssues`, which is
+carried through and **never** filtered on. Repositories with issues disabled sync normally; the diff
+merely notes them, and excluding one stays the user's choice through the group filters.
+
+Enumeration is the only place `HasIssues` is ever known, which is why it is a `*bool`. An explicit
+`repos:` entry is passed through unenumerated, so its flag stays `nil` — *not known* — rather than
+defaulting to a note about a repository nothing looked at.
+
+### Parallel walks, and what a failure means
+
+Selectors are walked in parallel through `errgroup`, bounded by `--concurrency` (default 8). Reads
+are not subject to the content-creation secondary limit, so the bound is round-trip latency and
+politeness rather than a quota concern.
+
+An owner that cannot be listed is recorded and skipped: one mistyped org in a config naming four
+reports itself in the end-of-run summary rather than taking the other three down with it. Anything
+else — a `401`, a cancelled context — ends the run, because continuing would report a successful run
+that synced nothing.
+
+## Label operations
+
+`internal/github/labels.go` holds the four operations and nothing else. Every one goes through
+`Client.Do`, so an inaccessible repository is recorded and skipped rather than ending the run.
+
+```go
+labels, err := client.ListLabels(ctx, owner, repo)
+err = client.CreateLabel(ctx, owner, repo, github.Label{Name: "bug", Color: "d73a4a"})
+err = client.UpdateLabel(ctx, owner, repo, "bug", github.Label{Name: "defect", Color: "d73a4a"})
+err = client.DeleteLabel(ctx, owner, repo, "wontfix")
+```
+
+`ListLabels` walks every page at 100 per page. More than 100 labels in one repository is rare, but a
+truncated list does not read as "truncated" — it reads as "these labels do not exist", and the plan
+would plan their creation on every run.
+
+`UpdateLabel` takes the **observed** remote name as its own argument and the desired label as the
+body, so the request stays consistent with the state the plan was computed against. The desired name
+always goes out as `new_name`, even when it is identical to the path, which keeps a rename and a
+recolour one code path instead of two.
+
+### The update request is hand-built
+
+go-github's `EditLabel` sends the label's `name` field. GitHub's update endpoint reads **`new_name`**
+and ignores `name`, so `EditLabel` would return a cheerful `200` having renamed nothing and the
+drift would come back on every run. `UpdateLabel` therefore builds its own `PATCH` body:
+
+| Field         | Always sent | Why                                                                     |
+|---------------|-------------|-------------------------------------------------------------------------|
+| `new_name`    | yes         | The rename, and the casing repair. Preserves the label `id`             |
+| `color`       | yes         | The value the config asks for                                           |
+| `description` | yes         | Descriptions are authoritative; omitting it leaves a stale one in place |
+
+A rename is a `PATCH` and **never** a delete plus a create, because `new_name` preserves every issue
+and pull-request association. Delete-and-recreate would strip the label from every issue that used
+it — the damage `DeleteLabel` does, for a rename nobody asked to be destructive.
+
+### `DeleteLabel` is guarded at the call site
+
+Deleting a label removes it from every issue and pull request that carried it, and nothing restores
+that. It is called only in prune mode, on a candidate the user has been shown and has accepted. The
+planner emits removal *candidates* and never decides which are deleted; this function is why that
+separation exists.
+
+### Label names are escaped into paths
+
+`area/api` is an ordinary label name and two path segments if interpolated raw — go-github does not
+escape, so `UpdateLabel` and `DeleteLabel` build their own escaped paths. Getting this wrong on a
+`DELETE` destroys something else entirely. Owner and repository names need no escaping, having been
+through `config.ParseRepoRef`'s character set.
+
+## The ETag cache
+
+`internal/github/cache.go` is the single most valuable optimisation in the tool: a conditional
+request that comes back `304 Not Modified` **does not count against the primary rate limit**. Labels
+change rarely, so hit rates are high — which is what makes `sync --dry-run` cheap enough to run on
+every pull request.
+
+`ListLabels` sends the cached `ETag` as `If-None-Match`; a `304` is answered from disk, and the
+labels are never sent again. A `200` stores the new list and its `ETag`.
+
+Entries live under `$XDG_CACHE_HOME/labelsync/`, one file per repository, and carry a **schema
+version**. An entry written by a labelsync whose entry shape meant something else is discarded rather
+than deserialised into the current struct — a new field with a zero value that reads as `false` is
+exactly what the version exists to catch.
+
+The file name is the SHA-256 of the lowercased `owner/repo`, not the reference itself. A repository
+name is not a file name — it carries a slash, and a cache key that can escape its own directory is
+not a cache key. Lowercasing keeps `Owner/Repo` and `owner/repo`, which address the same repository,
+on one entry. The reference is stored *inside* the file, so an entry is still identifiable by eye.
+
+Writes go to a temporary file and are renamed into place, so a run interrupted mid-write leaves the
+previous entry rather than a half-written one for the next run to reject.
+
+### `--no-cache` is the absence of a destination
+
+Caching is on when the client has a cache directory, and `--no-cache` is that directory being empty.
+There is no second flag threaded through the read path to keep in step with it, and a `nil` cache is
+a working cache that never hits and never stores. Under test the directory is `t.TempDir()`, which is
+also what stops a test run from touching the developer's real cache.
+
+### A miss is never an error
+
+Absent, unreadable, corrupt, truncated, or from another schema — all of it is a miss. Nothing in
+`cache.go` returns an error to a caller. The cache is an optimisation, and an optimisation that can
+fail a run is a liability; a miss costs one live request, and the entry is rewritten so the next run
+is a hit again.
+
+### Only a single-page list is served
+
+An `ETag` covers the response it came from, which is **page one**. A repository with more than a
+hundred labels can change beyond page one without page one's representation changing at all, so a
+cached list served there would plan creates for labels that already exist. The entry records how many
+pages the list took, and a multi-page one is always read live. More than 100 labels in one repository
+is rare, so the optimisation keeps the case it is correct for.
+
+For the same reason the header only ever goes out on page one: offering it for page two would ask
+about a response it never described.
+
+### `github.Label` mirrors `plan.Label`
+
+The planner declares its own `Label`, which is what keeps `internal/plan` free of
+`internal/github` — it takes plain structs and does no HTTP. The client's `Label` has the **same
+fields in the same order**, so bridging the two is a conversion:
+
+```go
+current := make([]plan.Label, len(labels))
+for i, l := range labels {
+    current[i] = plan.Label(l)
+}
+```
+
+A mapping function would compile happily with a field forgotten; a conversion does not. A test pins
+it, so a field renamed or reordered on either side breaks the build rather than surfacing later as a
+silently empty description.
 
 ## Per-repository failures are non-fatal
 

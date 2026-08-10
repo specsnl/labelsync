@@ -38,6 +38,18 @@ type repoState struct {
 	// uncovered marks a repository no group resolved to: the planner is handed
 	// an empty desired set for it, which is the input its safety guard is on.
 	uncovered bool
+
+	// issuesDisabled is the repository-level note. It is derived from input, so
+	// it may not vary between two runs — which is exactly what this suite is
+	// for, and why it is a field here rather than a case of its own.
+	issuesDisabled bool
+}
+
+// target renders the state as the repository the planner is handed.
+func (r repoState) target() config.Repo {
+	owner, name, _ := strings.Cut(r.repo, "/")
+
+	return config.Repo{Owner: owner, Name: name, HasIssues: new(!r.issuesDisabled)}
 }
 
 // fixture is a whole run: one configured label set and renames list — the config
@@ -62,7 +74,7 @@ func (f fixture) compute() plan.Plan {
 			desired = nil
 		}
 
-		p.Repos = append(p.Repos, plan.Compute(r.repo, desired, r.current, f.mode, f.renames))
+		p.Repos = append(p.Repos, plan.Compute(r.target(), desired, r.current, f.mode, f.renames))
 	}
 
 	return p
@@ -87,7 +99,7 @@ func fixtures() []fixture {
 			desired: desired,
 			repos: []repoState{
 				{repo: "specsnl/example-website"},
-				{repo: "specsnl/example-platform"},
+				{repo: "specsnl/example-platform", issuesDisabled: true},
 			},
 		},
 		{

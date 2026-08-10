@@ -32,6 +32,7 @@ import (
 
 	gogithub "github.com/google/go-github/v76/github"
 
+	"github.com/specsnl/labelsync/internal/github/ratelimit"
 	"github.com/specsnl/labelsync/internal/labelsync"
 	"github.com/specsnl/labelsync/internal/util/exit"
 	"github.com/specsnl/labelsync/internal/util/output"
@@ -59,10 +60,14 @@ const (
 type Client struct {
 	rest     *gogithub.Client
 	failures *Failures
+	cache    *cache
+	limiter  *ratelimit.Limiter
 }
 
 // options are the knobs [New] accepts. Zero values mean the production defaults.
 type options struct {
+	cacheDir   string
+	limiter    *ratelimit.Limiter
 	baseURL    string
 	httpClient *http.Client
 	retries    int
@@ -81,6 +86,24 @@ type Option func(*options)
 // path relative to this URL and silently loses the last segment without one.
 func WithBaseURL(raw string) Option {
 	return func(o *options) { o.baseURL = raw }
+}
+
+// WithCacheDir points the ETag cache at a directory, and is what turns caching
+// on: an empty directory — the default — is a client that never reads or writes
+// one. That is how --no-cache arrives, and it is deliberately the absence of a
+// destination rather than a flag threaded through the read path.
+//
+// Production passes labelsync.CacheDir(); a test passes t.TempDir(), which is
+// also what stops a test run from touching the developer's real cache.
+func WithCacheDir(dir string) Option {
+	return func(o *options) { o.cacheDir = dir }
+}
+
+// WithLimiter installs the rate limiter. Without one the client issues requests
+// as fast as it is asked to, which is the right behaviour for a test and the
+// wrong one for a few hundred label writes.
+func WithLimiter(l *ratelimit.Limiter) Option {
+	return func(o *options) { o.limiter = l }
 }
 
 // WithHTTPClient supplies the transport the retry wrapper is layered over.
@@ -134,6 +157,13 @@ func New(token Token, opts ...Option) (*Client, error) {
 		}
 	}
 
+	// The limiter sits closest to the network, under the retry wrapper, so a
+	// retried attempt is paced and observed like any other request rather than
+	// slipping past the bucket because the first attempt already paid for it.
+	if o.limiter != nil {
+		base = &ratelimit.Transport{Next: base, Limiter: o.limiter}
+	}
+
 	httpClient := &http.Client{
 		Timeout: timeout,
 		Transport: &retryTransport{
@@ -146,6 +176,16 @@ func New(token Token, opts ...Option) (*Client, error) {
 
 	rest := gogithub.NewClient(httpClient).WithAuthToken(token.Value)
 
+	// go-github keeps its own memory of a limit it has seen and refuses later
+	// requests **without issuing them**, against the real clock. That is a
+	// sensible default and the wrong one here: this tool waits limits out
+	// itself, through an injected clock, and a second opinion that cannot be
+	// told that time has passed turns a retry into a refusal — and, under test,
+	// into a run that spends its whole --max-wait without making a request.
+	// Waiting is ratelimit.Limiter's job, and it has to be the only thing doing
+	// it.
+	rest.DisableRateLimitCheck = true
+
 	if o.baseURL != "" {
 		parsed, err := url.Parse(strings.TrimSuffix(o.baseURL, "/") + "/")
 		if err != nil {
@@ -157,7 +197,7 @@ func New(token Token, opts ...Option) (*Client, error) {
 
 	slog.Debug("github client built", "token", token, "base_url", rest.BaseURL.String(), "retries", o.retries)
 
-	return &Client{rest: rest, failures: &Failures{}}, nil
+	return &Client{rest: rest, failures: &Failures{}, cache: newCache(o.cacheDir), limiter: o.limiter}, nil
 }
 
 // REST exposes the underlying go-github client, for the request-issuing code in
@@ -186,18 +226,79 @@ func (c *Client) Failures() *Failures { return c.failures }
 // Recording inside Do rather than at the call site is deliberate. A skipped
 // repository that never reaches the summary is indistinguishable from one that
 // synced cleanly, and that is the one mistake here a user cannot detect.
+// # Rate limits are waited out, not returned
+//
+// A call that comes back rate-limited is retried once the limiter has slept it
+// off, because a rate limit is not an outcome — it is the API asking for the
+// same request later. The loop ends when the call stops being rate-limited, or
+// when the wait would take the run past --max-wait, which comes back as
+// [labelsync.ErrMaxWaitExceeded].
 func (c *Client) Do(ctx context.Context, repo, op string, call func(context.Context) (*gogithub.Response, error)) error {
-	resp, err := call(ctx)
+	for {
+		resp, err := call(ctx)
 
-	classified := Classify(repo, op, resp, err)
-	if classified == nil {
-		return nil
+		classified := Classify(repo, op, resp, err)
+		if classified == nil {
+			return nil
+		}
+
+		if c.limiter != nil {
+			retry, waitErr := c.limiter.Recover(ctx, classified)
+			if waitErr != nil {
+				return waitErr
+			}
+
+			if retry {
+				slog.Debug("retrying after a rate limit", "repo", repo, "op", op)
+
+				continue
+			}
+		}
+
+		c.failures.Record(classified)
+
+		return classified
+	}
+}
+
+// RateLimit reads the current budget from GET /rate_limit.
+//
+// The endpoint is **free**: it does not itself count against the limit, which is
+// what makes it worth calling at startup. The reading seeds the limiter, so the
+// first request of a run is issued as informed as the last, and --debug reports
+// what is left before anything is spent.
+//
+// A failure here is not fatal to the caller's decision-making — the run can
+// proceed uninformed, which is what it did before the call existed — but it is
+// returned rather than swallowed so a caller can say so.
+func (c *Client) RateLimit(ctx context.Context) (*gogithub.Rate, error) {
+	limits, _, err := c.rest.RateLimit.Get(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("reading the rate limit: %w", err)
 	}
 
-	c.failures.Record(classified)
+	core := limits.GetCore()
+	if core == nil {
+		return nil, fmt.Errorf("reading the rate limit: %w", errNoCoreBudget)
+	}
 
-	return classified
+	if c.limiter != nil {
+		c.limiter.Prime(core.Remaining, core.Reset.Time)
+	}
+
+	slog.Debug("rate limit at startup",
+		"remaining", core.Remaining,
+		"limit", core.Limit,
+		"resets_at", core.Reset.Format(time.RFC3339),
+	)
+
+	return core, nil
 }
+
+// errNoCoreBudget is a /rate_limit response with no core resource in it. It is
+// not a sentinel in internal/labelsync because it is not a way a run fails: the
+// caller reports it and carries on uninformed.
+var errNoCoreBudget = errors.New("the response carried no core budget")
 
 // RepoError is a failure that belongs to one repository rather than to the run.
 //
