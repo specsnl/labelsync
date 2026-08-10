@@ -41,7 +41,7 @@ labelsync/
 | `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf`                         |
 | `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes](./output.md)                           |
 | `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                                |
-| `internal/cmd`         | partial | Root, `App`, persistent flags, `sync --dry-run`, `groups`, `init`, `version`           |
+| `internal/cmd`         | partial | Root, `App`, flags, `sync --dry-run`, `export`, `groups`, `init`, `version`            |
 | `internal/config`      | landed  | Load, validate, resolve, the `init` scaffold — see [Configuration](./configuration.md) |
 | `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette](./palette.md)                 |
 | `internal/plan`        | landed  | `Action`, `Plan`, `Compute` in both modes, rendering — see [Planner](./plan.md)        |
@@ -72,14 +72,14 @@ labelsync [--config <path>]
 ├── sync                                  reconcile labels
 │     [--dry-run] [--mode append|prune] [--prune all]
 │     [--group <name>]... [--repo <owner/repo>]...
-├── export <owner/repo> [-o <file>]       dump a repo's labels as config YAML
+├── export <owner/repo> [--out <file>]    dump a repo's labels as config YAML
 ├── init [--force]                        scaffold a labels.yml
 ├── groups [--group <name>]...            resolve and list group → repo membership
 ├── cache {clear|info}
 └── version [--dont-prettify]
 ```
 
-The root, `sync --dry-run`, `groups`, `init`, and `version` exist so far; applying, `export`, and
+The root, `sync --dry-run`, `export`, `groups`, `init`, and `version` exist so far; applying and
 `cache` are the leaves still to be added.
 
 ### How the tree is wired
@@ -110,6 +110,10 @@ The root, `sync --dry-run`, `groups`, `init`, and `version` exist so far; applyi
   `plan.Compute` per repository, render, exit code. It is the only command that assembles a `Plan`,
   and the only one whose answer is an exit code as much as a rendering — see
   [Exit codes](#exit-codes) below.
+- **`export.go`** dumps one repository's labels as config YAML. It is the only command that writes
+  to `App.Stdout` rather than through `App.Out`, because its product is a *file* and not a record;
+  see [Output § An export is a file](./output.md#an-export-is-a-file-not-a-record). The rendering
+  itself belongs to `internal/config`, next to the loader whose normalisation it has to match.
 - **`version.go`** owns `Version`, the variable `.goreleaser.yml` and the `Dockerfile` inject with
   `-ldflags -X github.com/specsnl/labelsync/internal/cmd.Version`. That path is a build-file string
   the compiler never checks, so `version_test.go` asserts both files still name it — a rename would

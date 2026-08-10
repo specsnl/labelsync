@@ -161,9 +161,53 @@ Under `--output=json`, each of these carries a stable `error_kind` — `duplicat
 
 ## Commands
 
-`sync --dry-run`, `groups`, `init`, and `version` are implemented so far. Applying, `export`, and
+`sync --dry-run`, `export`, `groups`, `init`, and `version` are implemented so far. Applying and
 `cache` are the planned tree — see the
 [design plan](https://github.com/specsnl/labelsync/blob/main/docs/design.md#cli).
+
+### `labelsync export`
+
+Writes a repository's current labels as a config file.
+
+```sh
+labelsync export specsnl/labelsync                  # to stdout
+labelsync export specsnl/labelsync > labels.yml     # the same, redirected
+labelsync export specsnl/labelsync --out labels.yml # written for you
+labelsync export specsnl/labelsync --out ./ops      # ops/labels.yml
+```
+
+**Run this before your first sync against repositories that already have labels.** Descriptions are
+authoritative: a label whose description your config does not carry has its description *cleared*.
+An export is a faithful starting point, so that never happens by accident.
+
+The flag is `--out`, not the `-o` the design sketch used: `-o` is already the shorthand for the
+global `--output`.
+
+What comes out is sorted by name and normalised exactly the way the loader normalises a config — a
+`#` stripped, hex lower-cased, names trimmed — so `export`, edit, `export` shows your edits and
+nothing else. It carries a `groups` section naming the repository it came from and a
+`defaults.groups` pointing at it, so the file works as it lands rather than after an edit nothing
+told you to make.
+
+With no `--out`, **stdout is the file**, whatever `--output` says. It is the one command whose
+stdout is not one typed object per line, because `> labels.yml` has to produce a config file. With
+`--out`, stdout is the usual record — `{"path":"labels.yml","labels":12}`.
+
+#### Two labels sharing a colour
+
+Colours have to be unique across a config file, and a repository is under no such rule. Where one
+genuinely holds two labels of the same colour, the export says so rather than inventing a
+difference:
+
+```yaml
+  - name: "bug"
+    color: "d73a4a" # also "defect" — colours must be unique across the file; change one
+```
+
+The file is exported as it is, and it is also warned about on stderr — a redirected export is a
+file nobody reads until the next run rejects it. Which of the two to change is the one decision
+`labelsync` cannot make for you, so it names both and stops there. Until you pick, loading the file
+fails with `duplicate_label_color`.
 
 ### `labelsync sync --dry-run`
 
@@ -198,7 +242,7 @@ tool rests on.
 Nothing is deleted: choosing which candidates go is a later step, and a dry run writes nothing
 either way.
 
-Run `labelsync export <owner/repo>` before the first sync against repositories that already have
+Run [`export`](#labelsync-export) before the first sync against repositories that already have
 labels. Descriptions are authoritative, so a label whose description your config does not carry has
 its description cleared.
 

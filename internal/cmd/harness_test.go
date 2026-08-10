@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/specsnl/labelsync/internal/cmd"
@@ -96,6 +97,54 @@ func repoJSON(owner, name string, archived, fork, private, hasIssues bool) strin
 		`{"name":%q,"owner":{"login":%q},"archived":%t,"fork":%t,"private":%t,"has_issues":%t}`,
 		name, owner, archived, fork, private, hasIssues,
 	)
+}
+
+// recorder records what the fake API saw. Repositories are read in parallel, so
+// a test that appended to a plain slice from the handler would be a data race
+// the -race detector finds on some runs and not others.
+type recorder struct {
+	mu       sync.Mutex
+	requests []string
+}
+
+// record files one request as "METHOD path".
+func (r *recorder) record(req *http.Request) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.requests = append(r.requests, req.Method+" "+req.URL.Path)
+}
+
+// all returns what the fake API saw, as a copy.
+func (r *recorder) all() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return append([]string(nil), r.requests...)
+}
+
+// matching returns the recorded requests containing substr.
+func (r *recorder) matching(substr string) []string {
+	var out []string
+
+	for _, request := range r.all() {
+		if strings.Contains(request, substr) {
+			out = append(out, request)
+		}
+	}
+
+	return out
+}
+
+// watch wraps a handler so every request through it is recorded.
+func watch(next http.Handler) (http.Handler, *recorder) {
+	log := &recorder{}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.record(r)
+
+		next.ServeHTTP(w, r)
+	}), log
 }
 
 // writeJSON is fmt.Fprint with the error dropped: a test server's response

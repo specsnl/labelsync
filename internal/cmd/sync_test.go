@@ -169,22 +169,16 @@ func TestSync_DriftPrintsNothingAtErrorLevel(t *testing.T) {
 // so a stray write would surface as a failure — this asserts it directly anyway,
 // because "it did not write" is the promise the flag makes.
 func TestSync_DryRunWritesNothing(t *testing.T) {
-	var methods []string
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		methods = append(methods, r.Method)
-
-		writeJSON(w, `[]`)
-	})
+	handler, log := watch(labelServer(`[]`))
 
 	app, flags := fakeGitHub(t, handler)
 	config := writeConfig(t, syncConfig)
 
 	runApp(t, app, nil, args(config, flags, "sync", "--dry-run")...) //nolint:errcheck // The exit code is asserted elsewhere.
 
-	for _, method := range methods {
-		if method != http.MethodGet {
-			t.Errorf("a %s request was issued during a dry run", method)
+	for _, request := range log.all() {
+		if !strings.HasPrefix(request, http.MethodGet+" ") {
+			t.Errorf("a write was issued during a dry run: %s", request)
 		}
 	}
 }
@@ -192,13 +186,7 @@ func TestSync_DryRunWritesNothing(t *testing.T) {
 // --repo bypasses enumeration, not the config: the repository still gets the
 // labels its groups ask for.
 func TestSync_RepoFlagBypassesEnumeration(t *testing.T) {
-	var paths []string
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		paths = append(paths, r.URL.Path)
-
-		writeJSON(w, inSync)
-	})
+	handler, log := watch(labelServer(inSync))
 
 	app, flags := fakeGitHub(t, handler)
 	config := writeConfig(t, syncConfig)
@@ -209,8 +197,8 @@ func TestSync_RepoFlagBypassesEnumeration(t *testing.T) {
 		t.Fatalf("sync: %v", err)
 	}
 
-	if len(paths) != 1 || !strings.Contains(paths[0], "example-website") {
-		t.Fatalf("requests = %v, want only the named repository", paths)
+	if requests := log.all(); len(requests) != 1 || !strings.Contains(requests[0], "example-website") {
+		t.Fatalf("requests = %v, want only the named repository", requests)
 	}
 
 	if !strings.Contains(stdout, "specsnl/example-website") {
@@ -221,13 +209,7 @@ func TestSync_RepoFlagBypassesEnumeration(t *testing.T) {
 // A repository no configured label selects is never touched, and one named
 // outright says so rather than being silently dropped.
 func TestSync_RepoNoGroupSelectsIsNotTouched(t *testing.T) {
-	var requested int
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		requested++
-
-		writeJSON(w, `[]`)
-	})
+	handler, log := watch(labelServer(`[]`))
 
 	app, flags := fakeGitHub(t, handler)
 	config := writeConfig(t, syncConfig)
@@ -238,8 +220,8 @@ func TestSync_RepoNoGroupSelectsIsNotTouched(t *testing.T) {
 		t.Fatalf("sync: %v", err)
 	}
 
-	if requested != 0 {
-		t.Errorf("%d requests were issued for a repository no group selects", requested)
+	if requests := log.all(); len(requests) != 0 {
+		t.Errorf("requests were issued for a repository no group selects: %v", requests)
 	}
 
 	if !strings.Contains(stderr, "acme/unrelated") {
@@ -416,19 +398,15 @@ func TestSync_RateLimitCheckOnlyUnderDebug(t *testing.T) {
 		{"with --debug", []string{"--debug"}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var asked bool
-
-			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler, log := watch(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/rate_limit" {
-					asked = true
-
 					writeJSON(w, `{"resources":{"core":{"limit":5000,"remaining":4999,"reset":4102444800}}}`)
 
 					return
 				}
 
 				writeJSON(w, inSync)
-			})
+			}))
 
 			app, flags := fakeGitHub(t, handler)
 			config := writeConfig(t, syncConfig)
@@ -437,7 +415,7 @@ func TestSync_RateLimitCheckOnlyUnderDebug(t *testing.T) {
 				t.Fatalf("sync: %v", err)
 			}
 
-			if asked != tc.want {
+			if asked := len(log.matching("/rate_limit")) > 0; asked != tc.want {
 				t.Errorf("GET /rate_limit issued = %t, want %t", asked, tc.want)
 			}
 		})

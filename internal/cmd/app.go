@@ -14,7 +14,9 @@
 package cmd
 
 import (
+	"io"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/specsnl/labelsync/internal/github"
@@ -52,6 +54,19 @@ type App struct {
 	// root's PersistentPreRunE with a writer over the command's own streams, once
 	// --output has been parsed.
 	Out output.Writer
+
+	// Stdout is the raw stdout stream, for the one product that is a file rather
+	// than a record.
+	//
+	// `labelsync export owner/repo > labels.yml` has to produce a config file,
+	// and every method on Out would either wrap the YAML in a JSON object or
+	// interleave prose with it. Nothing else in the tree may reach for this:
+	// output that is a record goes through Out, so that --output means something
+	// everywhere it can.
+	//
+	// Like Out, it is replaced in PersistentPreRunE with the command's own
+	// stream, so a test captures it.
+	Stdout io.Writer
 
 	// LogLevel gates the debug logger. Cobra parses flags after the tree is
 	// built, so the level is held here and raised once --debug is known.
@@ -109,6 +124,7 @@ type App struct {
 func NewApp() *App {
 	return &App{
 		Out:         output.NewDefaultPrettyWriter(),
+		Stdout:      os.Stdout,
 		LogLevel:    output.SetupDefaultLogger(output.FormatPretty, false),
 		Format:      output.FormatPretty,
 		Concurrency: DefaultConcurrency,

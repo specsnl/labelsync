@@ -12,6 +12,7 @@ three separate concerns in three files, all of which have landed:
 | `validate.go` | The rules in the design's validation table         | landed |
 | `resolve.go`  | Groups → selectors, and every rule about the graph | landed |
 | `scaffold.go` | The starter config `labelsync init` writes         | landed |
+| `export.go`   | Labels back out as a config file                   | landed |
 
 Nothing in the package touches the network, and nothing in `config.go` rejects a config: an
 invalid colour parses into the struct exactly as written and is `validate.go`'s answer to give.
@@ -229,6 +230,39 @@ The file is a worked example rather than the smallest thing that validates: a gr
 kind, `defaults.groups`, a rename, and a label that names groups of its own to contrast with the
 default. A test asserts each of those is still in there, because "the scaffold demonstrates the
 sections" is a claim the documentation makes and an edit could quietly withdraw.
+
+## Export
+
+```go
+func Export(repo string, labels []Label) ([]byte, error)
+func DuplicateColors(labels []Label) map[string][]string
+```
+
+`export.go` renders labels *back* into a config file, and it lives next to the loader for one
+reason: it has to normalise the same way. Colours go through the same `normalizeColor`, names are
+trimmed the same way, so `export` → load → `export` is a fixed point rather than a churn of
+incidental spelling changes. A test asserts exactly that.
+
+The output is built as a `yaml.Node` tree rather than by marshalling a `Config`, because the
+comments are half of what it is for — the header explaining that descriptions are authoritative,
+and the annotation on a shared colour. Marshalling a struct produces the same data and none of the
+prose. Every scalar is double-quoted, which is not decoration: a colour like `123456` is a string
+the loader wants and an integer YAML would otherwise hand it, and a label named `no` is a boolean.
+
+It emits a `groups` section naming the repository and a `defaults.groups` pointing at it. A config
+with no groups parses, validates, and then selects nothing — a file that is only usable after an
+edit nothing told the user to make.
+
+**A duplicate colour is flagged, not repaired.** Colour uniqueness is a config-file rule, and a
+repository is under no obligation to satisfy it. The export carries both labels as they are, with a
+comment on each naming the other, and the command warns on stderr as well — a redirected export is
+a file nobody reads until the next run rejects it with `duplicate_label_color`. Inventing a
+different colour would export a file that no longer describes the repository it came from, and
+choosing which of the two to change is the one decision this cannot make.
+
+Exporting a repository with no labels fails with `ErrEmptyConfig`: the file it would write declares
+no labels, which is precisely the rule the loader would reject it by, so it fails now rather than
+as a puzzle on the next run.
 
 ## Resolution
 

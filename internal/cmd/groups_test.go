@@ -260,15 +260,7 @@ func TestGroups_PrettyRendering(t *testing.T) {
 // A config with no user: group must not spend a request asking who the token
 // belongs to — the answer decides nothing for it.
 func TestGroups_DoesNotResolveTheLoginWithoutAUserGroup(t *testing.T) {
-	var asked bool
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/user" {
-			asked = true
-		}
-
-		orgListing().ServeHTTP(w, r)
-	})
+	handler, log := watch(orgListing())
 
 	app, flags := fakeGitHub(t, handler)
 	config := writeConfig(t, groupsConfig)
@@ -277,7 +269,7 @@ func TestGroups_DoesNotResolveTheLoginWithoutAUserGroup(t *testing.T) {
 		t.Fatalf("groups: %v", err)
 	}
 
-	if asked {
-		t.Error("GET /user was issued for a config with no user: group")
+	if requests := log.matching("/user"); len(requests) > 0 {
+		t.Errorf("GET /user was issued for a config with no user: group: %v", requests)
 	}
 }

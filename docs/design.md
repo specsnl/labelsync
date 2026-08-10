@@ -721,8 +721,8 @@ Exceeding it exits with an error and a summary of what remained.
 
 ## CLI
 
-> **Partly landed.** The root command, the persistent flags, `sync --dry-run`, `groups`, `init`, and
-> `version` are implemented in `internal/cmd` — see
+> **Partly landed.** The root command, the persistent flags, `sync --dry-run`, `export`, `groups`,
+> `init`, and `version` are implemented in `internal/cmd` — see
 > [Overview § How the tree is wired](./content/docs/architecture/overview.md#how-the-tree-is-wired).
 > The remaining subcommands below are still the plan.
 >
@@ -766,6 +766,14 @@ labelsync [--config <path>]
 `export` matters more than it looks: because descriptions are authoritative, a first run against
 existing repositories will clear any description not present in the config. `export` produces a
 faithful starting point so that never happens by accident.
+
+**Landed** ([#40](https://github.com/specsnl/labelsync/issues/40)), with one deviation from the
+sketch above: the flag is `--out`, because `-o` is already the shorthand for the global `--output`
+and a second flag claiming the same letter is a `pflag` panic rather than a preference. A
+repository holding two labels of one colour is exported as it is and annotated, because colour
+uniqueness is a config-file rule that a repository is under no obligation to satisfy and choosing
+which of the two to change is not a decision a tool can make. See
+[Usage § `labelsync export`](./content/docs/usage/_index.md).
 
 `groups` is a pure read command — invaluable for confirming a selector matches what you think
 before running a prune. **Landed** ([#39](https://github.com/specsnl/labelsync/issues/39)): the
