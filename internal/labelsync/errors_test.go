@@ -23,6 +23,7 @@ var allSentinels = []struct {
 }{
 	{"ErrConfigNotFound", labelsync.ErrConfigNotFound, "config_not_found"},
 	{"ErrAmbiguousConfigFile", labelsync.ErrAmbiguousConfigFile, "ambiguous_config_file"},
+	{"ErrConfigExists", labelsync.ErrConfigExists, "config_exists"},
 	{"ErrUnsupportedConfigVersion", labelsync.ErrUnsupportedConfigVersion, "unsupported_config_version"},
 	{"ErrEmptyConfig", labelsync.ErrEmptyConfig, "empty_config"},
 	{"ErrDuplicateLabelName", labelsync.ErrDuplicateLabelName, "duplicate_label_name"},

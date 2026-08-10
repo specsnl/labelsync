@@ -11,6 +11,7 @@ three separate concerns in three files, all of which have landed:
 | `config.go`   | Find the file, parse it, normalise it              | landed |
 | `validate.go` | The rules in the design's validation table         | landed |
 | `resolve.go`  | Groups → selectors, and every rule about the graph | landed |
+| `scaffold.go` | The starter config `labelsync init` writes         | landed |
 
 Nothing in the package touches the network, and nothing in `config.go` rejects a config: an
 invalid colour parses into the struct exactly as written and is `validate.go`'s answer to give.
@@ -204,6 +205,31 @@ label and not one at once; the chain is checked explicitly all the same, so the 
 chain rather than leaving the user to work out why the middle name is the one being complained
 about.
 
+## The scaffold
+
+```go
+func Scaffold() []byte
+```
+
+The starter config `labelsync init` writes lives here, in `scaffold.yml`, embedded with
+`go:embed`. Two consequences, and both are the reason it is not a string literal in
+`internal/cmd`:
+
+- **It is a `.yml` file while it is being edited**, so the comments in it — which are most of its
+  value, and the first thing a user meets — read as YAML rather than as an escaped Go string.
+- **It is held to the same rules as any other config file.** `catalogue_test.go` runs it through
+  `Parse` + `Validate` alongside the repository's own `labels.yml`, under one set of property
+  assertions. `init` therefore cannot emit a config the very next command rejects, and the worked
+  example cannot drift away from the real file into demonstrating something different.
+
+`Scaffold` returns a copy. The embedded bytes are package state for the life of the process, and a
+caller that sliced into them would change what every later call returns.
+
+The file is a worked example rather than the smallest thing that validates: a group per source
+kind, `defaults.groups`, a rename, and a label that names groups of its own to contrast with the
+default. A test asserts each of those is still in there, because "the scaffold demonstrates the
+sections" is a claim the documentation makes and an edit could quietly withdraw.
+
 ## Resolution
 
 `resolve.go` turns the `groups` section into **selectors**, not repository lists:
@@ -324,12 +350,15 @@ case directly for that reason.
   cases and both not-found cases, with the working directory and `XDG_CONFIG_HOME` pointed at
   temporary directories. Every error case also asserts `KindOf` still names the sentinel through
   the wrapping.
-- **The repository's own `labels.yml`** is loaded through `LoadFile` as a test of its own, so the
-  worked example the documentation points at has to pass the rules it claims to satisfy. The
-  properties it relies on — globally unique colours, descriptions within the limit, every
-  referenced group defined, every label in at least one group and carrying a description — are
-  re-asserted directly, so neither a change to a rule nor an edit to the file can quietly cost the
-  catalogue one of them.
+- **The repository's own `labels.yml` and the `init` scaffold** go through one test, each loaded
+  the way a user's config is — `LoadFile` for the catalogue, `Parse` + `Validate` for the embedded
+  scaffold — so both have to pass the rules they claim to satisfy. The properties they rely on —
+  globally unique colours, descriptions within the limit, every referenced group defined, every
+  label in at least one group and carrying a description — are re-asserted directly against both,
+  so neither a change to a rule nor an edit to either file can quietly cost one of them a property
+  the documentation promises. The scaffold is additionally written to a temporary directory and
+  read back through `LoadFile`, because being embedded correctly and reaching the disk correctly
+  are two different claims.
 - **Normalisation** is pinned by golden files: `testdata/*.yml` in, the normalised struct
   marshalled back to YAML out. A change to any defaulting or tidying rule shows up as a diff in
   the golden rather than as a subtly different plan several stages later.

@@ -30,6 +30,7 @@ The kind strings are a **public contract**. They may be added to, never renamed.
 |-------------------------------|------------------------------|--------------------------------------------------------------------------------|
 | `ErrConfigNotFound`           | `config_not_found`           | No config at `--config`, in the working directory, or under the XDG config dir |
 | `ErrAmbiguousConfigFile`      | `ambiguous_config_file`      | Both `labels.yml` and `labels.yaml` exist in one directory                     |
+| `ErrConfigExists`             | `config_exists`              | `init` was asked to scaffold over an existing config file, without `--force`   |
 | `ErrUnsupportedConfigVersion` | `unsupported_config_version` | `version` is missing, or names a schema this binary does not understand        |
 | `ErrEmptyConfig`              | `empty_config`               | The config parses but declares no labels                                       |
 | `ErrDuplicateLabelName`       | `duplicate_label_name`       | Two labels share a name (compared case-insensitively, as GitHub does)          |

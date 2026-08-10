@@ -41,8 +41,8 @@ labelsync/
 | `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf`                                       |
 | `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes](./output.md)                                         |
 | `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                                              |
-| `internal/cmd`         | partial | Root command, `App`, persistent flags, `version`                                                     |
-| `internal/config`      | partial | Resolution, YAML load, normalisation — see [Configuration](./configuration.md)                       |
+| `internal/cmd`         | partial | Root command, `App`, persistent flags, `init`, `version`                                             |
+| `internal/config`      | landed  | Load, validate, resolve, the `init` scaffold — see [Configuration](./configuration.md)               |
 | `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette](./palette.md)                               |
 | `internal/plan`        | partial | The `Action` / `Plan` vocabulary and `Compute` in append mode — see [Planner](./plan.md)             |
 | `internal/github`      | partial | Token chain and the client — see [Authentication](./authentication.md), [Client](./github-client.md) |
@@ -73,13 +73,13 @@ labelsync [--config <path>]
 │     [--dry-run] [--mode append|prune] [--prune all]
 │     [--group <name>]... [--repo <owner/repo>]...
 ├── export <owner/repo> [-o <file>]       dump a repo's labels as config YAML
-├── init                                  scaffold a labels.yml
+├── init [--force]                        scaffold a labels.yml
 ├── groups [--group <name>]...            resolve and list group → repo membership
 ├── cache {clear|info}
 └── version [--dont-prettify]
 ```
 
-Only the root and `version` exist so far; the rest are the leaves still to be added.
+The root, `init`, and `version` exist so far; the rest are the leaves still to be added.
 
 ### How the tree is wired
 
@@ -91,6 +91,11 @@ Only the root and `version` exist so far; the rest are the leaves still to be ad
 - **`app.go`** holds the `App`: the output writer, the handle on the debug log level, and the
   resolved persistent-flag values. Every command closes over one, so a test constructs a single
   `App` and drives the whole tree through it.
+- **`init.go`** writes the starter config. The file it writes belongs to `internal/config` —
+  `config.Scaffold()` — so it is validated by that package's own suite rather than being a string
+  literal here that nothing checks; see
+  [Configuration § The scaffold](./configuration.md#the-scaffold). The command's own share is where
+  the file goes and when it refuses to write.
 - **`version.go`** owns `Version`, the variable `.goreleaser.yml` and the `Dockerfile` inject with
   `-ldflags -X github.com/specsnl/labelsync/internal/cmd.Version`. That path is a build-file string
   the compiler never checks, so `version_test.go` asserts both files still name it — a rename would

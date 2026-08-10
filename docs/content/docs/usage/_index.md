@@ -145,6 +145,9 @@ locally is what turns a `422` halfway through a run into a message naming the li
 | A rename `to:` a name no label declares              | The rename would land on nothing                                                                      |
 | A rename whose `from:` is a label the file declares  | Including a case-only rename such as `bug` → `Bug`, which is unnecessary — casing is converged anyway |
 
+`labelsync init` writes a file that satisfies every one of these, which is the quickest way to see
+what a valid one looks like.
+
 Both length bounds count **characters, not bytes** — a description of 100 emoji is exactly at the
 limit, the same as 100 letters. The counting matches GitHub's, so nothing that passes here is
 rejected later for being too long.
@@ -158,8 +161,36 @@ Under `--output=json`, each of these carries a stable `error_kind` — `duplicat
 
 ## Commands
 
-Only `version` is implemented so far. `sync`, `export`, `init`, `groups`, and `cache` are the
+`init` and `version` are implemented so far. `sync`, `export`, `groups`, and `cache` are the
 planned tree — see the [design plan](https://github.com/specsnl/labelsync/blob/main/docs/design.md#cli).
+
+### `labelsync init`
+
+Writes a starter `labels.yml` — a worked example with a group per source kind, `defaults.groups`,
+a rename, and four labels — into the working directory.
+
+```sh
+labelsync init                            # ./labels.yml
+labelsync --config ops init               # ops/labels.yml
+labelsync --config ops/labels.yml init    # exactly there
+labelsync init --force                    # overwrite what is already there
+```
+
+`--config` chooses the destination: a path writes there, a directory writes `labels.yml` inside it.
+
+| Situation                                       | What happens                                        |
+|-------------------------------------------------|-----------------------------------------------------|
+| Nothing is there                                | The file is written, and its path goes to stdout    |
+| The file already exists                         | `config_exists` — nothing is written; use `--force` |
+| The **other** spelling is there (`labels.yaml`) | `ambiguous_config_file` — even with `--force`       |
+
+The last row is not `--force` being over-cautious. A directory holding both `labels.yml` and
+`labels.yaml` is rejected by *every later run*, a step removed from the command that caused it, and
+there is no version of "I know what I am doing" that makes the result loadable. Remove the other
+file first.
+
+The scaffolded config is guaranteed to validate: it goes through the same rules any other config
+file does, as part of the test suite, so `init` can never hand you a file the next command rejects.
 
 ### `labelsync version`
 

@@ -29,6 +29,11 @@ var (
 	// exist in the same directory. Only one is allowed.
 	ErrAmbiguousConfigFile = errors.New("ambiguous config file: both labels.yml and labels.yaml exist — remove one")
 
+	// ErrConfigExists is returned when `labelsync init` is asked to scaffold a
+	// config file over one that is already there. Overwriting a hand-edited
+	// catalogue is not a thing to do by accident, so it takes --force.
+	ErrConfigExists = errors.New("config file already exists")
+
 	// ErrUnsupportedConfigVersion is returned when the config's version field is
 	// missing, or names a schema version this binary does not understand.
 	ErrUnsupportedConfigVersion = errors.New("unsupported config version")
@@ -106,6 +111,8 @@ func KindOf(err error) string {
 		return "config_not_found"
 	case errors.Is(err, ErrAmbiguousConfigFile):
 		return "ambiguous_config_file"
+	case errors.Is(err, ErrConfigExists):
+		return "config_exists"
 	case errors.Is(err, ErrUnsupportedConfigVersion):
 		return "unsupported_config_version"
 	case errors.Is(err, ErrEmptyConfig):

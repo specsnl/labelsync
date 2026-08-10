@@ -102,7 +102,10 @@ Use "labelsync <command> --help" for more information about a command.`,
 	// for.
 	cmd.Flags().Bool(flagVersion, false, "Print the version and exit (same as: version --dont-prettify)")
 
-	cmd.AddCommand(newVersionCmd(app))
+	cmd.AddCommand(
+		newInitCmd(app),
+		newVersionCmd(app),
+	)
 
 	return cmd
 }

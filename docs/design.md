@@ -721,10 +721,16 @@ Exceeding it exits with an error and a summary of what remained.
 
 ## CLI
 
-> **Partly landed.** The root command, the persistent flags, and `version` are implemented in
-> `internal/cmd` — see
+> **Partly landed.** The root command, the persistent flags, `init`, and `version` are implemented
+> in `internal/cmd` — see
 > [Overview § How the tree is wired](./content/docs/architecture/overview.md#how-the-tree-is-wired).
-> The subcommands below are still the plan.
+> The remaining subcommands below are still the plan.
+>
+> `init` takes a `--force`, which this sketch does not show, and honours `--config` as its
+> destination rather than only writing into the working directory. What it scaffolds is the
+> [full example](#full-example) below, kept honest by the same validator every other config file
+> goes through — see
+> [Configuration § The scaffold](./content/docs/architecture/configuration.md#the-scaffold).
 
 ```text
 labelsync [--config <path>]
@@ -873,6 +879,7 @@ The kind strings are a public contract. They may be added to, never renamed.
 |-------------------------------|------------------------------|
 | `ErrConfigNotFound`           | `config_not_found`           |
 | `ErrAmbiguousConfigFile`      | `ambiguous_config_file`      |
+| `ErrConfigExists`             | `config_exists`              |
 | `ErrUnsupportedConfigVersion` | `unsupported_config_version` |
 | `ErrEmptyConfig`              | `empty_config`               |
 | `ErrDuplicateLabelName`       | `duplicate_label_name`       |
