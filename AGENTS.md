@@ -181,6 +181,7 @@ design section it grew out of.
 | [github-client.md](./docs/content/docs/architecture/github-client.md)         | The go-github wrapper and its error taxonomy     |
 | [rate-limiting.md](./docs/content/docs/architecture/rate-limiting.md)         | The write bucket, backoff, the countdown         |
 | [apply.md](./docs/content/docs/architecture/apply.md)                         | Executing a plan, prune, the budget check        |
+| [distribution.md](./docs/content/docs/architecture/distribution.md)           | The release pipeline, install channels, the cask |
 | [library-decisions.md](./docs/content/docs/architecture/library-decisions.md) | Every direct dependency, and the rejects         |
 
 ### Usage — `docs/content/docs/usage/`

@@ -38,12 +38,15 @@ has to remember to change.
 | `task build`, past a tag     | `1.2.3-31-g69fca8f`       |
 | `task build`, uncommitted    | `1.2.3-31-g69fca8f-dev`   |
 | `task build`, no tags yet    | `69fca8f` — the commit    |
+| `go install ...@latest`      | `dev`                     |
 | `go build` with no `ldflags` | `dev`                     |
 
 ### Releases
 
 goreleaser injects `{{ .Version }}`, which is the release tag with the leading `v` already stripped.
-Tagging `v1.2.3` ships a binary that reports `1.2.3`.
+Tagging `v1.2.3` ships a binary that reports `1.2.3`. See
+[Distribution](./distribution.md) for the pipeline that tag drives, and for why a
+`go install` build is one of the two that report `dev`.
 
 ### Local builds
 
