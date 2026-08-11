@@ -84,7 +84,7 @@ Everything above exists. `sync` applies in both modes: append by default, and `-
 additionally reports every unconfigured label as a removal candidate and asks which of them to
 delete — `huh.MultiSelect` on a terminal, `--prune=all` without one, and a refusal
 (`interactive_required`) rather than a prompt shown to a pipe. See
-[Usage § Prune](../usage/_index.md) and [Apply](./apply.md).
+[Usage § Prune](../usage/commands.md#prune) and [Apply](./apply.md).
 
 ### How the tree is wired
 
@@ -198,7 +198,7 @@ from `internal/labelsync/configuration.go`.
 How that resolution, the YAML load, and the normalisation rules work is in
 [Configuration](./configuration.md). For the `groups`, `defaults`, `renames`, and `labels` sections
 themselves, see the
-[configuration reference](https://github.com/specsnl/labelsync/blob/main/docs/design.md#configuration).
+[configuration reference](../usage/configuration.md).
 
 ## Data flow — `labelsync sync`
 

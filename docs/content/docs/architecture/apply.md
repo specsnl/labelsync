@@ -41,7 +41,7 @@ Prune is three parts in three packages, and the split is the design:
    `Candidates(p)` names them, in plan order; `RetainDeletes(p, keep)` returns the plan minus the
    candidates that were not kept.
 2. `internal/cmd` asks — a `huh.MultiSelect`, or `--prune=all` — and narrows the plan.
-   See [Usage § Prune](../usage/_index.md).
+   See [Usage § Prune](../usage/commands.md#prune).
 3. `internal/apply` executes what it is given.
 
 `RetainDeletes` only ever **filters**. A candidate can be dropped between the report on stdout and
