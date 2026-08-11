@@ -296,6 +296,27 @@ stopping halfway.
 A repository that cannot be reached partway through is abandoned, the rest are still applied, and the
 run exits `4`. What it managed to write before the failure is not undone.
 
+#### What a rate-limit wait looks like
+
+A run that has to wait says so, on **stderr**, so `> out.txt` still captures only the answer:
+
+```text
+⏳ Secondary rate limit — resuming in 04:32 · 143 writes remaining
+```
+
+At a terminal that is one line, rewritten in place each second and cleared when the wait ends. Into a
+pipe or a CI log it is a plain line every 30 seconds with **no control characters** — a `\r` in a log
+file is unreadable. Under `--output=json` it is a structured event on stderr at the same interval:
+
+```json
+{"level":"warn","event":"rate_limit_wait","kind":"secondary","seconds":272,"resume_at":"2026-07-31T14:22:10Z","writes_remaining":143}
+```
+
+`kind` is `primary` (the hourly budget), `secondary` (the content-creation limit) or `budget` (the
+proactive pause before the hourly budget runs out). `--max-wait` caps the total time a run may spend
+asleep across all of them; exceeding it fails with `max_wait_exceeded` **instead of** taking the
+wait.
+
 #### What applying does not do yet
 
 `--mode prune` reaches the planner, which lists every unconfigured label as a *removal candidate*.

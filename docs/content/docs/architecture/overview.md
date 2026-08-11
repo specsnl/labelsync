@@ -45,7 +45,7 @@ labelsync/
 | `internal/config`      | landed  | Load, validate, resolve, the `init` scaffold — see [Configuration](./configuration.md) |
 | `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette](./palette.md)                 |
 | `internal/plan`        | landed  | `Action`, `Plan`, `Compute` in both modes, rendering — see [Planner](./plan.md)        |
-| `internal/github`      | landed  | Auth, client, enumeration, labels, ETag cache — see [Client](./github-client.md)       |
+| `internal/github`      | landed  | Auth, client, enumeration, labels, ETag cache, the limiter and its countdown           |
 | `internal/apply`       | partial | Append mode — creates, updates, recolours. Never deletes; see [Apply](./apply.md)      |
 | everything else        | planned | See the milestone table in the design plan                                             |
 

@@ -51,6 +51,7 @@ and has no idea which stream it belongs on. Three defects, no upside.
 | Report a recoverable problem (skipped repo)   | `w.Warn(...)`                | stderr   |
 | Report a failure                              | `w.Error(...)`               | stderr   |
 | Report a failure carrying a sentinel          | `w.WriteErr(err)`            | stderr   |
+| Report a diagnostic a machine has to act on   | `w.WriteEvent(rec, ...)`     | stderr   |
 | Tell a maintainer what the code is doing      | `slog.Debug(...)`            | stderr   |
 
 `WriteErr` over `Error("%v", err)` whenever you hold an `error`: it runs `labelsync.KindOf` and adds
@@ -64,6 +65,7 @@ type Writer interface {
     Warn(format string, args ...any)                    // stderr
     Error(format string, args ...any)                   // stderr
     WriteErr(err error)                                 // stderr
+    WriteEvent(record any, format string, args ...any)  // stderr
     WriteTable(t TableData)                             // stdout
     WriteDiff(d DiffData)                               // stdout
     WriteResult(record any, format string, args ...any) // stdout
@@ -106,6 +108,36 @@ Two implementations back the `--output` flag:
 
 Both take their streams as constructor arguments, so a test captures output by passing
 `bytes.Buffer`s rather than by intercepting the process.
+
+### A diagnostic a machine has to act on
+
+`WriteEvent` is `Warn` for the messages a consumer parses rather than reads. It takes both forms of
+the same thing, and each rendering keeps the one its audience can use:
+
+```go
+w.WriteEvent(
+    ratelimit.Event{Level: "warn", Event: "rate_limit_wait", Kind: "secondary", Seconds: 272, ...},
+    "⏳ Secondary rate limit — resuming in %s · %d writes remaining", "04:32", 143,
+)
+```
+
+```text
+warn ⏳ Secondary rate limit — resuming in 04:32 · 143 writes remaining
+```
+
+```json
+{"level":"warn","event":"rate_limit_wait","kind":"secondary","seconds":272,"resume_at":"2026-07-31T14:22:10Z","writes_remaining":143}
+```
+
+It is `WriteResult` on the other stream, and for the same reason: prose and fields are two renderings
+of one thing, and a consumer that has to parse `04:32` back into seconds is a consumer the fields
+exist to spare. **stderr, not stdout** — this narrates the run rather than being its product, and
+splicing a countdown into the NDJSON stream is exactly the untypeable line the stdout rule exists to
+prevent.
+
+The record carries its own `"level"`, because the stderr stream has one shape and a caller inventing
+a new one would break `jq 'select(.level == "warn")'`. Today the only caller is the
+[rate-limit countdown](./rate-limiting.md#the-countdown).
 
 ### Tables are typed rows, not strings
 

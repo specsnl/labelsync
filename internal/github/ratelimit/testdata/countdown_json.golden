@@ -1,0 +1,10 @@
+{"level":"warn","event":"rate_limit_wait","kind":"secondary","seconds":272,"resume_at":"2026-07-31T14:22:10Z","writes_remaining":143}
+{"level":"warn","event":"rate_limit_wait","kind":"secondary","seconds":242,"resume_at":"2026-07-31T14:22:10Z","writes_remaining":143}
+{"level":"warn","event":"rate_limit_wait","kind":"secondary","seconds":212,"resume_at":"2026-07-31T14:22:10Z","writes_remaining":143}
+{"level":"warn","event":"rate_limit_wait","kind":"secondary","seconds":182,"resume_at":"2026-07-31T14:22:10Z","writes_remaining":143}
+{"level":"warn","event":"rate_limit_wait","kind":"secondary","seconds":152,"resume_at":"2026-07-31T14:22:10Z","writes_remaining":143}
+{"level":"warn","event":"rate_limit_wait","kind":"secondary","seconds":122,"resume_at":"2026-07-31T14:22:10Z","writes_remaining":143}
+{"level":"warn","event":"rate_limit_wait","kind":"secondary","seconds":92,"resume_at":"2026-07-31T14:22:10Z","writes_remaining":143}
+{"level":"warn","event":"rate_limit_wait","kind":"secondary","seconds":62,"resume_at":"2026-07-31T14:22:10Z","writes_remaining":143}
+{"level":"warn","event":"rate_limit_wait","kind":"secondary","seconds":32,"resume_at":"2026-07-31T14:22:10Z","writes_remaining":143}
+{"level":"warn","event":"rate_limit_wait","kind":"secondary","seconds":2,"resume_at":"2026-07-31T14:22:10Z","writes_remaining":143}

@@ -58,16 +58,30 @@ func (captureWriter) WriteDiff(output.DiffData)       {}
 func (captureWriter) Warn(string, ...any)             {}
 func (captureWriter) Error(string, ...any)            {}
 func (captureWriter) WriteErr(error)                  {}
+func (captureWriter) WriteEvent(any, string, ...any)  {}
 func (captureWriter) WriteResult(any, string, ...any) {}
 
 func (w captureWriter) WriteTable(t output.TableData) { w.onTable(t) }
 
+// sampleEvent is a structured stderr diagnostic, shaped the way the rate-limit
+// countdown shapes one: fields a consumer can compare, and its own level.
+type sampleEvent struct {
+	Level   string `json:"level"`
+	Event   string `json:"event"`
+	Seconds int    `json:"seconds"`
+}
+
 // writeSampleRun exercises every Writer method once, in the order a real run
-// would: progress, a table, a recoverable skip, then a failure.
+// would: progress, a table, a recoverable skip, a structured diagnostic, then a
+// failure.
 func writeSampleRun(w output.Writer) {
 	w.Info("resolving %d groups", 3)
 	output.Table(w, sampleRows, sampleColumns...)
 	w.Warn("skipping %s: archived", "specsnl/old-thing")
+	w.WriteEvent(
+		sampleEvent{Level: "warn", Event: "rate_limit_wait", Seconds: 272},
+		"waiting %s for the rate limit", "04:32",
+	)
 	w.WriteErr(fmt.Errorf("%w: specsnl/old-thing", labelsync.ErrRepoInaccessible))
 }
 
@@ -258,6 +272,48 @@ func TestJSONWriter_StdoutIsUniformlyTyped(t *testing.T) {
 		if _, ok := obj["level"]; ok {
 			t.Errorf("stdout line %d carries a level, so it is narration: %q", i+1, line)
 		}
+	}
+}
+
+// TestWriteEvent_IsStructuredOnStderr covers the method the rate-limit countdown
+// exists for: the same call has to reach a human as a sentence and a machine as
+// fields, and neither may touch stdout — a countdown spliced into the NDJSON
+// product is a line `jq` cannot type.
+func TestWriteEvent_IsStructuredOnStderr(t *testing.T) {
+	event := sampleEvent{Level: "warn", Event: "rate_limit_wait", Seconds: 272}
+
+	var prettyOut, prettyErr, jsonOut, jsonErr bytes.Buffer
+
+	output.NewPrettyWriter(&prettyOut, &prettyErr, goldenPlain).
+		WriteEvent(event, "waiting %s", "04:32")
+	output.NewJSONWriter(&jsonOut, &jsonErr).
+		WriteEvent(event, "waiting %s", "04:32")
+
+	for name, stdout := range map[string]string{"pretty": prettyOut.String(), "json": jsonOut.String()} {
+		if stdout != "" {
+			t.Errorf("the %s writer put %q on stdout, want nothing: an event is narration", name, stdout)
+		}
+	}
+
+	if want := "waiting 04:32"; !strings.Contains(prettyErr.String(), want) {
+		t.Errorf("pretty stderr = %q, want it to contain %q", prettyErr.String(), want)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(jsonErr.String())), &got); err != nil {
+		t.Fatalf("json stderr %q is not one object: %v", jsonErr.String(), err)
+	}
+
+	// The fields, not the sentence: a consumer comparing 272 against a threshold
+	// is the whole reason this is not Warn.
+	for field, want := range map[string]any{"level": "warn", "event": "rate_limit_wait", "seconds": 272.0} {
+		if got[field] != want {
+			t.Errorf("stderr[%q] = %v, want %v", field, got[field], want)
+		}
+	}
+
+	if _, spliced := got["message"]; spliced {
+		t.Errorf("the JSON event carries the human phrasing too: %v", got)
 	}
 }
 

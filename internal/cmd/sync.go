@@ -202,6 +202,11 @@ func applyPlan(ctx context.Context, app *App, client *github.Client, p plan.Plan
 		)
 	}
 
+	// So a wait renders "resuming in 04:32 · 143 writes remaining" rather than
+	// only the delay. Sitting out four minutes is a different proposition when
+	// what is left is three writes and when it is three hundred.
+	client.ExpectWrites(writes)
+
 	report, err := apply.Apply(ctx, client, p)
 
 	// The report is written even when the run ended early, because it is the only

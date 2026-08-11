@@ -26,6 +26,11 @@ func (a *App) client(ctx context.Context) (*github.Client, error) {
 		github.WithLimiter(ratelimit.New(
 			ratelimit.WithWriteRate(a.WriteRate),
 			ratelimit.WithMaxWait(a.MaxWait),
+
+			// A wait a user cannot see reads as a hang. Which of the three
+			// renderings they get is decided here, once, from --output and from
+			// what stderr turns out to be — see ratelimit.NewReporter.
+			ratelimit.WithReporter(ratelimit.NewReporter(a.Out, a.Stderr, a.Format)),
 		)),
 	}
 

@@ -711,6 +711,13 @@ Label create/update/delete are idempotent enough that retry is always safe.
 
 ### Countdown rendering
 
+> **Landed** ([#37](https://github.com/specsnl/labelsync/issues/37)) — see
+> [Rate Limiting § The countdown](./content/docs/architecture/rate-limiting.md#the-countdown). Two of
+> the three renderings turned out to be one implementation over `output.Writer`, since the difference
+> between a log line and a structured event is the writer's business; only the in-place line takes the
+> raw stderr, because a carriage return with no newline after it is not something a `Writer` method
+> can express. The write count comes from the plan, through `Limiter.ExpectWrites`.
+
 Three renderings, selected by context. Getting this wrong is how CLIs become unusable in CI.
 
 | Context                 | Rendering                                                                   |

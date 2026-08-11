@@ -68,6 +68,14 @@ type App struct {
 	// stream, so a test captures it.
 	Stdout io.Writer
 
+	// Stderr is the raw stderr stream, for the one thing no Writer method can
+	// express: the rate-limit countdown's in-place line, which is a carriage
+	// return with no newline after it.
+	//
+	// It is also the stream the TTY question is asked about, because it is the
+	// stream being drawn to. Everything else that narrates a run goes through Out.
+	Stderr io.Writer
+
 	// LogLevel gates the debug logger. Cobra parses flags after the tree is
 	// built, so the level is held here and raised once --debug is known.
 	LogLevel *slog.LevelVar
@@ -152,6 +160,7 @@ func NewApp() *App {
 	return &App{
 		Out:         output.NewDefaultPrettyWriter(),
 		Stdout:      os.Stdout,
+		Stderr:      os.Stderr,
 		LogLevel:    output.SetupDefaultLogger(output.FormatPretty, false),
 		Format:      output.FormatPretty,
 		Concurrency: DefaultConcurrency,

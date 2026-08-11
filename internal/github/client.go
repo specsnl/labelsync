@@ -318,6 +318,15 @@ func (c *Client) Affordable(writes int) bool {
 	return c.limiter.Affordable(writes)
 }
 
+// ExpectWrites tells the limiter how many writes the run is about to make, so
+// that a rate-limit countdown can report what is left of the job alongside what
+// is left of the wait. A client with no limiter has nowhere to put it.
+func (c *Client) ExpectWrites(n int) {
+	if c.limiter != nil {
+		c.limiter.ExpectWrites(n)
+	}
+}
+
 // RemainingBudget is the last primary-budget reading, when it resets, and
 // whether there has been one. A client with no limiter has never had one.
 //

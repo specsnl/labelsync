@@ -1,3 +1,4 @@
 info resolving 3 groups
 warn skipping specsnl/old-thing: archived
+warn waiting 04:32 for the rate limit
 error repository is inaccessible: specsnl/old-thing
