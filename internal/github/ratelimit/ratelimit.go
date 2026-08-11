@@ -140,6 +140,19 @@ type Limiter struct {
 
 	// backoff is the next secondary wait, doubling per consecutive hit.
 	backoff time.Duration
+
+	// reporter draws a wait while it happens, or is nil for a run that reports
+	// nothing. Nil is not merely "quiet": without one, a wait is a single Sleep
+	// of its whole length rather than a loop of interval-sized slices, which is
+	// what keeps a run that nobody is watching from waking up sixty times to say
+	// nothing.
+	reporter Reporter
+
+	// pending is how many writes the run still expects to send, and known says
+	// whether anything ever told us. A countdown that could only report the time
+	// left says nothing about whether the wait is worth sitting out.
+	pending int
+	known   bool
 }
 
 // Option configures a [Limiter].
@@ -172,6 +185,13 @@ func WithThreshold(n int) Option {
 // inject the identity, which is what makes the doubling assertable.
 func WithJitter(f func(time.Duration) time.Duration) Option {
 	return func(l *Limiter) { l.jitter = f }
+}
+
+// WithReporter installs the countdown. Without one a wait is silent, which is
+// the right behaviour for a library and the wrong one for a CLI that has just
+// gone quiet for four minutes.
+func WithReporter(r Reporter) Option {
+	return func(l *Limiter) { l.reporter = r }
 }
 
 // New builds a limiter. The bucket starts full: a run's first writes should go
@@ -232,7 +252,7 @@ func (l *Limiter) Await(ctx context.Context, write bool) error {
 	}
 
 	if budget > 0 {
-		return l.waitOut(ctx, budget, "primary budget nearly spent")
+		return l.waitOut(ctx, budget, KindBudget)
 	}
 
 	return nil
@@ -256,6 +276,10 @@ func (l *Limiter) plan(write bool) (pace, budget time.Duration) {
 		}
 
 		l.tokens--
+
+		if l.pending > 0 {
+			l.pending--
+		}
 	}
 
 	// Sleeping until the reset is only worth doing while there is a reset to
@@ -360,14 +384,14 @@ func (l *Limiter) Recover(ctx context.Context, err error) (bool, error) {
 // check, which is not redundant: go-github only produces an AbuseRateLimitError
 // when the body's documentation_url carries the right suffix, and GitHub's error
 // bodies are famously inconsistent.
-func (l *Limiter) penalty(err error) (time.Duration, string, bool) {
+func (l *Limiter) penalty(err error) (time.Duration, Kind, bool) {
 	now := l.clock.Now()
 
 	var primary *gogithub.RateLimitError
 	if errors.As(err, &primary) {
 		l.resetBackoff()
 
-		return primary.Rate.Reset.Sub(now), "primary rate limit", true
+		return primary.Rate.Reset.Sub(now), KindPrimary, true
 	}
 
 	var secondary *gogithub.AbuseRateLimitError
@@ -375,13 +399,13 @@ func (l *Limiter) penalty(err error) (time.Duration, string, bool) {
 		if secondary.RetryAfter != nil && *secondary.RetryAfter > 0 {
 			l.resetBackoff()
 
-			return *secondary.RetryAfter, "secondary rate limit", true
+			return *secondary.RetryAfter, KindSecondary, true
 		}
 
 		// No Retry-After: back off from a minute, doubling per consecutive hit,
 		// jittered so that several runs do not resume together and trip it
 		// again.
-		return l.nextBackoff(), "secondary rate limit", true
+		return l.nextBackoff(), KindSecondary, true
 	}
 
 	return 0, "", false
@@ -407,8 +431,8 @@ func (l *Limiter) resetBackoff() {
 	l.backoff = secondaryBackoff
 }
 
-// waitOut sleeps for d, against the run's budget.
-func (l *Limiter) waitOut(ctx context.Context, d time.Duration, reason string) error {
+// waitOut sleeps for d, against the run's budget, reporting it as it goes.
+func (l *Limiter) waitOut(ctx context.Context, d time.Duration, kind Kind) error {
 	if d <= 0 {
 		return nil
 	}
@@ -417,9 +441,58 @@ func (l *Limiter) waitOut(ctx context.Context, d time.Duration, reason string) e
 		return err
 	}
 
-	slog.Debug("waiting out a rate limit", "reason", reason, "wait", d.String())
+	slog.Debug("waiting out a rate limit", "kind", string(kind), "wait", d.String())
 
-	return l.clock.Sleep(ctx, d)
+	return l.countdown(ctx, d, kind)
+}
+
+// countdown sleeps for d, reporting what is left as it goes.
+//
+// Without a reporter it is one Sleep of the whole length. That is not only an
+// optimisation: a run nobody is watching should not wake up sixty times to say
+// nothing, and every existing caller — the client's retry loop included — is
+// entitled to assume a wait is a wait rather than a sequence of them.
+//
+// With one, the wait is taken in interval-sized slices off the injected clock,
+// which is what makes the animation testable without any of it happening in real
+// time. The deadline is computed once and every tick measured against it, so a
+// slice that overshoots does not accumulate into a countdown that drifts past
+// zero.
+func (l *Limiter) countdown(ctx context.Context, d time.Duration, kind Kind) error {
+	if l.reporter == nil {
+		return l.clock.Sleep(ctx, d)
+	}
+
+	pending, known := l.PendingWrites()
+
+	wait := Wait{
+		Kind:        kind,
+		Total:       d,
+		ResumeAt:    l.clock.Now().Add(d),
+		Writes:      pending,
+		WritesKnown: known,
+	}
+
+	l.reporter.Start(wait)
+	defer l.reporter.Done(wait)
+
+	interval := max(l.reporter.Interval(), time.Millisecond)
+
+	for {
+		left := wait.ResumeAt.Sub(l.clock.Now())
+		if left <= 0 {
+			return nil
+		}
+
+		// Before the sleep rather than after it, so a wait shorter than one
+		// interval still says it is happening — which is the whole difference
+		// between a pause and a hang.
+		l.reporter.Tick(wait, left)
+
+		if err := l.clock.Sleep(ctx, min(interval, left)); err != nil {
+			return err
+		}
+	}
 }
 
 // spend books d against --max-wait, or refuses it.
@@ -439,6 +512,36 @@ func (l *Limiter) spend(d time.Duration) error {
 	l.waited += d
 
 	return nil
+}
+
+// ExpectWrites tells the limiter how many writes the run is about to make, so
+// that a countdown can report what is left of the job alongside what is left of
+// the wait.
+//
+// It is what turns "resuming in 04:32" into "resuming in 04:32 · 143 writes
+// remaining": the first is a delay, and the second is progress. Nothing is
+// reported about the count until a caller sets one — an apply knows its plan,
+// and a dry run has nothing to say.
+func (l *Limiter) ExpectWrites(n int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.pending = max(n, 0)
+	l.known = true
+}
+
+// PendingWrites is how many of the expected writes have not gone out yet, and
+// whether a count was ever set.
+//
+// It is an estimate in one direction: a write retried after a 5xx or a rate
+// limit spends another token and so counts again, which makes the number
+// conservative rather than optimistic. A progress indicator that overstates what
+// is left is a better failure than one that reaches zero and keeps going.
+func (l *Limiter) PendingWrites() (int, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return l.pending, l.known
 }
 
 // Waited is how long the run has spent asleep for limits so far.

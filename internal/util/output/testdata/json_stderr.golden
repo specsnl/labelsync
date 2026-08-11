@@ -1,3 +1,4 @@
 {"level":"info","message":"resolving 3 groups"}
 {"level":"warn","message":"skipping specsnl/old-thing: archived"}
+{"level":"warn","event":"rate_limit_wait","seconds":272}
 {"error_kind":"repo_inaccessible","level":"error","message":"repository is inaccessible: specsnl/old-thing"}

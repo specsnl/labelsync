@@ -74,6 +74,19 @@ type Writer interface {
 	// carries an "error_kind" field when err wraps a known labelsync sentinel.
 	WriteErr(err error)
 
+	// WriteEvent reports a structured diagnostic on stderr: pretty output writes
+	// the formatted text, JSON output marshals record and ignores the text.
+	//
+	// It is [Writer.Warn] for the messages a machine has to act on rather than
+	// read — today, the rate-limit countdown, where a consumer needs the number of
+	// seconds left and the resume time as fields rather than as a sentence it
+	// would have to parse back out.
+	//
+	// stderr, not stdout, and deliberately: this is the story of making the
+	// product, not the product. record must carry its own "level" so the stderr
+	// stream stays one shape.
+	WriteEvent(record any, format string, args ...any)
+
 	// WriteTable renders a prepared table. Pretty output aligns the cells into a
 	// bordered table; JSON output marshals one source record per line.
 	//
@@ -164,6 +177,12 @@ func (w *PrettyWriter) WriteErr(err error) {
 	w.Error("%v", err)
 }
 
+// WriteEvent writes the formatted text on stderr, at warning level. The record
+// is ignored: a human reads the sentence, not the field names behind it.
+func (w *PrettyWriter) WriteEvent(_ any, format string, args ...any) {
+	w.Warn(format, args...)
+}
+
 // WriteTable renders a bordered, column-aligned table on stdout. The records
 // are ignored: a human reads the cells.
 func (w *PrettyWriter) WriteTable(t TableData) {
@@ -249,6 +268,14 @@ func (w *JSONWriter) WriteErr(err error) {
 	}
 
 	writeJSONLine(w.stderr, payload)
+}
+
+// WriteEvent emits the record as one object on stderr. The formatted text is
+// ignored — it is the human's phrasing of the same fields, and a consumer that
+// has to parse "resuming in 04:32" back into seconds is a consumer the fields
+// exist to spare.
+func (w *JSONWriter) WriteEvent(record any, _ string, _ ...any) {
+	writeJSONLine(w.stderr, record)
 }
 
 // WriteTable emits one object per source record on stdout — not a single array.

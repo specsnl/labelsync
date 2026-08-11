@@ -87,6 +87,66 @@ Pacing is deliberately **not** counted against the ceiling. That budget is for s
 else's limit; the bucket is this tool spacing its own requests, it is sub-second, and counting it
 would quietly turn `--max-wait` into a cap on how much work a run may do.
 
+## The countdown
+
+Waiting is expected and fine. Waiting **silently** is not — a CLI that goes quiet for four minutes
+reads as one that has hung — and neither is waiting while spraying carriage returns into a log file,
+which is how a CI job's output becomes unreadable. Getting this wrong is how CLIs become unusable in
+CI, so there are three renderings and the context picks one:
+
+| Context                             | Rendering                                                      |
+|-------------------------------------|----------------------------------------------------------------|
+| stderr is a TTY + `--output=pretty` | One line, rewritten in place with `\r`, lipgloss-styled        |
+| stderr is not a TTY                 | A log line every 30s — **no control characters** in a log file |
+| `--output=json`                     | A structured event every 30s, no animation                     |
+
+```text
+⏳ Secondary rate limit — resuming in 04:32 · 143 writes remaining
+```
+
+```json
+{"level":"warn","event":"rate_limit_wait","kind":"secondary","seconds":272,"resume_at":"2026-07-31T14:22:10Z","writes_remaining":143}
+```
+
+All three draw on **stderr**. The countdown is progress, not the product: it must not land in the
+file when a user redirects stdout, and it has to stay visible on the terminal while they do. That is
+also why `output.IsTTY` is asked about **stderr** — the stream being drawn to — rather than about
+stdout, which by then is somewhere else entirely.
+
+The terminal rendering redraws every second, because a countdown that does not count is just a
+message; the other two every thirty, because one line a second for fifteen minutes is nine hundred
+lines nobody will read. The in-place line pads itself to the longest it has been, so shortening from
+`10:00` to `9:59` does not leave a stale digit behind, and clears itself when the wait ends.
+
+Two of the three renderings are **one implementation**. The difference between a log line and a
+structured event is `output.Writer`'s business, not the countdown's, which is what
+`Writer.WriteEvent` is for: pretty output writes the sentence, JSON output marshals the record. Only
+the in-place rendering takes the raw `stderr`, because a carriage return with no newline after it is
+a thing no `Writer` method can express and should not learn to.
+
+### Why it reports a write count
+
+"Resuming in 04:32" is a delay. "Resuming in 04:32 · 143 writes remaining" is progress — sitting out
+four minutes is a different proposition when three writes are left and when three hundred are. The
+command tells the limiter its plan's write count with `ExpectWrites`, and the bucket counts it down
+as tokens are spent. A run that never set one — a dry run — says nothing about writes rather than
+reporting a zero that would read as a finished job.
+
+The number is an estimate in one direction: a write retried after a `5xx` or a rate limit spends
+another token and counts again, so it overstates what is left rather than reaching zero and carrying
+on.
+
+### The loop is the limiter's, and it is conditional
+
+The reporter never reads a clock. The limiter owns the sleeping and calls `Tick` every
+`Reporter.Interval` with what is left, measured against a deadline computed once — so the injected
+clock drives the whole animation and a four-minute countdown renders in a test in no time at all.
+
+Without a reporter, a wait is a **single** `Sleep` of its whole length rather than a loop of slices.
+That is not only an optimisation: a run nobody is watching should not wake up sixty times to say
+nothing, and every existing caller is entitled to assume a wait is a wait rather than a sequence of
+them.
+
 ## Nothing sleeps for real under test
 
 Every wait goes through an injected `Clock`. A rate-limit suite that waits out its own backoffs is a
@@ -94,14 +154,10 @@ suite nobody runs, and one that asserts on wall-clock time is one that fails on 
 fake clock records what it was asked to wait for and *advances*, which is what makes the token
 bucket's refill observable at all.
 
-## What is not here yet
-
-The [countdown rendering](https://github.com/specsnl/labelsync/blob/main/docs/design.md#countdown-rendering)
-— a rewritten TTY line, periodic log lines off a TTY, structured events under `--output=json` — needs
-a command to render into. It lands with `sync`. Today a wait is reported through `slog` at debug
-level, which is the diagnostic channel and not a report.
+## Where the decisions are not
 
 `Limiter.Affordable` answers whether a number of writes fits in what is known to be left, and an
 unknown budget is affordable — refusing on no information would stop a run that would have succeeded.
-Turning that answer into a refusal to start belongs to `apply`, which knows whether a half-finished
-run is worse than none at all.
+Turning that answer into a refusal is `sync`'s, because whether a half-finished run is worse than none
+at all is a policy question rather than a rate-limiting one — see
+[Apply § The startup budget check](./apply.md#the-startup-budget-check).

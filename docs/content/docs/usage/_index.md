@@ -161,9 +161,9 @@ Under `--output=json`, each of these carries a stable `error_kind` — `duplicat
 
 ## Commands
 
-`sync --dry-run`, `export`, `groups`, `init`, `cache`, and `version` are implemented so far. Only
-applying is still to come — see the
-[design plan](https://github.com/specsnl/labelsync/blob/main/docs/design.md#cli).
+`sync`, `export`, `groups`, `init`, `cache`, and `version` are implemented. `sync` applies in
+**append mode**; pruning computes and prints under `--dry-run` but does not yet remove anything —
+see the [design plan](https://github.com/specsnl/labelsync/blob/main/docs/design.md#cli).
 
 ### `labelsync cache`
 
@@ -240,38 +240,95 @@ file nobody reads until the next run rejects it. Which of the two to change is t
 `labelsync` cannot make for you, so it names both and stops there. Until you pick, loading the file
 fails with `duplicate_label_color`.
 
-### `labelsync sync --dry-run`
+### `labelsync sync`
 
-Computes what it would take to make every selected repository match the config, prints the diff,
-and writes nothing.
+Makes every selected repository match the config. With `--dry-run`, computes what that would take,
+prints the diff, and writes nothing.
 
 ```sh
-labelsync sync --dry-run                              # every group
-labelsync sync --dry-run --group websites             # only these groups, repeatable
-labelsync sync --dry-run --repo specsnl/labelsync     # only these repositories, repeatable
+labelsync sync                                        # apply, every group
+labelsync sync --dry-run                              # print the plan, write nothing
+labelsync sync --group websites                       # only these groups, repeatable
+labelsync sync --repo specsnl/labelsync               # only these repositories, repeatable
 labelsync sync --dry-run --mode prune                 # also list what would be removed
-labelsync sync --dry-run --output=json                # NDJSON, one action per line
+labelsync sync --output=json                          # NDJSON, one action per line
 ```
 
 | Flag        | Default  | What it does                                                         |
 |-------------|----------|----------------------------------------------------------------------|
-| `--dry-run` | off      | Compute and print, write nothing. **Currently required**             |
+| `--dry-run` | off      | Compute and print, write nothing                                     |
 | `--mode`    | `append` | `append` never deletes; `prune` also lists unconfigured labels       |
 | `--group`   | all      | Restrict to a group, repeatable                                      |
 | `--repo`    | —        | Restrict to an `owner/repo`, repeatable, bypassing group enumeration |
 
-**Applying is not implemented yet**, so `--dry-run` is required and a `sync` without it fails
-rather than printing a plan and quietly applying nothing.
+#### What applying does
+
+**Append mode: nothing is ever deleted.** A run creates the configured labels a repository is
+missing, updates the ones whose colour, description, or casing has drifted, applies the `renames`
+section as a `PATCH` — which preserves the label's issue and pull-request associations — and moves
+any unconfigured label sitting on a configured colour onto a colour of its own.
+
+The plan is printed **before** anything is written, so a long run shows what it is about to do, and
+so the stdout of an apply matches the stdout of the dry run that preceded it. A second line closes
+it with what actually happened:
+
+```text
+2 repositories · 4 created · 0 updated · 0 deleted · 4 unchanged
+applied: 4 created · 0 updated · 0 unchanged
+```
+
+The two are the same on a clean run and differ exactly when a repository failed partway. In JSON they
+are two records, discriminated by `kind`:
+
+```json
+{"kind":"summary","repositories":2,"created":4,"updated":0,"deleted":0,"unchanged":4}
+{"kind":"applied","repositories":2,"created":4,"updated":0,"unchanged":0}
+```
+
+Applying is safe to repeat. Running `sync` twice in a row leaves the second run with nothing to do —
+that is what a reconciler means, and it is asserted in the test suite rather than assumed.
+
+Writes are paced at `--write-rate` a minute (default 70) to stay under GitHub's content-creation
+limit, so a large first run takes a while on purpose. A run that would need more requests than the
+rate-limit budget has left is **refused before its first write** (`budget_exhausted`) rather than
+stopping halfway.
+
+A repository that cannot be reached partway through is abandoned, the rest are still applied, and the
+run exits `4`. What it managed to write before the failure is not undone.
+
+#### What a rate-limit wait looks like
+
+A run that has to wait says so, on **stderr**, so `> out.txt` still captures only the answer:
+
+```text
+⏳ Secondary rate limit — resuming in 04:32 · 143 writes remaining
+```
+
+At a terminal that is one line, rewritten in place each second and cleared when the wait ends. Into a
+pipe or a CI log it is a plain line every 30 seconds with **no control characters** — a `\r` in a log
+file is unreadable. Under `--output=json` it is a structured event on stderr at the same interval:
+
+```json
+{"level":"warn","event":"rate_limit_wait","kind":"secondary","seconds":272,"resume_at":"2026-07-31T14:22:10Z","writes_remaining":143}
+```
+
+`kind` is `primary` (the hourly budget), `secondary` (the content-creation limit) or `budget` (the
+proactive pause before the hourly budget runs out). `--max-wait` caps the total time a run may spend
+asleep across all of them; exceeding it fails with `max_wait_exceeded` **instead of** taking the
+wait.
+
+#### What applying does not do yet
+
+`--mode prune` reaches the planner, which lists every unconfigured label as a *removal candidate*.
+Nothing is deleted: choosing which candidates go needs a prompt that has not landed, so
+`sync --mode=prune` without `--dry-run` **refuses** rather than listing candidates and removing none
+of them.
 
 `--repo` bypasses *enumeration*, not the config. A repository named on the command line still gets
 only the labels the groups that select it ask for, and a repository no group selects gets nothing
 at all — said out loud on stderr rather than silently. Bypassing that too would make `--repo` the
 one way to touch a repository the config does not cover, which is the safety property the whole
 tool rests on.
-
-`--mode prune` reaches the planner, which lists every unconfigured label as a *removal candidate*.
-Nothing is deleted: choosing which candidates go is a later step, and a dry run writes nothing
-either way.
 
 Run [`export`](#labelsync-export) before the first sync against repositories that already have
 labels. Descriptions are authoritative, so a label whose description your config does not carry has
@@ -290,6 +347,9 @@ labelsync sync --dry-run; rc=$?
 exits `6`. Test bits, not equality. `1` stays exclusive: a failed run has no live state to report
 on. Exit `2` prints no error line at all, because the drift *was* the successful result and the
 diff is already on stdout.
+
+`2` is a `--dry-run` code. An apply that succeeds exits `0` however much it changed; there is no
+drift left to report once it has been reconciled.
 
 ### `labelsync groups`
 
