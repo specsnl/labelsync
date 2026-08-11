@@ -64,3 +64,8 @@ Three edits, in the same change:
 The test derives its expected set by parsing the package source for exported `Err*` variables, so a
 sentinel that is declared but not tabled — or tabled after being removed — fails the build rather
 than silently escaping `KindOf` and rendering an empty `error_kind`.
+
+---
+
+The sentinel table and the reasoning behind the `error_kind` contract are also in the design
+record: [design.md § Error handling](https://github.com/specsnl/labelsync/blob/main/docs/design.md#error-handling).

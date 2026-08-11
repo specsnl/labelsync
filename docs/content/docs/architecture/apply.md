@@ -174,3 +174,8 @@ first write) and the convergence (the second run writes nothing).
 That is a model of GitHub, not GitHub. What the live API does with `new_name` is checked by hand
 against a scratch repository, and the result recorded in the pull request that wired renames
 through — see [GitHub client § the update request](./github-client.md).
+
+---
+
+The design record this grew out of — the ordering rules and the reconciliation algorithm in full — is
+[design.md § Reconciliation algorithm](https://github.com/specsnl/labelsync/blob/main/docs/design.md#reconciliation-algorithm).

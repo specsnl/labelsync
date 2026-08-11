@@ -161,3 +161,8 @@ unknown budget is affordable — refusing on no information would stop a run tha
 Turning that answer into a refusal is `sync`'s, because whether a half-finished run is worse than none
 at all is a policy question rather than a rate-limiting one — see
 [Apply § The startup budget check](./apply.md#the-startup-budget-check).
+
+---
+
+The design record for the proactive and reactive halves, and for the countdown, is
+[design.md § Rate limiting](https://github.com/specsnl/labelsync/blob/main/docs/design.md#rate-limiting).

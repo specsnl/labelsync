@@ -101,7 +101,8 @@ tests or the Markdown checks.
     handling, or any documented design decision.
     *This step is mandatory and must not be skipped, even for "internal" fixes.*
   - **User docs** — update `docs/content/docs/usage/` if the change affects anything user-facing:
-    commands, flags, config file syntax, output formats, or exit codes.
+    `commands.md` for commands and flags, `configuration.md` for config file syntax,
+    `ci.md` for exit codes and the CI recipe, `getting-started.md` when the first-run path changes.
   - **README** — only when what labelsync *is*, or how it is installed, changes. It is an overview
     and a set of pointers; reference material belongs in `docs/content/`, not there.
 
@@ -154,18 +155,40 @@ The full structure, with a file-level breakdown, is in
 
 ## Documentation
 
-| File                                                                                                   | Description                                                     |
-|--------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------|
-| [docs/design.md](./docs/design.md)                                                                     | The design plan: goals, algorithm, API surface, milestones      |
-| [docs/content/docs/architecture/_index.md](./docs/content/docs/architecture/_index.md)                 | Architecture section index                                      |
-| [docs/content/docs/architecture/overview.md](./docs/content/docs/architecture/overview.md)             | Package structure, CLI tree, data flow                          |
-| [docs/content/docs/architecture/error-handling.md](./docs/content/docs/architecture/error-handling.md) | Sentinel errors, the wrapping rule, and `error_kind` contract   |
-| [docs/content/docs/architecture/output.md](./docs/content/docs/architecture/output.md)                 | `output.Writer`, pretty vs NDJSON, TTY detection, exit codes    |
-| [docs/content/docs/architecture/versioning.md](./docs/content/docs/architecture/versioning.md)         | The linker-injected `Version`, and what each build produces     |
-| [docs/content/docs/architecture/palette.md](./docs/content/docs/architecture/palette.md)               | The HSL candidate grid, legibility bounds, determinism          |
-| [docs/content/docs/architecture/rate-limiting.md](./docs/content/docs/architecture/rate-limiting.md)   | The write bucket, backoff, `--max-wait`, and the countdown      |
-| [docs/content/docs/architecture/plan.md](./docs/content/docs/architecture/plan.md)                     | The `Action` / `Plan` vocabulary and its JSON contract          |
-| [docs/content/docs/architecture/apply.md](./docs/content/docs/architecture/apply.md)                   | Executing a plan, the prune selection, the startup budget check |
+### The design record
 
-`docs/design.md` is the *plan*; `docs/content/docs/architecture/` describes what has been built. As
-subsystems land, their behaviour moves from the former into the latter.
+| File                               | Description                                                |
+|------------------------------------|------------------------------------------------------------|
+| [docs/design.md](./docs/design.md) | The design plan: goals, algorithm, API surface, milestones |
+
+`docs/design.md` is the *plan*; the pages below describe what has been built. As subsystems land,
+their behaviour moves from the former into the latter, and each architecture page links back to the
+design section it grew out of.
+
+### Architecture — `docs/content/docs/architecture/`
+
+| File                                                                          | Description                                      |
+|-------------------------------------------------------------------------------|--------------------------------------------------|
+| [_index.md](./docs/content/docs/architecture/_index.md)                       | Section index                                    |
+| [overview.md](./docs/content/docs/architecture/overview.md)                   | Package structure, CLI tree, data flow           |
+| [error-handling.md](./docs/content/docs/architecture/error-handling.md)       | Sentinels, the wrapping rule, `error_kind`       |
+| [output.md](./docs/content/docs/architecture/output.md)                       | `output.Writer`, pretty vs NDJSON, exit codes    |
+| [versioning.md](./docs/content/docs/architecture/versioning.md)               | The linker-injected `Version`                    |
+| [palette.md](./docs/content/docs/architecture/palette.md)                     | The HSL candidate grid, legibility, determinism  |
+| [configuration.md](./docs/content/docs/architecture/configuration.md)         | Resolution, YAML load, normalisation, validation |
+| [plan.md](./docs/content/docs/architecture/plan.md)                           | The `Action` / `Plan` vocabulary and its JSON    |
+| [authentication.md](./docs/content/docs/architecture/authentication.md)       | The token resolution chain                       |
+| [github-client.md](./docs/content/docs/architecture/github-client.md)         | The go-github wrapper and its error taxonomy     |
+| [rate-limiting.md](./docs/content/docs/architecture/rate-limiting.md)         | The write bucket, backoff, the countdown         |
+| [apply.md](./docs/content/docs/architecture/apply.md)                         | Executing a plan, prune, the budget check        |
+| [library-decisions.md](./docs/content/docs/architecture/library-decisions.md) | Every direct dependency, and the rejects         |
+
+### Usage — `docs/content/docs/usage/`
+
+| File                                                               | Description                                    |
+|--------------------------------------------------------------------|------------------------------------------------|
+| [_index.md](./docs/content/docs/usage/_index.md)                   | Section index                                  |
+| [getting-started.md](./docs/content/docs/usage/getting-started.md) | Install, export first, dry run, apply          |
+| [configuration.md](./docs/content/docs/usage/configuration.md)     | Every field of the config file, and validation |
+| [commands.md](./docs/content/docs/usage/commands.md)               | Every command and flag, renames, prune         |
+| [ci.md](./docs/content/docs/usage/ci.md)                           | Exit codes, NDJSON, the workflow, the CI token |

@@ -630,3 +630,8 @@ Handler format should follow the output format, independently of verbosity.
 
 **`slog` pointed at `os.Stderr` instead of the command's writer.** `cmd.SetErr(buf)` then cannot
 capture `--debug` output, which is precisely the testability the accessors exist to provide.
+
+---
+
+The design record for both renderings and the exit-code contract is
+[design.md § Output](https://github.com/specsnl/labelsync/blob/main/docs/design.md#output) and [§ Exit codes](https://github.com/specsnl/labelsync/blob/main/docs/design.md#exit-codes).

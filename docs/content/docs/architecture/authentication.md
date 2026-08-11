@@ -90,3 +90,8 @@ so a passing case proves the ordering rather than merely proving the one populat
 
 `ghAuthToken` itself is covered against a fake `gh` shell script on a `PATH` built for the test, so
 the suite says the same thing on a laptop with a `gh` login as on a runner without one.
+
+---
+
+The design record for the resolution chain, and the CI options it leaves open, is
+[design.md § Authentication](https://github.com/specsnl/labelsync/blob/main/docs/design.md#authentication).
