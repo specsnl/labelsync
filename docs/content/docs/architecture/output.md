@@ -192,6 +192,22 @@ ignores the text entirely, so no line of stdout is ever prose.
 `plan.Render(w, p)` owns the vocabulary and prepares both projections. See
 [Planner § Rendering](./plan.md#rendering).
 
+### An export is a file, not a record
+
+`labelsync export owner/repo > labels.yml` has to produce a config file. Every method on `Writer`
+would either wrap the YAML in a JSON object or interleave prose with it, so `export` writes to
+`App.Stdout` — the raw stream, taken from `cmd.OutOrStdout()` in `PersistentPreRunE` the same way
+the writers are.
+
+It is the one exception, and it is bounded:
+
+- Only when the export goes to **stdout**. With `--out <file>`, the product is the path, and that
+  goes through `WriteResult` with a tagged record like everything else.
+- `--output=json` does not change it. There is no useful JSON rendering of "a config file" — a
+  record wrapping the YAML in a string would be a file nobody can redirect.
+- **Nothing else may reach for `App.Stdout`.** Output that is a record goes through `Out`, so that
+  `--output` means something everywhere it can.
+
 ### Writes are best-effort
 
 `Writer` has no error channel. Reporting a failed write would itself need a working stream, so
@@ -546,6 +562,8 @@ a complete object.
 - [ ] A single-value result goes through `WriteResult` with a tagged record — not `Info`, and not a
       one-row table.
 - [ ] A rendered plan goes through `plan.Render`, not a hand-built `DiffData`.
+- [ ] Nothing new writes to `App.Stdout`; `export`'s file is the one exception and it is argued
+      [above](#an-export-is-a-file-not-a-record).
 - [ ] Tables go through `output.Table` with a row struct whose `json` tags carry the machine
       contract — never a hand-built `TableData`, and never a struct field pre-formatted into a
       string just to make the table read well.

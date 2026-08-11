@@ -86,13 +86,23 @@ configured values — which an update reaches:
 produced into concrete repositories:
 
 ```go
-repos, err := client.Enumerate(ctx, resolution.Selectors(), concurrency)
+selections, err := client.Select(ctx, resolution.Selectors(), concurrency)   // per selector
+repos, err := client.Enumerate(ctx, resolution.Selectors(), concurrency)     // their union
+func Union(selections []Selection) []config.Repo
 ```
 
-The result is the deduplicated union of every selector, sorted by owner and then name — a map is
-not ordered, and every downstream artefact is compared between runs. Deduplication is
-case-insensitive on `owner/repo`: two groups selecting the same repository is ordinary, and is how
-one ends up with the labels of both.
+`Select` is the primitive and `Enumerate` is `Union(Select(...))`. A run only ever wants the union;
+`labelsync groups` wants the per-selector answer, and having the two share one walk is what stops
+the command that explains enumeration from enumerating differently to the command that uses it.
+
+`Select` returns one `Selection` per selector, **in the caller's order** rather than in whatever
+order the parallel walks finished, because that order is the group order a report reads down.
+
+The union is deduplicated, sorted by owner and then name — a map is not ordered, and every
+downstream artefact is compared between runs. Deduplication is case-insensitive on `owner/repo`:
+two groups selecting the same repository is ordinary, and is how one ends up with the labels of
+both. The **first** spelling seen wins, so which of `Owner/Repo` and `owner/repo` survives is
+decided by selector order rather than by a race.
 
 | Selector kind           | Endpoint                            | Notes                          |
 |-------------------------|-------------------------------------|--------------------------------|
@@ -114,7 +124,7 @@ entry**, so every filter is answered from the enumeration response. Nothing here
 repositories into one per repository, for information already in hand. A test asserts no such
 request is made, because the cost only shows up as a slow run against a large org.
 
-The filters themselves live in `config.Selector.Matches`, offline and testable without an HTTP mock.
+The filters themselves live in `config.Selector.Reject`, offline and testable without an HTTP mock.
 This file's job is to produce the `config.Repo` values it judges — including `HasIssues`, which is
 carried through and **never** filtered on. Repositories with issues disabled sync normally; the diff
 merely notes them, and excluding one stays the user's choice through the group filters.
@@ -123,14 +133,52 @@ Enumeration is the only place `HasIssues` is ever known, which is why it is a `*
 `repos:` entry is passed through unenumerated, so its flag stays `nil` — *not known* — rather than
 defaulting to a note about a repository nothing looked at.
 
+### What was filtered out is kept, not dropped
+
+```go
+type Selection struct {
+    Selector config.Selector
+    Repos    []config.Repo   // selected
+    Rejected []Rejected      // listed, then filtered out, with the reason
+}
+```
+
+A repository the listing returned and a filter removed is carried on the `Selection` rather than
+discarded, because the absence of an expected repository is exactly what `labelsync groups` exists
+to explain. Nothing else reads it: enumeration's answer is `Repos`, and the union ignores
+`Rejected` entirely.
+
+The reason comes from `config.Selector.Reject`, which is `Matches` with its reasoning — `""` when
+the repository belongs, and otherwise which filter removed it. They are one function rather than
+two so that the reason a repository was filtered out cannot disagree with whether it was.
+
+A `repos:` selector never populates `Rejected`. Nothing is enumerated for one, so nothing can be
+filtered out of it — a repository the config named outright is never dropped from under the user.
+
+### Who the token belongs to
+
+```go
+func (c *Client) Login(ctx context.Context) (string, error)
+```
+
+`GET /user`, cached for the life of the client. It exists for one caller:
+[`config.Resolve`](./configuration.md#the-user-split) needs the authenticated login to decide which
+of the two `user` endpoints a selector calls.
+
+A command asks for it **only when the config actually has a `user:` group**, because it costs a
+request and decides nothing for a config without one. A failure is not fatal either: a token that
+cannot read `/user` — a GitHub App installation token, most likely — lists organisations perfectly
+well, and `Resolve` reads an empty login as "somebody else", which is the conservative answer.
+
 ### Parallel walks, and what a failure means
 
 Selectors are walked in parallel through `errgroup`, bounded by `--concurrency` (default 8). Reads
 are not subject to the content-creation secondary limit, so the bound is round-trip latency and
 politeness rather than a quota concern.
 
-An owner that cannot be listed is recorded and skipped: one mistyped org in a config naming four
-reports itself in the end-of-run summary rather than taking the other three down with it. Anything
+An owner that cannot be listed is recorded and skipped, and its selection comes back empty rather
+than missing: one mistyped org in a config naming four reports itself in the end-of-run summary
+rather than taking the other three down with it. Anything
 else — a `401`, a cancelled context — ends the run, because continuing would report a successful run
 that synced nothing.
 
@@ -154,6 +202,22 @@ would plan their creation on every run.
 body, so the request stays consistent with the state the plan was computed against. The desired name
 always goes out as `new_name`, even when it is identical to the path, which keeps a rename and a
 recolour one code path instead of two.
+
+### Reading many repositories at once
+
+```go
+func (c *Client) ReadLabels(ctx context.Context, repos []config.Repo, concurrency int) ([]RepoLabels, error)
+```
+
+The read half of a run, bounded by `--concurrency` the same way enumeration is. Two properties the
+caller depends on:
+
+- **The order is the caller's**, not the order the parallel reads finished in. The result becomes a
+  plan, and a plan that reshuffled between two identical runs is not one anyone can diff.
+- **A repository that could not be reached is absent**, not present with an empty label set. The two
+  would otherwise be indistinguishable, and the second reading is the dangerous one — an empty label
+  set is exactly what a repository needing every label created looks like. The failure is recorded
+  in `Failures` on the way past, which is what becomes the skipped outcome bit.
 
 ### The update request is hand-built
 
@@ -232,6 +296,36 @@ is rare, so the optimisation keeps the case it is correct for.
 
 For the same reason the header only ever goes out on page one: offering it for page two would ask
 about a response it never described.
+
+### Inspecting and clearing the cache
+
+`store.go` is the same directory seen from outside the read path — what `labelsync cache` drives:
+
+```go
+func OpenStore(dir, root string) (*Store, error)
+func (s *Store) Info() (CacheInfo, error)
+func (s *Store) Clear() (CacheCleared, error)
+```
+
+`CacheInfo` carries the machine's values — `Bytes int64`, `Oldest time.Time`, the schema version —
+and never a rendering. `1.2 MiB` and `3 days ago` belong in the table's columns; a struct field
+pre-formatted into a string is a number a consumer can no longer compare.
+
+**The bound is an argument, not an assumption.** `cache clear` takes a path that ultimately comes
+from `XDG_CACHE_HOME` and then deletes what is in it, so `OpenStore` is given the root the
+directory must sit under and refuses anything else with `ErrUnsafeCacheDir`. A check that derived
+its own bound from the same environment variable the path came from would be checking nothing —
+and passing it in is also what lets the tests point the whole thing at a temporary directory rather
+than at the developer's real cache.
+
+Containment is `filepath.Rel`, not a string prefix: `/tmp/cache-of-somebody-else` has `/tmp/cache`
+as a prefix and is not inside it. The cache home *itself* is refused too — that is somebody's whole
+cache directory, not ours to empty.
+
+A second bound sits behind the first, because the guard cannot catch a path that is legitimately
+under the cache home: only files whose names this tool writes are removed — a 64-character hex
+entry, or the `.tmp-` file an interrupted write leaves behind. The directory stays, nothing is
+recursed into, and an absent or already-empty cache is a no-op rather than an error.
 
 ### `github.Label` mirrors `plan.Label`
 

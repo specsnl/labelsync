@@ -32,3 +32,13 @@ func ConfigDir() string {
 func CacheDir() string {
 	return filepath.Join(xdg.CacheHome, AppName)
 }
+
+// CacheRoot returns the XDG cache home that [CacheDir] sits inside.
+//
+// It exists for the one command that deletes things: `labelsync cache clear`
+// takes a path that ultimately comes from the environment, so the bound it is
+// checked against has to be a value rather than an assumption. See
+// github.OpenStore.
+func CacheRoot() string {
+	return xdg.CacheHome
+}

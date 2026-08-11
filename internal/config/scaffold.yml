@@ -1,0 +1,74 @@
+# labelsync configuration — the source of truth for your labels.
+#
+# Every section below is documented at
+# https://github.com/specsnl/labelsync/blob/main/docs/design.md#configuration
+#
+# Two rules are worth knowing before the first run:
+#
+#   * Descriptions are authoritative. A label with no description here has its
+#     description cleared on GitHub. Run `labelsync export <owner/repo>` first to
+#     capture the descriptions you already have.
+#   * A repository no group resolves to is never touched. That is the safety
+#     property the whole tool rests on.
+#
+# Check what a change would do before making it:
+#
+#   labelsync groups              # which repositories each group resolves to
+#   labelsync sync --dry-run      # what would change, without writing anything
+
+version: 1
+
+# ── Repository selectors ──────────────────────────────────────────────
+#
+# A group has exactly one source: org, user, repos, or include_groups.
+# include, exclude, skip_archived, skip_forks, and visibility apply to the org
+# and user sources only — a repos entry names a repository outright and is
+# never filtered out from under you.
+groups:
+  everything:
+    org: your-org
+    exclude: ["*-archive", "sandbox-*"]
+    skip_archived: true          # default: true
+    skip_forks: true             # default: true
+    visibility: all              # all | public | private   (default: all)
+
+  websites:
+    repos:
+      - your-org/example-website
+      - your-org/example-platform
+
+# ── Fallback groups for labels that name none of their own ────────────
+defaults:
+  groups: [everything]
+
+# ── Renames, applied before matching ──────────────────────────────────
+#
+# A rename is a PATCH carrying new_name, which preserves every issue and
+# pull-request association. Deleting and recreating would not.
+renames:
+  - from: "bug"
+    to: "type: bug"
+
+# ── Labels ────────────────────────────────────────────────────────────
+#
+# Colours are 6-digit hex, with or without a leading #, and have to be unique
+# across the whole file — that is what keeps a diff readable at a glance.
+labels:
+  - name: "type: bug"
+    color: "d73a4a"
+    description: "Something isn't working"
+
+  - name: "type: feature"
+    color: "a2eeef"
+    description: "New functionality"
+
+  - name: "priority: high"
+    color: "b60205"
+    description: "Needs attention before anything else"
+
+  # A label that names its own groups goes only to those, ignoring
+  # defaults.groups entirely.
+  - name: "website"
+    color: "0e8a16"
+    description: "Website-specific"
+    groups: [websites]

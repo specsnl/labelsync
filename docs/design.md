@@ -658,6 +658,13 @@ and effectively free.
 Cache entries are keyed by `owner/repo` and carry a schema version so a tool upgrade invalidates
 cleanly. `--no-cache` bypasses; `cache clear` purges.
 
+**Landed** ([#35](https://github.com/specsnl/labelsync/issues/35),
+[#42](https://github.com/specsnl/labelsync/issues/42)). `cache clear` takes a path that ultimately
+comes from `XDG_CACHE_HOME` and then deletes what is in it, so the bound is explicit: the directory
+has to sit inside the cache home (`ErrUnsafeCacheDir` otherwise) *and* only the entry files
+labelsync itself wrote are ever removed. See
+[GitHub Client § Inspecting and clearing](./content/docs/architecture/github-client.md#inspecting-and-clearing-the-cache).
+
 ### Bounded parallel reads
 
 Reads via `golang.org/x/sync/errgroup` with a concurrency limit (default 8, `--concurrency`).
@@ -721,10 +728,16 @@ Exceeding it exits with an error and a summary of what remained.
 
 ## CLI
 
-> **Partly landed.** The root command, the persistent flags, and `version` are implemented in
-> `internal/cmd` — see
+> **Partly landed.** Every command below except applying is implemented in `internal/cmd` — the
+> root, `sync --dry-run`, `export`, `init`, `groups`, `cache`, and `version`. See
 > [Overview § How the tree is wired](./content/docs/architecture/overview.md#how-the-tree-is-wired).
-> The subcommands below are still the plan.
+> The remaining subcommands below are still the plan.
+>
+> `init` takes a `--force`, which this sketch does not show, and honours `--config` as its
+> destination rather than only writing into the working directory. What it scaffolds is the
+> [full example](#full-example) below, kept honest by the same validator every other config file
+> goes through — see
+> [Configuration § The scaffold](./content/docs/architecture/configuration.md#the-scaffold).
 
 ```text
 labelsync [--config <path>]
@@ -761,8 +774,20 @@ labelsync [--config <path>]
 existing repositories will clear any description not present in the config. `export` produces a
 faithful starting point so that never happens by accident.
 
+**Landed** ([#40](https://github.com/specsnl/labelsync/issues/40)), with one deviation from the
+sketch above: the flag is `--out`, because `-o` is already the shorthand for the global `--output`
+and a second flag claiming the same letter is a `pflag` panic rather than a preference. A
+repository holding two labels of one colour is exported as it is and annotated, because colour
+uniqueness is a config-file rule that a repository is under no obligation to satisfy and choosing
+which of the two to change is not a decision a tool can make. See
+[Usage § `labelsync export`](./content/docs/usage/_index.md).
+
 `groups` is a pure read command — invaluable for confirming a selector matches what you think
-before running a prune.
+before running a prune. **Landed** ([#39](https://github.com/specsnl/labelsync/issues/39)): the
+table is the product on stdout, and *why* a repository is missing — the filter that removed it, a
+group that resolved to nothing, a `visibility: private` that can only come back empty — is on
+stderr, so a `jq` pipeline keeps the explanation on the terminal. See
+[Usage § `labelsync groups`](./content/docs/usage/_index.md).
 
 ### Exit codes
 
@@ -782,6 +807,12 @@ which makes it useless as a check.
 The outcome codes are disjoint bits and combine: a dry run that finds drift *and* cannot reach a
 repository exits `6`. `1` stays exclusive — a failed run cannot also report on a live state it never
 established.
+
+**Landed** ([#41](https://github.com/specsnl/labelsync/issues/41)) — `sync --dry-run` assembles the
+code by OR-ing outcomes as it discovers them; see
+[Overview § Exit codes](./content/docs/architecture/overview.md#exit-codes). Applying is
+[#43](https://github.com/specsnl/labelsync/issues/43), so `--dry-run` is required until then and a
+bare `sync` refuses rather than printing a plan it will not apply.
 
 ### Non-interactive guard
 
@@ -873,6 +904,7 @@ The kind strings are a public contract. They may be added to, never renamed.
 |-------------------------------|------------------------------|
 | `ErrConfigNotFound`           | `config_not_found`           |
 | `ErrAmbiguousConfigFile`      | `ambiguous_config_file`      |
+| `ErrConfigExists`             | `config_exists`              |
 | `ErrUnsupportedConfigVersion` | `unsupported_config_version` |
 | `ErrEmptyConfig`              | `empty_config`               |
 | `ErrDuplicateLabelName`       | `duplicate_label_name`       |

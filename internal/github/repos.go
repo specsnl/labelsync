@@ -8,9 +8,9 @@
 // turn one request per hundred repositories into one per repository, for
 // information already in hand.
 //
-// The filters themselves live in config.Selector.Matches, offline and testable
+// The filters themselves live in config.Selector.Reject, offline and testable
 // without an HTTP mock. This file's job is to produce the config.Repo values it
-// judges.
+// judges — and, for `labelsync groups`, to keep what it rejected and why.
 package github
 
 import (
@@ -19,7 +19,6 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
-	"sync"
 
 	gogithub "github.com/google/go-github/v76/github"
 	"golang.org/x/sync/errgroup"
@@ -38,54 +37,75 @@ const reposPerPage = 100
 // caller that passes zero.
 const defaultConcurrency = 8
 
-// Enumerate walks every selector and returns the distinct repositories they
-// select, sorted by owner and then name.
+// Rejected is a repository a selector listed and then filtered out, with the
+// reason it was.
+//
+// It is carried rather than discarded because the absence of an expected
+// repository is exactly what `labelsync groups` exists to explain. Nothing else
+// reads it: enumeration's answer is [Selection.Repos].
+type Rejected struct {
+	Repo   config.Repo
+	Reason string
+}
+
+// Selection is one selector's enumeration: the repositories it selects, and the
+// ones it listed and filtered out.
+type Selection struct {
+	Selector config.Selector
+
+	// Repos are the selected repositories, in the order the API listed them.
+	Repos []config.Repo
+
+	// Rejected are the repositories the listing returned that the selector's
+	// filters removed. It is always empty for a repos selector: nothing is
+	// enumerated for one, so nothing can be filtered out of it.
+	Rejected []Rejected
+}
+
+// Select walks every selector and returns what each one resolved to, in the
+// order the selectors were given.
+//
+// This is the per-group answer. [Client.Enumerate] is the union of it, and is
+// what a run that only needs "which repositories" should call.
 //
 // Selectors are walked in parallel, bounded by concurrency — non-positive means
 // [defaultConcurrency]. Reads are not subject to the content-creation secondary
 // limit, so the bound is politeness and round-trip latency rather than a quota
 // concern.
 //
-// The union is deduplicated case-insensitively: two groups naming the same
-// repository is ordinary — it is how a repository ends up with the labels of
-// both — and enumerating it twice would plan it twice.
-//
-// An owner that cannot be listed is recorded and skipped, not fatal. One
-// mistyped org in a config that names four should report itself at the end of
-// the run rather than take the other three down with it. Anything else — a 401,
-// a cancelled context — ends the run.
-func (c *Client) Enumerate(ctx context.Context, selectors []config.Selector, concurrency int) ([]config.Repo, error) {
+// An owner that cannot be listed is recorded and skipped, not fatal: its
+// selection comes back empty. One mistyped org in a config that names four
+// should report itself at the end of the run rather than take the other three
+// down with it. Anything else — a 401, a cancelled context — ends the run.
+func (c *Client) Select(ctx context.Context, selectors []config.Selector, concurrency int) ([]Selection, error) {
 	if concurrency <= 0 {
 		concurrency = defaultConcurrency
 	}
 
-	var (
-		mu    sync.Mutex
-		found = make(map[string]config.Repo)
-	)
+	// Indexed rather than appended: the results keep the caller's order, which
+	// is the group order a report reads down, and parallel appends would give
+	// whatever order the walks happened to finish in.
+	out := make([]Selection, len(selectors))
 
 	group, ctx := errgroup.WithContext(ctx)
 	group.SetLimit(concurrency)
 
-	for _, selector := range selectors {
+	for i, selector := range selectors {
 		group.Go(func() error {
-			repos, err := c.selectorRepos(ctx, selector)
+			selection, err := c.selectorRepos(ctx, selector)
 			if err != nil {
 				// Already recorded by Do, and the summary will name it. Every
 				// other error is the run's.
 				if errors.Is(err, labelsync.ErrRepoInaccessible) {
+					out[i] = Selection{Selector: selector}
+
 					return nil
 				}
 
 				return err
 			}
 
-			mu.Lock()
-			defer mu.Unlock()
-
-			for _, repo := range repos {
-				found[strings.ToLower(repo.String())] = repo
-			}
+			out[i] = selection
 
 			return nil
 		})
@@ -95,27 +115,70 @@ func (c *Client) Enumerate(ctx context.Context, selectors []config.Selector, con
 		return nil, err
 	}
 
-	out := make([]config.Repo, 0, len(found))
-	for _, repo := range found {
-		out = append(out, repo)
+	return out, nil
+}
+
+// Enumerate walks every selector and returns the distinct repositories they
+// select, sorted by owner and then name.
+//
+// The union is deduplicated case-insensitively: two groups naming the same
+// repository is ordinary — it is how a repository ends up with the labels of
+// both — and enumerating it twice would plan it twice.
+func (c *Client) Enumerate(ctx context.Context, selectors []config.Selector, concurrency int) ([]config.Repo, error) {
+	selections, err := c.Select(ctx, selectors, concurrency)
+	if err != nil {
+		return nil, err
 	}
 
-	// Sorted because a map is not, and because every downstream artefact — the
-	// diff, the JSON stream, the golden files — is compared between runs.
-	slices.SortFunc(out, func(a, b config.Repo) int {
-		if owner := strings.Compare(a.Owner, b.Owner); owner != 0 {
-			return owner
-		}
-
-		return strings.Compare(a.Name, b.Name)
-	})
+	out := Union(selections)
 
 	slog.Debug("enumeration complete", "selectors", len(selectors), "repositories", len(out))
 
 	return out, nil
 }
 
-// selectorRepos lists one selector's repositories and keeps the ones it selects.
+// Union deduplicates the repositories of several selections, case-insensitively,
+// and sorts them by owner and then name.
+//
+// Sorted because a map is not, and because every downstream artefact — the diff,
+// the JSON stream, the golden files — is compared between runs.
+func Union(selections []Selection) []config.Repo {
+	found := make(map[string]config.Repo)
+
+	for _, selection := range selections {
+		for _, repo := range selection.Repos {
+			// First spelling wins, which makes the answer the caller's selector
+			// order rather than whichever parallel walk wrote last. GitHub
+			// addresses Owner/Repo and owner/repo as one repository, so which of
+			// them is carried has to be decided by something stable.
+			key := strings.ToLower(repo.String())
+			if _, seen := found[key]; !seen {
+				found[key] = repo
+			}
+		}
+	}
+
+	out := make([]config.Repo, 0, len(found))
+	for _, repo := range found {
+		out = append(out, repo)
+	}
+
+	slices.SortFunc(out, compareRepos)
+
+	return out
+}
+
+// compareRepos orders repositories by owner and then name.
+func compareRepos(a, b config.Repo) int {
+	if owner := strings.Compare(a.Owner, b.Owner); owner != 0 {
+		return owner
+	}
+
+	return strings.Compare(a.Name, b.Name)
+}
+
+// selectorRepos lists one selector's repositories and splits them into the ones
+// it selects and the ones its filters removed.
 //
 // An explicit repos: entry passes through untouched and unenumerated. The config
 // named the repository outright, so there is nothing to filter and nothing worth
@@ -123,25 +186,29 @@ func (c *Client) Enumerate(ctx context.Context, selectors []config.Selector, con
 // name would be a surprise rather than a safety net. Archived, Fork, Private and
 // HasIssues are consequently unknown — false — for these, which is why nothing
 // downstream may treat them as authoritative for an explicit entry.
-func (c *Client) selectorRepos(ctx context.Context, selector config.Selector) ([]config.Repo, error) {
+func (c *Client) selectorRepos(ctx context.Context, selector config.Selector) (Selection, error) {
 	if selector.Kind == config.SourceRepos {
-		return slices.Clone(selector.Repos), nil
+		return Selection{Selector: selector, Repos: slices.Clone(selector.Repos)}, nil
 	}
 
 	listed, err := c.listRepos(ctx, selector)
 	if err != nil {
-		return nil, err
+		return Selection{}, err
 	}
 
-	var out []config.Repo
+	selection := Selection{Selector: selector}
 
 	for _, repo := range listed {
-		if selector.Matches(repo) {
-			out = append(out, repo)
+		if reason := selector.Reject(repo); reason != "" {
+			selection.Rejected = append(selection.Rejected, Rejected{Repo: repo, Reason: reason})
+
+			continue
 		}
+
+		selection.Repos = append(selection.Repos, repo)
 	}
 
-	return out, nil
+	return selection, nil
 }
 
 // listRepos walks every page of the endpoint the selector's kind implies.

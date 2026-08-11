@@ -14,12 +14,17 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
 
 	gogithub "github.com/google/go-github/v76/github"
+	"golang.org/x/sync/errgroup"
+
+	"github.com/specsnl/labelsync/internal/config"
+	"github.com/specsnl/labelsync/internal/labelsync"
 )
 
 // labelsPerPage is the maximum GitHub allows. More than 100 labels in one
@@ -155,6 +160,73 @@ func (c *Client) ListLabels(ctx context.Context, owner, repo string) ([]Label, e
 			return labels, nil
 		}
 	}
+}
+
+// RepoLabels is one repository's current labels, as [Client.ReadLabels] read
+// them.
+type RepoLabels struct {
+	Repo   config.Repo
+	Labels []Label
+}
+
+// ReadLabels reads the label sets of many repositories in parallel, bounded by
+// concurrency — non-positive means [defaultConcurrency].
+//
+// The result keeps the input order rather than the order the reads happened to
+// finish in, because it becomes a plan, and a plan that reshuffled between two
+// identical runs is not one anyone can diff.
+//
+// A repository that cannot be reached is **absent from the result**, not present
+// with an empty label set. The two would otherwise be indistinguishable, and the
+// second reading is the dangerous one: an empty label set is what a repository
+// that needs every label created looks like. It is recorded in [Client.Failures]
+// on the way past, which is what turns into the skipped outcome bit.
+func (c *Client) ReadLabels(ctx context.Context, repos []config.Repo, concurrency int) ([]RepoLabels, error) {
+	if concurrency <= 0 {
+		concurrency = defaultConcurrency
+	}
+
+	// Indexed rather than appended, so the order is the caller's. A nil entry is
+	// a repository that was skipped, and is filtered out below.
+	read := make([]*RepoLabels, len(repos))
+
+	group, ctx := errgroup.WithContext(ctx)
+	group.SetLimit(concurrency)
+
+	for i, repo := range repos {
+		group.Go(func() error {
+			labels, err := c.ListLabels(ctx, repo.Owner, repo.Name)
+			if err != nil {
+				// Already recorded by Do, and the summary will name it. Every
+				// other error is the run's.
+				if errors.Is(err, labelsync.ErrRepoInaccessible) {
+					return nil
+				}
+
+				return err
+			}
+
+			read[i] = &RepoLabels{Repo: repo, Labels: labels}
+
+			return nil
+		})
+	}
+
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+
+	out := make([]RepoLabels, 0, len(read))
+
+	for _, entry := range read {
+		if entry != nil {
+			out = append(out, *entry)
+		}
+	}
+
+	slog.Debug("label read complete", "repositories", len(repos), "read", len(out))
+
+	return out, nil
 }
 
 // CreateLabel creates label in the repository.

@@ -145,6 +145,9 @@ locally is what turns a `422` halfway through a run into a message naming the li
 | A rename `to:` a name no label declares              | The rename would land on nothing                                                                      |
 | A rename whose `from:` is a label the file declares  | Including a case-only rename such as `bug` → `Bug`, which is unnecessary — casing is converged anyway |
 
+`labelsync init` writes a file that satisfies every one of these, which is the quickest way to see
+what a valid one looks like.
+
 Both length bounds count **characters, not bytes** — a description of 100 emoji is exactly at the
 limit, the same as 100 letters. The counting matches GitHub's, so nothing that passes here is
 rejected later for being too long.
@@ -158,8 +161,199 @@ Under `--output=json`, each of these carries a stable `error_kind` — `duplicat
 
 ## Commands
 
-Only `version` is implemented so far. `sync`, `export`, `init`, `groups`, and `cache` are the
-planned tree — see the [design plan](https://github.com/specsnl/labelsync/blob/main/docs/design.md#cli).
+`sync --dry-run`, `export`, `groups`, `init`, `cache`, and `version` are implemented so far. Only
+applying is still to come — see the
+[design plan](https://github.com/specsnl/labelsync/blob/main/docs/design.md#cli).
+
+### `labelsync cache`
+
+The ETag store is what makes repeat dry-runs effectively free: a conditional request that comes
+back `304 Not Modified` does not count against GitHub's primary rate limit, and labels change
+rarely. It lives under `$XDG_CACHE_HOME/labelsync` (default `~/.cache/labelsync`).
+
+```sh
+labelsync cache info                 # where it is, and what is in it
+labelsync cache clear                # empty it
+labelsync cache info --output=json
+```
+
+`cache info` reports the location, the entry count, the total size, the schema version, and how old
+the oldest entry is. The two renderings differ on purpose:
+
+| Field  | In the table | In the JSON record        |
+|--------|--------------|---------------------------|
+| Size   | `1.2 MiB`    | `"bytes": 1258291`        |
+| Oldest | `3 days ago` | `"oldest": "2026-08-08…"` |
+
+A size a consumer cannot compare is not a size, and an age nobody can read is not an age — so each
+audience gets the form it can use, from the same value.
+
+`cache clear` removes every cached label list and reports what went. It is bounded twice over:
+**only inside the resolved cache directory**, which has to sit under the XDG cache home
+(`unsafe_cache_dir` otherwise), and **only the files labelsync itself wrote**. The directory stays,
+nothing is recursed into, and clearing an already-empty cache is a no-op rather than an error.
+
+Nothing here is needed for correctness. `--no-cache` skips the cache for one run, a corrupt entry
+is a miss rather than an error, and clearing it costs the next run one request per repository.
+
+### `labelsync export`
+
+Writes a repository's current labels as a config file.
+
+```sh
+labelsync export specsnl/labelsync                  # to stdout
+labelsync export specsnl/labelsync > labels.yml     # the same, redirected
+labelsync export specsnl/labelsync --out labels.yml # written for you
+labelsync export specsnl/labelsync --out ./ops      # ops/labels.yml
+```
+
+**Run this before your first sync against repositories that already have labels.** Descriptions are
+authoritative: a label whose description your config does not carry has its description *cleared*.
+An export is a faithful starting point, so that never happens by accident.
+
+The flag is `--out`, not the `-o` the design sketch used: `-o` is already the shorthand for the
+global `--output`.
+
+What comes out is sorted by name and normalised exactly the way the loader normalises a config — a
+`#` stripped, hex lower-cased, names trimmed — so `export`, edit, `export` shows your edits and
+nothing else. It carries a `groups` section naming the repository it came from and a
+`defaults.groups` pointing at it, so the file works as it lands rather than after an edit nothing
+told you to make.
+
+With no `--out`, **stdout is the file**, whatever `--output` says. It is the one command whose
+stdout is not one typed object per line, because `> labels.yml` has to produce a config file. With
+`--out`, stdout is the usual record — `{"path":"labels.yml","labels":12}`.
+
+#### Two labels sharing a colour
+
+Colours have to be unique across a config file, and a repository is under no such rule. Where one
+genuinely holds two labels of the same colour, the export says so rather than inventing a
+difference:
+
+```yaml
+  - name: "bug"
+    color: "d73a4a" # also "defect" — colours must be unique across the file; change one
+```
+
+The file is exported as it is, and it is also warned about on stderr — a redirected export is a
+file nobody reads until the next run rejects it. Which of the two to change is the one decision
+`labelsync` cannot make for you, so it names both and stops there. Until you pick, loading the file
+fails with `duplicate_label_color`.
+
+### `labelsync sync --dry-run`
+
+Computes what it would take to make every selected repository match the config, prints the diff,
+and writes nothing.
+
+```sh
+labelsync sync --dry-run                              # every group
+labelsync sync --dry-run --group websites             # only these groups, repeatable
+labelsync sync --dry-run --repo specsnl/labelsync     # only these repositories, repeatable
+labelsync sync --dry-run --mode prune                 # also list what would be removed
+labelsync sync --dry-run --output=json                # NDJSON, one action per line
+```
+
+| Flag        | Default  | What it does                                                         |
+|-------------|----------|----------------------------------------------------------------------|
+| `--dry-run` | off      | Compute and print, write nothing. **Currently required**             |
+| `--mode`    | `append` | `append` never deletes; `prune` also lists unconfigured labels       |
+| `--group`   | all      | Restrict to a group, repeatable                                      |
+| `--repo`    | —        | Restrict to an `owner/repo`, repeatable, bypassing group enumeration |
+
+**Applying is not implemented yet**, so `--dry-run` is required and a `sync` without it fails
+rather than printing a plan and quietly applying nothing.
+
+`--repo` bypasses *enumeration*, not the config. A repository named on the command line still gets
+only the labels the groups that select it ask for, and a repository no group selects gets nothing
+at all — said out loud on stderr rather than silently. Bypassing that too would make `--repo` the
+one way to touch a repository the config does not cover, which is the safety property the whole
+tool rests on.
+
+`--mode prune` reaches the planner, which lists every unconfigured label as a *removal candidate*.
+Nothing is deleted: choosing which candidates go is a later step, and a dry run writes nothing
+either way.
+
+Run [`export`](#labelsync-export) before the first sync against repositories that already have
+labels. Descriptions are authoritative, so a label whose description your config does not carry has
+its description cleared.
+
+#### Exit codes
+
+```sh
+labelsync sync --dry-run; rc=$?
+(( rc == 1 ))  && exit 1                                  # the run itself failed
+(( rc & 2 ))   && echo "labels have drifted"
+(( rc & 4 ))   && echo "some repositories were unreachable"
+```
+
+`2` and `4` are **bits and combine** — a dry run that finds drift *and* cannot reach a repository
+exits `6`. Test bits, not equality. `1` stays exclusive: a failed run has no live state to report
+on. Exit `2` prints no error line at all, because the drift *was* the successful result and the
+diff is already on stdout.
+
+### `labelsync groups`
+
+Prints which repositories each group actually resolves to. It writes nothing, and it is the
+command to run before a prune or before the first sync against a new selector.
+
+```sh
+labelsync groups                                        # every group
+labelsync groups --group specs-all --group personal     # only these, repeatable
+labelsync groups --output=json | jq 'select(.repositories == 0)'
+```
+
+**stdout** is the table — one row per group, with the group, where its repositories come from, how
+many it selected, and which ones. In JSON, `repositories` is a **number** and `repos` is an array,
+so a consumer filters on them rather than matching prose:
+
+```json
+{"group":"websites","source":"org: specsnl","repositories":2,"repos":["specsnl/a","specsnl/b"]}
+```
+
+**stderr** is the explanation, and it is most of the point of the command:
+
+- every repository a group's filters removed, with the reason — `archived, and skip_archived is
+  on`, `a fork, and skip_forks is on`, `visibility: public`, `matched by an exclude glob`,
+  `matched by no include glob`. The absence of a repository you expected is the thing this command
+  exists to explain, so it is one line per repository rather than a count;
+- a warning for any group that resolves to **no repositories at all**;
+- a warning when `visibility: private` was asked for a user who is not the one the token belongs
+  to, which GitHub can only ever answer with nothing;
+- the usual end-of-run summary of repositories that could not be reached.
+
+Pipe stdout and you keep all of that on the terminal. `2>/dev/null` keeps only the table.
+
+A `--group` naming a group the config does not define is an error (`unknown_group`), not an empty
+table: reporting nothing for a typo is how a working selector gets blamed. An owner that cannot be
+listed does not stop the run — the other groups still resolve, and the exit code carries `4`.
+
+### `labelsync init`
+
+Writes a starter `labels.yml` — a worked example with a group per source kind, `defaults.groups`,
+a rename, and four labels — into the working directory.
+
+```sh
+labelsync init                            # ./labels.yml
+labelsync --config ops init               # ops/labels.yml
+labelsync --config ops/labels.yml init    # exactly there
+labelsync init --force                    # overwrite what is already there
+```
+
+`--config` chooses the destination: a path writes there, a directory writes `labels.yml` inside it.
+
+| Situation                                       | What happens                                        |
+|-------------------------------------------------|-----------------------------------------------------|
+| Nothing is there                                | The file is written, and its path goes to stdout    |
+| The file already exists                         | `config_exists` — nothing is written; use `--force` |
+| The **other** spelling is there (`labels.yaml`) | `ambiguous_config_file` — even with `--force`       |
+
+The last row is not `--force` being over-cautious. A directory holding both `labels.yml` and
+`labels.yaml` is rejected by *every later run*, a step removed from the command that caused it, and
+there is no version of "I know what I am doing" that makes the result loadable. Remove the other
+file first.
+
+The scaffolded config is guaranteed to validate: it goes through the same rules any other config
+file does, as part of the test suite, so `init` can never hand you a file the next command rejects.
 
 ### `labelsync version`
 

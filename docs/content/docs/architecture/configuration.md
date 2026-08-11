@@ -11,6 +11,8 @@ three separate concerns in three files, all of which have landed:
 | `config.go`   | Find the file, parse it, normalise it              | landed |
 | `validate.go` | The rules in the design's validation table         | landed |
 | `resolve.go`  | Groups → selectors, and every rule about the graph | landed |
+| `scaffold.go` | The starter config `labelsync init` writes         | landed |
+| `export.go`   | Labels back out as a config file                   | landed |
 
 Nothing in the package touches the network, and nothing in `config.go` rejects a config: an
 invalid colour parses into the struct exactly as written and is `validate.go`'s answer to give.
@@ -204,6 +206,64 @@ label and not one at once; the chain is checked explicitly all the same, so the 
 chain rather than leaving the user to work out why the middle name is the one being complained
 about.
 
+## The scaffold
+
+```go
+func Scaffold() []byte
+```
+
+The starter config `labelsync init` writes lives here, in `scaffold.yml`, embedded with
+`go:embed`. Two consequences, and both are the reason it is not a string literal in
+`internal/cmd`:
+
+- **It is a `.yml` file while it is being edited**, so the comments in it — which are most of its
+  value, and the first thing a user meets — read as YAML rather than as an escaped Go string.
+- **It is held to the same rules as any other config file.** `catalogue_test.go` runs it through
+  `Parse` + `Validate` alongside the repository's own `labels.yml`, under one set of property
+  assertions. `init` therefore cannot emit a config the very next command rejects, and the worked
+  example cannot drift away from the real file into demonstrating something different.
+
+`Scaffold` returns a copy. The embedded bytes are package state for the life of the process, and a
+caller that sliced into them would change what every later call returns.
+
+The file is a worked example rather than the smallest thing that validates: a group per source
+kind, `defaults.groups`, a rename, and a label that names groups of its own to contrast with the
+default. A test asserts each of those is still in there, because "the scaffold demonstrates the
+sections" is a claim the documentation makes and an edit could quietly withdraw.
+
+## Export
+
+```go
+func Export(repo string, labels []Label) ([]byte, error)
+func DuplicateColors(labels []Label) map[string][]string
+```
+
+`export.go` renders labels *back* into a config file, and it lives next to the loader for one
+reason: it has to normalise the same way. Colours go through the same `normalizeColor`, names are
+trimmed the same way, so `export` → load → `export` is a fixed point rather than a churn of
+incidental spelling changes. A test asserts exactly that.
+
+The output is built as a `yaml.Node` tree rather than by marshalling a `Config`, because the
+comments are half of what it is for — the header explaining that descriptions are authoritative,
+and the annotation on a shared colour. Marshalling a struct produces the same data and none of the
+prose. Every scalar is double-quoted, which is not decoration: a colour like `123456` is a string
+the loader wants and an integer YAML would otherwise hand it, and a label named `no` is a boolean.
+
+It emits a `groups` section naming the repository and a `defaults.groups` pointing at it. A config
+with no groups parses, validates, and then selects nothing — a file that is only usable after an
+edit nothing told the user to make.
+
+**A duplicate colour is flagged, not repaired.** Colour uniqueness is a config-file rule, and a
+repository is under no obligation to satisfy it. The export carries both labels as they are, with a
+comment on each naming the other, and the command warns on stderr as well — a redirected export is
+a file nobody reads until the next run rejects it with `duplicate_label_color`. Inventing a
+different colour would export a file that no longer describes the repository it came from, and
+choosing which of the two to change is the one decision this cannot make.
+
+Exporting a repository with no labels fails with `ErrEmptyConfig`: the file it would write declares
+no labels, which is precisely the rule the loader would reject it by, so it fails now rather than
+as a puzzle on the next run.
+
 ## Resolution
 
 `resolve.go` turns the `groups` section into **selectors**, not repository lists:
@@ -228,6 +288,18 @@ to decide whether a repository it was handed *belongs*. Enumeration itself lives
 `Repo` is a plain struct — owner, name, and the three facts the filters look at (`Archived`,
 `Fork`, `Private`), plus `HasIssues`, which no filter looks at. That is what lets the same rule
 judge a repository the API listed and a repository `--repo` named directly.
+
+`Matches` has a second form that answers with its reasoning:
+
+```go
+func (s Selector) Matches(repo Repo) bool   // belongs?
+func (s Selector) Reject(repo Repo) string  // "" when it belongs, otherwise which filter removed it
+```
+
+`Matches` *is* `Reject(repo) == ""`. One function rather than two, because `labelsync groups` prints
+the reasons and a reason that disagreed with the verdict would send a reader to the wrong line of
+their config. The strings are prose for a human — `archived, and skip_archived is on` — and nothing
+branches on them.
 
 `HasIssues` is carried rather than acted on: repository-scoped label endpoints are ungated on it,
 so a repository with issues disabled syncs normally, and the value exists only so the diff can
@@ -324,12 +396,15 @@ case directly for that reason.
   cases and both not-found cases, with the working directory and `XDG_CONFIG_HOME` pointed at
   temporary directories. Every error case also asserts `KindOf` still names the sentinel through
   the wrapping.
-- **The repository's own `labels.yml`** is loaded through `LoadFile` as a test of its own, so the
-  worked example the documentation points at has to pass the rules it claims to satisfy. The
-  properties it relies on — globally unique colours, descriptions within the limit, every
-  referenced group defined, every label in at least one group and carrying a description — are
-  re-asserted directly, so neither a change to a rule nor an edit to the file can quietly cost the
-  catalogue one of them.
+- **The repository's own `labels.yml` and the `init` scaffold** go through one test, each loaded
+  the way a user's config is — `LoadFile` for the catalogue, `Parse` + `Validate` for the embedded
+  scaffold — so both have to pass the rules they claim to satisfy. The properties they rely on —
+  globally unique colours, descriptions within the limit, every referenced group defined, every
+  label in at least one group and carrying a description — are re-asserted directly against both,
+  so neither a change to a rule nor an edit to either file can quietly cost one of them a property
+  the documentation promises. The scaffold is additionally written to a temporary directory and
+  read back through `LoadFile`, because being embedded correctly and reaching the disk correctly
+  are two different claims.
 - **Normalisation** is pinned by golden files: `testdata/*.yml` in, the normalised struct
   marshalled back to YAML out. A change to any defaulting or tidying rule shows up as a diff in
   the golden rather than as a subtly different plan several stages later.

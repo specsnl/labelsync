@@ -1,0 +1,37 @@
+# labelsync export of specsnl/labelsync
+
+# Descriptions are authoritative: a label whose description this file does not
+# carry has its description cleared on the next sync. That is what this export
+# is for — it captures the ones the repository already has.
+
+# Check it before it changes anything:
+
+#   labelsync sync --dry-run --config labels.yml
+
+version: 1
+
+# The repository this file was exported from. Add more, or replace this with an
+# org: or user: selector — see labelsync init for a worked example.
+groups:
+  exported:
+    repos:
+      - "specsnl/labelsync"
+
+# Every label below belongs to this group, since none of them names one.
+defaults:
+  groups: ["exported"]
+
+# Exactly what the repository holds today, sorted by name.
+labels:
+  - name: "defect"
+    color: "d73a4a" # also "type: bug" — colours must be unique across the file; change one
+    description: "The duplicate colour"
+  - name: "no"
+    color: "0e8a16"
+    description: "A name YAML would take for a bool"
+  - name: "type: bug"
+    color: "d73a4a" # also "defect" — colours must be unique across the file; change one
+    description: "Something isn't working"
+  - name: "wontfix"
+    color: "ffffff"
+    description: ""

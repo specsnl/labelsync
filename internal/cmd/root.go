@@ -102,7 +102,14 @@ Use "labelsync <command> --help" for more information about a command.`,
 	// for.
 	cmd.Flags().Bool(flagVersion, false, "Print the version and exit (same as: version --dont-prettify)")
 
-	cmd.AddCommand(newVersionCmd(app))
+	cmd.AddCommand(
+		newCacheCmd(app),
+		newExportCmd(app),
+		newGroupsCmd(app),
+		newInitCmd(app),
+		newSyncCmd(app),
+		newVersionCmd(app),
+	)
 
 	return cmd
 }
@@ -144,6 +151,10 @@ func (a *App) resolveFlags(cmd *cobra.Command) error {
 	} else {
 		a.Out = output.NewPrettyWriter(cmd.OutOrStdout(), cmd.ErrOrStderr(), nil)
 	}
+
+	// The raw stream, for `export`'s file — see App.Stdout. Taken from the
+	// command for the same reason the writers are.
+	a.Stdout = cmd.OutOrStdout()
 
 	// Stderr, and the command's stderr specifically: --debug output a test cannot
 	// capture is the one thing the accessors exist to prevent.

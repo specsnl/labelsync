@@ -62,6 +62,11 @@ type Client struct {
 	failures *Failures
 	cache    *cache
 	limiter  *ratelimit.Limiter
+
+	// The authenticated login, resolved at most once — see [Client.Login].
+	loginOnce sync.Once
+	login     string
+	loginErr  error
 }
 
 // options are the knobs [New] accepts. Zero values mean the production defaults.
@@ -293,6 +298,38 @@ func (c *Client) RateLimit(ctx context.Context) (*gogithub.Rate, error) {
 	)
 
 	return core, nil
+}
+
+// Login returns the login of the user the token belongs to, from GET /user.
+//
+// It is asked for one reason: config.Resolve needs it to decide which of the two
+// user endpoints a `user:` selector has to call, and whether asking for that
+// user's private repositories is going to come back empty. A config with no
+// `user:` group never needs it, so callers check before spending the request.
+//
+// The answer is cached for the life of the client. It cannot change during a run,
+// and a second request for it would be a request spent on a question already
+// answered.
+//
+// A failure is the caller's to shrug off: a token that cannot read /user — a
+// GitHub App installation token, most likely — still lists organisations
+// perfectly well. Resolve treats an empty login as "somebody else", which is the
+// conservative reading.
+func (c *Client) Login(ctx context.Context) (string, error) {
+	c.loginOnce.Do(func() {
+		user, _, err := c.rest.Users.Get(ctx, "")
+		if err != nil {
+			c.loginErr = fmt.Errorf("reading the authenticated user: %w", err)
+
+			return
+		}
+
+		c.login = user.GetLogin()
+
+		slog.Debug("authenticated user resolved", "login", c.login)
+	})
+
+	return c.login, c.loginErr
 }
 
 // errNoCoreBudget is a /rate_limit response with no core resource in it. It is

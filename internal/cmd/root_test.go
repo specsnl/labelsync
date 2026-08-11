@@ -25,9 +25,17 @@ import (
 func run(t *testing.T, extra []*cobra.Command, args ...string) (*cmd.App, string, string, error) {
 	t.Helper()
 
-	var stdout, stderr bytes.Buffer
+	return runApp(t, cmd.NewApp(), extra, args...)
+}
 
-	app := cmd.NewApp()
+// runApp is run over an App a test has already prepared — one pointed at a fake
+// GitHub, say. Every field the persistent flags own is overwritten during
+// PersistentPreRunE, so anything set here that a flag also sets has to be passed
+// as that flag instead.
+func runApp(t *testing.T, app *cmd.App, extra []*cobra.Command, args ...string) (*cmd.App, string, string, error) {
+	t.Helper()
+
+	var stdout, stderr bytes.Buffer
 
 	root := cmd.NewRootCmd(app)
 	root.SetOut(&stdout)

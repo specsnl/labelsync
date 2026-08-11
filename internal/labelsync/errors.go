@@ -29,6 +29,11 @@ var (
 	// exist in the same directory. Only one is allowed.
 	ErrAmbiguousConfigFile = errors.New("ambiguous config file: both labels.yml and labels.yaml exist — remove one")
 
+	// ErrConfigExists is returned when `labelsync init` is asked to scaffold a
+	// config file over one that is already there. Overwriting a hand-edited
+	// catalogue is not a thing to do by accident, so it takes --force.
+	ErrConfigExists = errors.New("config file already exists")
+
 	// ErrUnsupportedConfigVersion is returned when the config's version field is
 	// missing, or names a schema version this binary does not understand.
 	ErrUnsupportedConfigVersion = errors.New("unsupported config version")
@@ -91,6 +96,12 @@ var (
 	// reported per repository and does not abort the run.
 	ErrRepoInaccessible = errors.New("repository is inaccessible")
 
+	// ErrUnsafeCacheDir is returned when a cache command is pointed at a
+	// directory outside the XDG cache home. The path comes from the
+	// environment and the command then deletes what is in it, so the bound is
+	// explicit rather than assumed.
+	ErrUnsafeCacheDir = errors.New("refusing to touch a cache directory outside the cache home")
+
 	// ErrMaxWaitExceeded is returned when a rate-limit backoff would sleep for
 	// longer than the --max-wait ceiling allows.
 	ErrMaxWaitExceeded = errors.New("rate limit wait exceeds --max-wait")
@@ -106,6 +117,8 @@ func KindOf(err error) string {
 		return "config_not_found"
 	case errors.Is(err, ErrAmbiguousConfigFile):
 		return "ambiguous_config_file"
+	case errors.Is(err, ErrConfigExists):
+		return "config_exists"
 	case errors.Is(err, ErrUnsupportedConfigVersion):
 		return "unsupported_config_version"
 	case errors.Is(err, ErrEmptyConfig):
@@ -136,6 +149,8 @@ func KindOf(err error) string {
 		return "interactive_required"
 	case errors.Is(err, ErrRepoInaccessible):
 		return "repo_inaccessible"
+	case errors.Is(err, ErrUnsafeCacheDir):
+		return "unsafe_cache_dir"
 	case errors.Is(err, ErrMaxWaitExceeded):
 		return "max_wait_exceeded"
 	default:

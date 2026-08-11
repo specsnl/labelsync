@@ -14,9 +14,12 @@
 package cmd
 
 import (
+	"io"
 	"log/slog"
+	"os"
 	"time"
 
+	"github.com/specsnl/labelsync/internal/github"
 	"github.com/specsnl/labelsync/internal/util/output"
 )
 
@@ -51,6 +54,19 @@ type App struct {
 	// root's PersistentPreRunE with a writer over the command's own streams, once
 	// --output has been parsed.
 	Out output.Writer
+
+	// Stdout is the raw stdout stream, for the one product that is a file rather
+	// than a record.
+	//
+	// `labelsync export owner/repo > labels.yml` has to produce a config file,
+	// and every method on Out would either wrap the YAML in a JSON object or
+	// interleave prose with it. Nothing else in the tree may reach for this:
+	// output that is a record goes through Out, so that --output means something
+	// everywhere it can.
+	//
+	// Like Out, it is replaced in PersistentPreRunE with the command's own
+	// stream, so a test captures it.
+	Stdout io.Writer
 
 	// LogLevel gates the debug logger. Cobra parses flags after the tree is
 	// built, so the level is held here and raised once --debug is known.
@@ -87,6 +103,42 @@ type App struct {
 	// MaxWait is --max-wait: the longest a rate-limit backoff may sleep before
 	// the run fails with ErrMaxWaitExceeded.
 	MaxWait time.Duration
+
+	// CacheDir and CacheRoot are where the cache commands look, and the
+	// directory they are bounded by. Empty means the resolved XDG paths, which
+	// is what production wants.
+	//
+	// They are a test seam, and a narrow one on purpose: `cache clear` deletes
+	// what it finds, so a suite that ran against the developer's real cache
+	// would empty it. Only the cache commands read them — the ETag cache the
+	// client writes is pointed elsewhere through GitHub instead.
+	CacheDir  string
+	CacheRoot string
+
+	// Now is the clock, for the one command that renders an age. Nil means
+	// time.Now.
+	//
+	// Injected rather than read, because "3 days ago" is not something a test
+	// can assert against a real clock.
+	Now func() time.Time
+
+	// GitHub are extra options applied last whenever a command builds a client,
+	// after everything the persistent flags decided.
+	//
+	// It is the seam an end-to-end test drives the tree through: a base URL
+	// pointing at net/http/httptest, and a cache directory under t.TempDir() so
+	// that running the suite cannot touch the developer's real cache. Production
+	// leaves it nil.
+	GitHub []github.Option
+}
+
+// now is the clock, or time.Now when nothing replaced it.
+func (a *App) now() time.Time {
+	if a.Now != nil {
+		return a.Now()
+	}
+
+	return time.Now()
 }
 
 // NewApp creates an App with the flag defaults and a silent logger.
@@ -99,6 +151,7 @@ type App struct {
 func NewApp() *App {
 	return &App{
 		Out:         output.NewDefaultPrettyWriter(),
+		Stdout:      os.Stdout,
 		LogLevel:    output.SetupDefaultLogger(output.FormatPretty, false),
 		Format:      output.FormatPretty,
 		Concurrency: DefaultConcurrency,
