@@ -41,7 +41,7 @@ Prune is three parts in three packages, and the split is the design:
    `Candidates(p)` names them, in plan order; `RetainDeletes(p, keep)` returns the plan minus the
    candidates that were not kept.
 2. `internal/cmd` asks — a `huh.MultiSelect`, or `--prune=all` — and narrows the plan.
-   See [Usage § Prune](../usage/_index.md).
+   See [Usage § Prune](../usage/commands.md#prune).
 3. `internal/apply` executes what it is given.
 
 `RetainDeletes` only ever **filters**. A candidate can be dropped between the report on stdout and
@@ -174,3 +174,8 @@ first write) and the convergence (the second run writes nothing).
 That is a model of GitHub, not GitHub. What the live API does with `new_name` is checked by hand
 against a scratch repository, and the result recorded in the pull request that wired renames
 through — see [GitHub client § the update request](./github-client.md).
+
+---
+
+The design record this grew out of — the ordering rules and the reconciliation algorithm in full — is
+[design.md § Reconciliation algorithm](https://github.com/specsnl/labelsync/blob/main/docs/design.md#reconciliation-algorithm).

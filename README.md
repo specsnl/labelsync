@@ -5,9 +5,52 @@ Synchronise GitHub issue/PR labels across a set of repositories from a local YAM
 `labelsync` is a reconciler, not a script: for each target repository it reads the current labels,
 resolves the desired set, computes an ordered plan, and then applies it — or prints it, under
 `--dry-run`. One `labels.yml` describes the labels you want; groups describe which repositories
-should have them.
+should have them. Running it twice changes nothing the second time.
 
 > **Work in progress.** Not ready for use yet.
+
+```yaml
+# labels.yml
+version: 1
+
+groups:
+  ours:
+    org: yourorg
+    exclude: ["*-archive"]
+
+defaults:
+  groups: [ours]
+
+renames:
+  - from: "bug"
+    to: "type: bug"
+
+labels:
+  - name: "type: bug"
+    color: "d73a4a"
+    description: "Something isn't working"
+  - name: "type: feature"
+    color: "0e8a16"
+    description: "New functionality"
+```
+
+```sh
+labelsync groups            # which repositories that selects, and why the rest were filtered out
+labelsync sync --dry-run    # the plan; writes nothing; exits 2 if anything has drifted
+labelsync sync              # apply it
+```
+
+What it does, in one list:
+
+- **Creates, updates, and converges** names, colours, descriptions, and casing across every
+  selected repository. Nothing is deleted unless you ask for `--mode=prune`, which reports first
+  and then asks which labels to remove.
+- **Renames without losing anything.** A `renames:` entry becomes a `PATCH`, so every issue and
+  pull request that carried the old label still carries it under the new name.
+- **Never touches a repository no group selects.** That is the safety property the rest is built
+  on.
+- **Runs in CI.** `--dry-run` exits `2` on drift, so a pull-request check fails when the committed
+  config and the live labels disagree; `--output=json` emits NDJSON with a stable `error_kind`.
 
 ## Install
 
@@ -17,8 +60,9 @@ Once released:
 brew install specsnl/tap/labelsync
 ```
 
-Or download a `tar.gz` for your platform from the
-[releases page](https://github.com/specsnl/labelsync/releases) — Linux and macOS, amd64 and arm64.
+Or `go install github.com/specsnl/labelsync@latest`, or download a `tar.gz` for your platform from
+the [releases page](https://github.com/specsnl/labelsync/releases) — Linux and macOS, amd64 and
+arm64.
 
 Building from a checkout needs nothing but Docker and [Task](https://taskfile.dev):
 
@@ -26,16 +70,31 @@ Building from a checkout needs nothing but Docker and [Task](https://taskfile.de
 task build
 ```
 
+## Getting started
+
+**Export before you write a config.** Descriptions in the config file are authoritative, so a
+config written from scratch clears every description your repositories already have:
+
+```sh
+labelsync export yourorg/yourrepo --out labels.yml
+```
+
+The rest — describing the repositories, the dry run, the first apply — is in
+[Getting started](./docs/content/docs/usage/getting-started.md).
+
 ## Documentation
 
-| Page                                                                 | Covers                                                       |
-|----------------------------------------------------------------------|--------------------------------------------------------------|
-| [Usage](./docs/content/docs/usage/_index.md)                         | Commands, global flags, where the config file is found       |
-| [Overview](./docs/content/docs/architecture/overview.md)             | Package structure, the command tree, the reconciliation flow |
-| [Output & Exit Codes](./docs/content/docs/architecture/output.md)    | stdout vs stderr, pretty vs NDJSON, the exit-code contract   |
-| [Error Handling](./docs/content/docs/architecture/error-handling.md) | Sentinel errors and the `error_kind` contract                |
-| [Versioning](./docs/content/docs/architecture/versioning.md)         | What version string each build produces                      |
-| [Design plan](./docs/design.md)                                      | Goals, prior art, the algorithm, milestones                  |
+| Page                                                             | Covers                                                                     |
+|------------------------------------------------------------------|----------------------------------------------------------------------------|
+| [Getting started](./docs/content/docs/usage/getting-started.md)  | From install to a first apply, in six steps                                |
+| [Configuration file](./docs/content/docs/usage/configuration.md) | `version`, `groups`, `defaults`, `renames`, `labels`, and what is rejected |
+| [Commands](./docs/content/docs/usage/commands.md)                | Every command and flag, with the rename and prune recipes                  |
+| [Running in CI](./docs/content/docs/usage/ci.md)                 | Exit codes, NDJSON, the workflow recipe, and the token CI needs            |
+| [Architecture](./docs/content/docs/architecture/_index.md)       | How it is built: packages, planner, palette, rate limiting, output         |
+| [Design plan](./docs/design.md)                                  | The design record — goals, prior art, the algorithm, milestones            |
+
+The architecture section describes **what has been built**; `docs/design.md` is the forward-looking
+plan, kept as the design record and linked from the pages that grew out of it.
 
 ## Contributing
 

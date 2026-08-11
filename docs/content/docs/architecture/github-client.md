@@ -415,3 +415,9 @@ reused and a retry storm opens a new one every time.
 The backoff sleep is injectable, which is what keeps the retry suite instant and makes the doubling
 assertable rather than merely plausible. A cancelled context ends the wait immediately: a stopped
 run must not sit out a backoff whose result nothing will use.
+
+---
+
+The design record for the API surface, the cost model, and the conditional-request strategy is
+[design.md § GitHub API surface](https://github.com/specsnl/labelsync/blob/main/docs/design.md#github-api-surface) and
+[§ Request efficiency](https://github.com/specsnl/labelsync/blob/main/docs/design.md#request-efficiency).

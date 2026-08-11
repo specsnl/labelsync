@@ -69,7 +69,7 @@ never sent to the API.
 
 An update carries only the fields it changes, and a nil field means "unchanged". Plain strings cannot
 carry that, because the design makes descriptions
-[authoritative](https://github.com/specsnl/labelsync/blob/main/docs/design.md#configuration): an
+[authoritative](../usage/configuration.md#labels): an
 omitted description in `labels.yml` means *clear it*, so the empty string is a value an update
 legitimately sets. With a `string`, "leave the description alone" and "set the description to empty"
 are the same zero value, and clearing a description would be indistinguishable from not touching one.

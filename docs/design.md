@@ -93,7 +93,7 @@ no group resolves to is **never touched** — this is the primary safety propert
 > **Both modes landed** — append ([#43](https://github.com/specsnl/labelsync/issues/43)) and prune
 > ([#44](https://github.com/specsnl/labelsync/issues/44)) as `internal/apply`, with the selection in
 > `internal/cmd`. See [Architecture § Apply](./content/docs/architecture/apply.md) and
-> [Usage § Prune](./content/docs/usage/_index.md).
+> [Usage § Prune](./content/docs/usage/commands.md#prune).
 
 | Mode                 | Behaviour                                                                                                                    |
 |----------------------|------------------------------------------------------------------------------------------------------------------------------|
@@ -328,7 +328,7 @@ skipping is silent and what the planner does with a chain validation would have 
 **Landed** ([#45](https://github.com/specsnl/labelsync/issues/45)) — renames end to end, and the one
 claim the whole feature rests on checked against the live API rather than against the documentation:
 [Architecture § Verified against the live API](./content/docs/architecture/github-client.md). The
-migration recipe is in [Usage § Renaming labels](./content/docs/usage/_index.md#renames).
+migration recipe is in [Usage § Renaming labels](./content/docs/usage/commands.md#renames).
 
 ### Steps
 
@@ -802,14 +802,14 @@ and a second flag claiming the same letter is a `pflag` panic rather than a pref
 repository holding two labels of one colour is exported as it is and annotated, because colour
 uniqueness is a config-file rule that a repository is under no obligation to satisfy and choosing
 which of the two to change is not a decision a tool can make. See
-[Usage § `labelsync export`](./content/docs/usage/_index.md).
+[Usage § `labelsync export`](./content/docs/usage/commands.md#labelsync-export).
 
 `groups` is a pure read command — invaluable for confirming a selector matches what you think
 before running a prune. **Landed** ([#39](https://github.com/specsnl/labelsync/issues/39)): the
 table is the product on stdout, and *why* a repository is missing — the filter that removed it, a
 group that resolved to nothing, a `visibility: private` that can only come back empty — is on
 stderr, so a `jq` pipeline keeps the explanation on the terminal. See
-[Usage § `labelsync groups`](./content/docs/usage/_index.md).
+[Usage § `labelsync groups`](./content/docs/usage/commands.md#labelsync-groups).
 
 ### Exit codes
 

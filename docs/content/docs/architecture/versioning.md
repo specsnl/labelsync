@@ -86,3 +86,8 @@ labelsync version --output=json      # {"version":"1.2.3"}
 
 The `version` key is a public contract in the same way `error_kind` is: it may be added to, never
 renamed.
+
+---
+
+How the binary reaches a machine in the first place is the design record's subject:
+[design.md § Distribution](https://github.com/specsnl/labelsync/blob/main/docs/design.md#distribution).
