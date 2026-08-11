@@ -54,11 +54,17 @@ services:
     profiles: ["build"]
     user: ${FIXUID:-1000}:${FIXGID:-1000}
     # Latest version: https://hub.docker.com/r/goreleaser/goreleaser/tags
-    image: goreleaser/goreleaser:v2.15.1
+    image: goreleaser/goreleaser:v2.17.1
     working_dir: /src
     environment:
       GOCACHE: /cache/go-build
       GOMODCACHE: /cache/go-mod
+      # The image pins GOTOOLCHAIN=local, so its bundled Go has to satisfy the
+      # `go` directive in go.mod or the release fails before it builds anything.
+      # `auto` lets go.mod stay the single pin — matching the release workflow,
+      # which resolves its toolchain from go-version-file — so bumping go.mod
+      # does not also mean hunting for a goreleaser image that happens to agree.
+      GOTOOLCHAIN: auto
     depends_on:
       volume-init:
         condition: service_completed_successfully
