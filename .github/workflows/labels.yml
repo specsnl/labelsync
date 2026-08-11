@@ -1,0 +1,101 @@
+name: Labels
+
+# labelsync managing labelsync's own labels. This is the pattern
+# docs/content/docs/usage/ci.md describes, running for real against this
+# repository — a pull-request check that fails on drift, an apply on merge, and a
+# weekly job that catches the drift no push can trigger.
+
+on:
+  pull_request:
+    paths:
+      - labels.yml
+      - .github/workflows/labels.yml
+  push:
+    branches: [main]
+    paths:
+      - labels.yml
+      - .github/workflows/labels.yml
+  schedule:
+    # Weekly drift correction. Labels edited in the web UI produce no push, so
+    # the schedule is the only trigger that ever sees them.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+# Serialised per ref, and never cancelled: an apply that is halfway through its
+# writes has to finish, or the next run picks up a repository in a state nobody
+# asked for. The pull-request check writes nothing and could be cancelled, but
+# splitting the policy by event would take a second workflow to express.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+# All the job needs from the automatic token is the checkout. Every write goes
+# through LABELSYNC_TOKEN, because the injected GITHUB_TOKEN is scoped to this
+# repository and cannot touch labels anywhere else.
+permissions:
+  contents: read
+
+jobs:
+  labels:
+    name: Labels
+    runs-on: ubuntu-24.04
+    # Writes are paced under GitHub's content-creation limit, so a first apply
+    # across many repositories is minutes rather than seconds.
+    timeout-minutes: 30
+    env:
+      # GH_TOKEN rather than GITHUB_TOKEN: it is read first in the resolution
+      # chain, so an environment where Actions has set GITHUB_TOKEN cannot
+      # silently win. Never --token, which would land the credential in the log.
+      GH_TOKEN: ${{ secrets.LABELSYNC_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Check the token is available
+        id: token
+        run: |
+          if [ -n "$GH_TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "present=false" >> "$GITHUB_OUTPUT"
+          echo "::warning title=labelsync::LABELSYNC_TOKEN is not set, so no labels were checked or applied. A fork's pull request never sees it; otherwise set the secret. See docs/content/docs/usage/ci.md#the-token"
+
+      - name: Set up Go
+        if: steps.token.outputs.present == 'true'
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Cache Go modules
+        if: steps.token.outputs.present == 'true'
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/go/pkg/mod
+            ~/.cache/go/build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      # Built from the checkout rather than installed from a release, so the run
+      # exercises the labelsync in the commit under test. A pull request that
+      # breaks the tool fails here instead of after the next tag.
+      - name: Build labelsync
+        if: steps.token.outputs.present == 'true'
+        run: go build -o labelsync .
+
+      # Exits 2 when the committed config and the live labels disagree, which
+      # fails the job: a config change cannot merge while claiming to be applied,
+      # and a label edited by hand shows up as a failing check.
+      - name: Check for drift
+        if: steps.token.outputs.present == 'true' && github.event_name == 'pull_request'
+        run: ./labelsync sync --dry-run --output=json
+
+      # Convergent, so the scheduled run is a no-op when there is nothing to fix.
+      # Append mode: nothing is ever deleted. Pruning stays a deliberate manual
+      # act — see docs/content/docs/usage/ci.md#pruning-in-ci.
+      - name: Apply
+        if: steps.token.outputs.present == 'true' && github.event_name != 'pull_request'
+        run: ./labelsync sync --output=json
