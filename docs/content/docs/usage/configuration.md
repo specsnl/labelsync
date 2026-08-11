@@ -193,6 +193,12 @@ file indefinitely: it is a migration that has already happened, and it is also w
 repository you add to the group next month. The worked end-to-end recipe is in
 [Commands § Renaming labels](./commands.md#renames).
 
+That is why labelsync's own
+[`labels.yml`](https://github.com/specsnl/labelsync/blob/main/labels.yml) carries `bug` →
+`type: bug` and `enhancement` → `type: feature`: GitHub creates those two in every new repository,
+and both entries are already inert here — the targets exist — while being the thing that migrates the
+next repository instead of unlabelling its issues.
+
 A case-only rename such as `bug` → `Bug` is **rejected**, and needs no entry: casing drift is
 converged anyway, by the same mechanism and with the same associations kept.
 

@@ -125,6 +125,33 @@ func TestCatalogue_TargetsThisRepository(t *testing.T) {
 	}
 }
 
+// GitHub creates `bug` and `enhancement` in every new repository, and this
+// catalogue's own `type:` labels are where they belong. Both are declared as
+// renames rather than left as prune candidates, because a rename is a PATCH: the
+// label keeps its identity and stays on every issue and pull request already
+// carrying it, where a delete and a create would silently unlabel all of them.
+//
+// On this repository the two renames are inert — `type: bug` and `type: feature`
+// already exist, so the planner skips a rename whose target is present — and that
+// is the point: the entries are what makes the *next* repository the catalogue
+// covers migrate instead of losing its history.
+func TestCatalogue_MigratesGitHubsStockLabels(t *testing.T) {
+	cfg := loadFile(t, cataloguePath)
+
+	want := map[string]string{"bug": "type: bug", "enhancement": "type: feature"}
+
+	got := make(map[string]string, len(cfg.Renames))
+	for _, rename := range cfg.Renames {
+		got[rename.From] = rename.To
+	}
+
+	for from, to := range want {
+		if got[from] != to {
+			t.Errorf("renames[%q] = %q, want %q", from, got[from], to)
+		}
+	}
+}
+
 // The scaffold is what a user meets first, so it demonstrates the sections a
 // config has rather than the smallest thing that validates. Each of these is a
 // section the documentation tells them to look at in the file they were just
