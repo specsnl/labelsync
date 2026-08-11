@@ -24,6 +24,7 @@ lands, its behaviour moves from the design plan into this section.
 | [GitHub Client](./github-client.md)         | The go-github wrapper, the per-repository error taxonomy, and the `5xx` retry     |
 | [Rate Limiting](./rate-limiting.md)         | The write bucket, header tracking, backoff, and the `--max-wait` ceiling          |
 | [Apply](./apply.md)                         | Executing a plan in append mode, partial runs, and the startup budget check       |
+| [Distribution](./distribution.md)           | The release pipeline, the three install channels, and the Homebrew cask           |
 | [Library Decisions](./library-decisions.md) | Every direct dependency, what it is for, and what it was chosen over              |
 
 Pages are added here as the subsystems they document are implemented.
