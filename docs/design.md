@@ -325,6 +325,11 @@ label its target can match is the label being renamed itself.
 skipping is silent and what the planner does with a chain validation would have rejected, is in
 [Architecture § Renames](./content/docs/architecture/plan.md#renames).
 
+**Landed** ([#45](https://github.com/specsnl/labelsync/issues/45)) — renames end to end, and the one
+claim the whole feature rests on checked against the live API rather than against the documentation:
+[Architecture § Verified against the live API](./content/docs/architecture/github-client.md). The
+migration recipe is in [Usage § Renaming labels](./content/docs/usage/_index.md#renames).
+
 ### Steps
 
 ```text

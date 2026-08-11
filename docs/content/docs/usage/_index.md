@@ -162,8 +162,8 @@ Under `--output=json`, each of these carries a stable `error_kind` — `duplicat
 ## Commands
 
 `sync`, `export`, `groups`, `init`, `cache`, and `version` are implemented. `sync` applies in
-**append mode**; pruning computes and prints under `--dry-run` but does not yet remove anything —
-see the [design plan](https://github.com/specsnl/labelsync/blob/main/docs/design.md#cli).
+**append mode** by default, renames included, and removes labels only under
+[`--mode=prune`](#prune).
 
 ### `labelsync cache`
 
@@ -319,6 +319,92 @@ file is unreadable. Under `--output=json` it is a structured event on stderr at 
 proactive pause before the hourly budget runs out). `--max-wait` caps the total time a run may spend
 asleep across all of them; exceeding it fails with `max_wait_exceeded` **instead of** taking the
 wait.
+
+#### Renaming labels: the migration recipe {#renames}
+
+A `renames:` entry moves an existing label onto a configured name **without losing anything**. It
+becomes a `PATCH` carrying `new_name`, which keeps the label's id — so every issue and pull request
+that carried it still carries it afterwards, under the new name. A delete plus a create would look
+identical in the label list and would strip the label from every one of them.
+
+The worked example is the migration nearly every repository needs, because GitHub creates the same
+nine stock labels in every new one: moving `bug`, `enhancement`, and `documentation` onto a `type:`
+prefix.
+
+```yaml
+version: 1
+
+groups:
+  ours:
+    repos: [yourorg/yourrepo]
+
+defaults:
+  groups: [ours]
+
+renames:
+  - from: "bug"
+    to: "type: bug"
+  - from: "enhancement"
+    to: "type: feature"
+  - from: "documentation"
+    to: "type: docs"
+
+labels:
+  - name: "type: bug"
+    color: "d73a4a"
+    description: "Something isn't working"
+  - name: "type: feature"
+    color: "a2eeef"
+    description: "New functionality"
+  - name: "type: docs"
+    color: "0075ca"
+    description: "Documentation only"
+```
+
+The whole migration, in order:
+
+1. **`labelsync export yourorg/yourrepo --out labels.yml`** — start from what is actually there.
+   Descriptions are authoritative, and this is what stops the migration clearing the ones you have.
+2. **Edit the file.** Rename the label in the `labels:` section to its new name, and add a
+   `renames:` entry pointing the *old* name at it. Both halves are needed: the rename says which
+   existing label to move, and the `labels:` entry is what it is moved onto.
+3. **`labelsync sync --dry-run`** — the plan shows each rename as the transition it is,
+   `bug → type: bug`, before anything is written.
+4. **`labelsync sync`** — the renames go out **first**, before every other write for that
+   repository, so the rest of the run matches against the new names.
+5. **Check an issue.** The label is still on it, under the new name.
+
+Then, on the runs after that:
+
+- **Re-running changes nothing.** A rename whose `from` no longer exists is skipped silently, so the
+  second run is all no-ops. That is why a `renames:` entry can be left in the file indefinitely —
+  it is a migration that has already happened, not a pending instruction.
+- **Leaving it in is also what covers the repositories you add later.** A repository that joins the
+  group next month still holds `bug`, and the same entry migrates it on its first sync.
+- **Removing the entry is safe once every repository has been synced.** It is bookkeeping, not a
+  correctness step.
+
+Three rules decide whether a rename happens at all, and all three compare names
+**case-insensitively**, because GitHub's label identity does:
+
+| The repository has         | What happens                                                              |
+|----------------------------|---------------------------------------------------------------------------|
+| `bug`, and no `type: bug`  | The rename is applied                                                     |
+| No `bug`                   | Skipped silently — already migrated, or never had it                      |
+| Both `bug` and `type: bug` | Skipped — the target is taken. `type: bug` converges; `bug` is left alone |
+
+The last row is the one to know about, and it is `labelsync`'s own repository: `bug` and `type: bug`
+both exist there, because the `type:` set was created alongside the stock labels rather than
+migrated onto them. `labelsync` will not merge two labels into one — GitHub would answer the `PATCH`
+with the same `422 already_exists` it uses for a colliding create, and merging their issues is not
+something a label API can do. Move the issues over by hand, then remove the leftover label: under
+`--mode=prune` it is offered as a candidate, since the config does not mention it. Note that until
+you do, `bug` is also a **squatter** on `type: bug`'s colour, so the next append-mode run moves it
+off — which is what makes the two visibly different in the meantime.
+
+A case-only rename such as `bug` → `Bug` is **rejected by config validation**, and needs no entry:
+casing drift is converged anyway, by the same `new_name` mechanism and with the same associations
+kept.
 
 #### Removing labels: `--mode prune` {#prune}
 

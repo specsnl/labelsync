@@ -235,6 +235,24 @@ A rename is a `PATCH` and **never** a delete plus a create, because `new_name` p
 and pull-request association. Delete-and-recreate would strip the label from every issue that used
 it — the damage `DeleteLabel` does, for a rename nobody asked to be destructive.
 
+#### Verified against the live API
+
+The whole feature rests on that preservation, so it is checked against GitHub itself rather than
+inferred from the documentation. Against a scratch repository holding the stock labels, with one
+issue labelled `bug`, `labelsync sync` with `renames: [{from: bug, to: "type: bug"}]`:
+
+| Before                        | After                               |
+|-------------------------------|-------------------------------------|
+| label `bug`, id `11801741280` | label `type: bug`, id `11801741280` |
+| issue `#1` carries `bug`      | issue `#1` carries `type: bug`      |
+| —                             | `GET /labels/bug` → `404`           |
+
+The id and the `node_id` are unchanged, which is *why* the association survives: the issue points at
+the label, and the label was edited rather than replaced. The second run reports
+`0 created · 0 updated · 0 deleted · 1 unchanged` and exits `0` — an applied rename finds no source
+and emits nothing, so a `renames:` entry can stay in the config indefinitely. The full transcript is
+in the pull request for [#45](https://github.com/specsnl/labelsync/issues/45).
+
 ### `DeleteLabel` is guarded at the call site
 
 Deleting a label removes it from every issue and pull request that carried it, and nothing restores

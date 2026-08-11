@@ -161,3 +161,16 @@ could not tell an apply that worked from one that sent its requests into a void.
 Convergence is asserted rather than assumed. Applying, then immediately planning again, must produce
 a plan of nothing but no-ops — a create that quietly failed and a create that landed look identical
 from one run.
+
+### Except the one thing a label store cannot show
+
+A rename is a `PATCH` rather than a delete plus a create *because* `new_name` keeps the label's
+issue and pull-request associations, and that is invisible in a label list: both routes leave the
+repository holding exactly the same labels. So the end-to-end fixture models the other side of it —
+one issue whose labels a `PATCH` carries across and a `DELETE` takes off for good — and the suite
+asserts what the issue still carries afterwards, alongside the ordering (the rename is the run's
+first write) and the convergence (the second run writes nothing).
+
+That is a model of GitHub, not GitHub. What the live API does with `new_name` is checked by hand
+against a scratch repository, and the result recorded in the pull request that wired renames
+through — see [GitHub client § the update request](./github-client.md).
