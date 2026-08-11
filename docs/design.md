@@ -90,9 +90,10 @@ no group resolves to is **never touched** — this is the primary safety propert
 
 ### Modes
 
-> **Append mode landed** ([#43](https://github.com/specsnl/labelsync/issues/43)) as
-> `internal/apply` — see [Architecture § Apply](./content/docs/architecture/apply.md). Prune's write
-> path is still the plan below.
+> **Both modes landed** — append ([#43](https://github.com/specsnl/labelsync/issues/43)) and prune
+> ([#44](https://github.com/specsnl/labelsync/issues/44)) as `internal/apply`, with the selection in
+> `internal/cmd`. See [Architecture § Apply](./content/docs/architecture/apply.md) and
+> [Usage § Prune](./content/docs/usage/_index.md).
 
 | Mode                 | Behaviour                                                                                                                    |
 |----------------------|------------------------------------------------------------------------------------------------------------------------------|
@@ -100,9 +101,8 @@ no group resolves to is **never touched** — this is the primary safety propert
 | `prune`              | Everything `append` does, plus removal of unconfigured labels. **Report-first** — lists them and prompts for what to remove. |
 
 `prune` is never implicit. It requires `--mode=prune`, and removal requires either an interactive
-selection or `--prune=all`. Until that selection lands, `sync --mode=prune` computes and prints under
-`--dry-run` and refuses to apply — listing removal candidates and removing none of them is the one
-outcome a user could not detect.
+selection or `--prune=all`. `--dry-run` lists the candidates and removes none of them, and is the only
+prune that needs neither — see the [non-interactive guard](#non-interactive-guard).
 
 ---
 
@@ -370,9 +370,12 @@ skipping is silent and what the planner does with a chain validation would have 
      emit Delete for each selected
 ```
 
-**Landed** ([#28](https://github.com/specsnl/labelsync/issues/28)) — step 6, up to and not including
-the selection. `Compute` emits a `Delete` per candidate; `--prune=all` and the interactive
-`MultiSelect` filter that list, and are the command's half.
+**Landed** — step 6 in full. `Compute` emits a `Delete` per candidate
+([#28](https://github.com/specsnl/labelsync/issues/28)); `plan.Candidates` and `plan.RetainDeletes`
+offer and filter that list, and `--prune=all` or the interactive `MultiSelect` decides which survive
+([#44](https://github.com/specsnl/labelsync/issues/44)) — the command's half, and the only part of
+prune that involves a terminal. See
+[Architecture § Prune](./content/docs/architecture/plan.md#prune).
 
 **Step 6 never runs on a repository with an empty desired set.** `Compute` returns no actions at all
 for one, before step 1, so the
@@ -744,7 +747,8 @@ Exceeding it exits with an error and a summary of what remained.
 > **Partly landed.** Every command below is implemented in `internal/cmd` — the root, `sync`,
 > `export`, `init`, `groups`, `cache`, and `version` — and `sync` applies, in append mode. See
 > [Overview § How the tree is wired](./content/docs/architecture/overview.md#how-the-tree-is-wired).
-> What is left of the sketch is `--prune all` and the prune write path.
+> `--prune all` and the prune write path landed with
+> [#44](https://github.com/specsnl/labelsync/issues/44).
 >
 > `init` takes a `--force`, which this sketch does not show, and honours `--config` as its
 > destination rather than only writing into the working directory. What it scaffolds is the
@@ -840,6 +844,13 @@ If `--mode=prune` is requested without `--prune=all` and **stdin is not a TTY**,
 with `ErrInteractiveRequired` immediately. It must never present a `huh` prompt to a pipe — that
 hangs a CI job indefinitely, which is the most common way interactive CLIs break in pipelines.
 
+**Landed** ([#44](https://github.com/specsnl/labelsync/issues/44)), with one clarification the sketch
+above leaves open: `--dry-run` is exempt. A dry run lists the candidates and prompts for nothing, so
+there is nothing to guard, and firing the guard there would remove the one prune a pull-request check
+can run. "Immediately" is taken literally — the refusal is in flag validation, before the config is
+read and before the first request. The question is asked of `cmd.InOrStdin()` rather than `os.Stdin`;
+see [Output § What `IsTTY` is still for](./content/docs/architecture/output.md#what-istty-is-still-for).
+
 ---
 
 ## Package structure
@@ -862,6 +873,7 @@ labelsync/
     │   ├── init.go
     │   ├── groups.go
     │   ├── cache.go
+    │   ├── prune.go              # the removal selection: --prune=all, huh.MultiSelect
     │   └── version.go
     ├── config/
     │   ├── config.go             # YAML load, defaults, normalisation
@@ -877,12 +889,13 @@ labelsync/
     ├── plan/
     │   ├── plan.go               # Compute() — pure, no network
     │   ├── action.go             # Action, Kind, serialisation
+    │   ├── prune.go              # Candidate, Candidates(), RetainDeletes()
     │   └── render.go             # human + JSON diff rendering
     ├── palette/
     │   ├── palette.go            # Allocate()
     │   └── candidates.go         # deterministic HSL grid
     ├── apply/
-    │   └── apply.go              # executes a Plan, prune prompts
+    │   └── apply.go              # executes a Plan in either mode
     └── util/
         ├── exit/                 # exit codes
         ├── output/               # lipgloss logger + table renderer
@@ -1104,6 +1117,8 @@ need one.
 | `github`           | `net/http/httptest` fake: pagination, ETag `304` handling, `403`/`404`/`410` per-repo skip, `422` reclassification                                                                                                 |
 | `ratelimit`        | Injected clock. Primary vs secondary backoff, `Retry-After` honouring, `--max-wait` ceiling                                                                                                                        |
 | `output`           | Golden files for pretty and JSON renderings                                                                                                                                                                        |
+| `apply`            | A `Writer` fake recording calls in order: the emitted order, deletes last, append refusing one, the no-op never sent, a repository abandoned mid-run                                                               |
+| `cmd` (prune)      | End to end against the stateful fixture: the non-TTY guard's sentinel and exit code, `--prune=all` removing exactly the candidate set, a selection removing only what it named, append never deleting              |
 
 Determinism deserves an explicit test that runs the full planner twice over the same fixtures and
 asserts byte-identical output. Colour churn on re-run is the most likely subtle regression.

@@ -251,19 +251,22 @@ labelsync sync --dry-run                              # print the plan, write no
 labelsync sync --group websites                       # only these groups, repeatable
 labelsync sync --repo specsnl/labelsync               # only these repositories, repeatable
 labelsync sync --dry-run --mode prune                 # also list what would be removed
+labelsync sync --mode prune                           # list them, then ask which to remove
+labelsync sync --mode prune --prune all               # remove every unconfigured label
 labelsync sync --output=json                          # NDJSON, one action per line
 ```
 
 | Flag        | Default  | What it does                                                         |
 |-------------|----------|----------------------------------------------------------------------|
 | `--dry-run` | off      | Compute and print, write nothing                                     |
-| `--mode`    | `append` | `append` never deletes; `prune` also lists unconfigured labels       |
+| `--mode`    | `append` | `append` never deletes; `prune` also removes unconfigured labels     |
+| `--prune`   | —        | With `--mode=prune`, `all` removes every candidate without prompting |
 | `--group`   | all      | Restrict to a group, repeatable                                      |
 | `--repo`    | —        | Restrict to an `owner/repo`, repeatable, bypassing group enumeration |
 
 #### What applying does
 
-**Append mode: nothing is ever deleted.** A run creates the configured labels a repository is
+**Append mode — the default — never deletes anything.** A run creates the configured labels a repository is
 missing, updates the ones whose colour, description, or casing has drifted, applies the `renames`
 section as a `PATCH` — which preserves the label's issue and pull-request associations — and moves
 any unconfigured label sitting on a configured colour onto a colour of its own.
@@ -274,7 +277,7 @@ it with what actually happened:
 
 ```text
 2 repositories · 4 created · 0 updated · 0 deleted · 4 unchanged
-applied: 4 created · 0 updated · 0 unchanged
+applied: 4 created · 0 updated · 0 deleted · 0 unchanged
 ```
 
 The two are the same on a clean run and differ exactly when a repository failed partway. In JSON they
@@ -282,7 +285,7 @@ are two records, discriminated by `kind`:
 
 ```json
 {"kind":"summary","repositories":2,"created":4,"updated":0,"deleted":0,"unchanged":4}
-{"kind":"applied","repositories":2,"created":4,"updated":0,"unchanged":0}
+{"kind":"applied","repositories":2,"created":4,"updated":0,"deleted":0,"unchanged":0}
 ```
 
 Applying is safe to repeat. Running `sync` twice in a row leaves the second run with nothing to do —
@@ -317,12 +320,59 @@ proactive pause before the hourly budget runs out). `--max-wait` caps the total 
 asleep across all of them; exceeding it fails with `max_wait_exceeded` **instead of** taking the
 wait.
 
-#### What applying does not do yet
+#### Removing labels: `--mode prune` {#prune}
 
-`--mode prune` reaches the planner, which lists every unconfigured label as a *removal candidate*.
-Nothing is deleted: choosing which candidates go needs a prompt that has not landed, so
-`sync --mode=prune` without `--dry-run` **refuses** rather than listing candidates and removing none
-of them.
+Deleting a label removes it from **every issue and pull request that carries it**, and nothing
+restores that. So prune is never implicit and always report-first:
+
+1. It needs `--mode=prune`. Append mode has no path to a delete at all.
+2. The plan is printed first, with every unconfigured label as a `delete` line annotated
+   `unconfigured`. That list is the report you decide from.
+3. Removal then needs an answer: tick the ones to remove in the prompt, or pass `--prune=all`.
+
+```text
+specsnl/example-website
+  - delete  duplicate                    (unconfigured)
+  - delete  wontfix                      (unconfigured)
+
+1 repository · 0 created · 0 updated · 2 deleted · 2 unchanged
+```
+
+```text
+Remove these labels?
+Space selects · enter confirms · a deleted label is removed from every issue and pull request that
+carries it, and nothing restores that.
+
+  [•] specsnl/example-website  duplicate
+  [ ] specsnl/example-website  wontfix
+```
+
+Nothing arrives pre-ticked. Only what you select is deleted; the rest of the plan — the creates, the
+updates, the recolours — is applied either way, and answering with nothing selected is a perfectly
+good answer. `Ctrl-C` ends the run and writes nothing at all.
+
+```sh
+labelsync sync --mode prune --prune all               # every candidate, no prompt
+labelsync sync --dry-run --mode prune                 # list them, decide later
+```
+
+**Without a terminal on stdin, `--mode=prune` refuses rather than prompting.** A prompt shown to a
+pipe blocks a CI job until somebody cancels it, so a prune with nobody to ask fails immediately with
+`interactive_required` (exit `1`) — before the config is read and before the first request. The two
+ways through are the two the message names: `--prune=all` to remove everything, or `--dry-run` to only
+list. `--dry-run` never prompts and so is never guarded, which is what makes it the prune a
+pull-request check can run.
+
+The check is on **stdin** specifically. A job with a terminal on stderr and its stdin closed still
+refuses, because the hang being avoided is a read with nobody to answer it.
+
+Recoloured labels are candidates too. A label the config does not mention that was sitting on a
+configured colour gets moved off it *and* offered for removal: the recolour happens because a
+configured label wants that colour, which says nothing about whether the label should survive.
+
+Run [`groups`](#labelsync-groups) first if you are unsure which repositories a prune will reach. A
+repository no group selects is never touched in either mode — every label it holds stays, and none of
+them is a candidate.
 
 `--repo` bypasses *enumeration*, not the config. A repository named on the command line still gets
 only the labels the groups that select it ask for, and a repository no group selects gets nothing

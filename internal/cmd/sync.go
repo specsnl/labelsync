@@ -20,15 +20,21 @@ import (
 const (
 	flagDryRun = "dry-run"
 	flagMode   = "mode"
+	flagPrune  = "prune"
 	flagRepo   = "repo"
 )
 
-// pruneNotImplementedHelp is what a `sync --mode=prune` without --dry-run says.
-// Refusing is the honest answer while the prune prompt is unlanded: the
-// alternative is a command that lists removal candidates and quietly removes
-// none of them, which is the one behaviour a user could not detect.
-const pruneNotImplementedHelp = "applying --mode=prune is not implemented yet — " +
-	"run with --dry-run to see what would be removed, or drop --mode to apply in append mode"
+// pruneAll is the only value --prune takes. It is a string flag rather than a
+// bool so the command line reads as the sentence it is — `--prune=all` says what
+// will be removed, where `--prune` would leave "all of them?" to be inferred —
+// and so that a future `--prune=none` is a value rather than a second flag.
+const pruneAll = "all"
+
+// pruneNeedsATerminalHelp is what the non-interactive guard says. It has to name
+// both ways out, because the run that hits it is almost always a pipeline that
+// wanted one of them and got neither.
+const pruneNeedsATerminalHelp = "--mode=prune asks which labels to remove, and stdin is not a terminal — " +
+	"pass --prune=all to remove every candidate, or --dry-run to only list them"
 
 func newSyncCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
@@ -41,11 +47,20 @@ that would take and write nothing.
   labelsync sync --dry-run                      # print the plan, write nothing
   labelsync sync --group websites               # only these groups, repeatable
   labelsync sync --repo specsnl/labelsync       # only these repositories
+  labelsync sync --mode prune                   # also ask what to remove
+  labelsync sync --mode prune --prune all       # remove every unconfigured label
 
-Applying is append mode: missing labels are created, existing ones are updated,
-and unconfigured labels sitting on a configured colour are recoloured. Nothing
-is ever deleted. "--mode=prune --dry-run" lists what a prune would remove;
-applying a prune is not implemented yet.
+Applying is append mode by default: missing labels are created, existing ones
+are updated, and unconfigured labels sitting on a configured colour are
+recoloured. Nothing is ever deleted.
+
+"--mode=prune" additionally lists every unconfigured label as a removal
+candidate, and then asks which of them to delete. Deleting a label removes it
+from every issue and pull request that carries it, and nothing restores that, so
+prune is never implicit: it needs the mode, and removal needs either an answer
+to the prompt or "--prune=all". Without a terminal on stdin and without
+"--prune=all" the run refuses rather than prompting a pipe that cannot answer.
+"--dry-run" only lists, and needs neither.
 
 Exit codes follow terraform plan -detailed-exitcode, and the outcome codes are
 bits that combine:
@@ -60,7 +75,7 @@ whose description the config does not carry has its description cleared, and
 export is what captures the ones you already have.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			opts, err := syncOptions(cmd)
+			opts, err := syncOptions(app, cmd)
 			if err != nil {
 				return err
 			}
@@ -72,6 +87,7 @@ export is what captures the ones you already have.`,
 	flags := cmd.Flags()
 	flags.Bool(flagDryRun, false, "Compute and print the plan, writing nothing")
 	flags.String(flagMode, string(plan.ModeAppend), `Reconciliation mode: "append" or "prune"`)
+	flags.String(flagPrune, "", `With --mode=prune, remove every candidate without prompting: "all"`)
 	flags.StringArray(flagGroup, nil, "Only sync this group (repeatable)")
 	flags.StringArray(flagRepo, nil, "Only sync this owner/repo, bypassing group enumeration (repeatable)")
 
@@ -84,11 +100,32 @@ type syncOpts struct {
 	mode   plan.Mode
 	groups []string
 	repos  []string
+
+	// pruneAll is --prune=all: take every removal candidate without asking.
+	pruneAll bool
 }
 
 // syncOptions reads and validates the command's flags, before anything is
 // loaded or any request is sent.
-func syncOptions(cmd *cobra.Command) (syncOpts, error) {
+//
+// # The non-interactive guard
+//
+// A prune that has to ask which labels to remove, and has nobody to ask, fails
+// here — before the config is read and before the first request. Failing late
+// would be worse than failing: a pipeline would spend its enumeration and its
+// label reads and then block on a prompt it cannot see, until somebody cancels
+// the job. That is the most common way an interactive CLI breaks in CI, and the
+// reason ErrInteractiveRequired exists.
+//
+// The question is asked of **stdin**, because the hang it prevents is a read with
+// nobody to answer it. A job with a terminal on stderr and its stdin closed must
+// still refuse to prompt, so checking the stream the prompt draws on would be
+// checking the wrong one.
+//
+// --dry-run is exempt, and deliberately: a dry run lists the candidates and
+// removes none of them, so it never prompts and there is nothing to guard. Firing
+// the guard there would take away the one prune a pull-request check can run.
+func syncOptions(app *App, cmd *cobra.Command) (syncOpts, error) {
 	flags := cmd.Flags()
 
 	opts := syncOpts{}
@@ -105,8 +142,27 @@ func syncOptions(cmd *cobra.Command) (syncOpts, error) {
 		return opts, fmt.Errorf("invalid --%s %q: want %q or %q", flagMode, mode, plan.ModeAppend, plan.ModePrune)
 	}
 
-	if !opts.dryRun && opts.mode == plan.ModePrune {
-		return opts, fmt.Errorf("%s", pruneNotImplementedHelp)
+	prune, _ := flags.GetString(flagPrune)
+
+	switch prune {
+	case "":
+	case pruneAll:
+		opts.pruneAll = true
+	default:
+		return opts, fmt.Errorf("invalid --%s %q: want %q", flagPrune, prune, pruneAll)
+	}
+
+	// Append mode has no candidates to take, so --prune=all is a request that
+	// cannot be honoured. Ignoring it would mean a command line that reads as
+	// destructive and deletes nothing, which is the one outcome worth refusing
+	// over — the user who typed it meant --mode=prune.
+	if opts.pruneAll && opts.mode != plan.ModePrune {
+		return opts, fmt.Errorf("--%s=%s needs --%s=%s: append mode never deletes",
+			flagPrune, pruneAll, flagMode, plan.ModePrune)
+	}
+
+	if opts.mode == plan.ModePrune && !opts.dryRun && !opts.pruneAll && !app.canPrompt() {
+		return opts, fmt.Errorf("%w: %s", labelsync.ErrInteractiveRequired, pruneNeedsATerminalHelp)
 	}
 
 	return opts, nil
@@ -169,10 +225,22 @@ func runSync(ctx context.Context, app *App, opts syncOpts) error {
 	// written: a user watching a long apply should be able to see what it is
 	// about to do, and the stdout of an apply then matches the stdout of the dry
 	// run that preceded it.
+	//
+	// Under prune it is also the removal report the selection is made against.
+	// Every candidate is on stdout, with its repository and the reason it is one,
+	// before the prompt asks about any of them and before anything is deleted.
 	plan.Render(app.Out, p)
 
 	if !opts.dryRun {
-		if err := applyPlan(ctx, app, client, p); err != nil {
+		// The selection narrows the plan before the budget check, so a run is
+		// costed against the deletes that were accepted rather than the ones that
+		// were offered.
+		writing, err := selectRemovals(ctx, app, opts, p)
+		if err != nil {
+			return err
+		}
+
+		if err := applyPlan(ctx, app, client, writing, opts.mode); err != nil {
 			return err
 		}
 	}
@@ -188,7 +256,7 @@ func runSync(ctx context.Context, app *App, opts syncOpts) error {
 // question — is a half-finished apply worse than none at all — and the answer is
 // yes for this command. The limiter knows the budget and deliberately only
 // answers; refusing is the caller's call.
-func applyPlan(ctx context.Context, app *App, client *github.Client, p plan.Plan) error {
+func applyPlan(ctx context.Context, app *App, client *github.Client, p plan.Plan, mode plan.Mode) error {
 	writes := apply.Writes(p)
 
 	if !client.Affordable(writes) {
@@ -207,13 +275,13 @@ func applyPlan(ctx context.Context, app *App, client *github.Client, p plan.Plan
 	// what is left is three writes and when it is three hundred.
 	client.ExpectWrites(writes)
 
-	report, err := apply.Apply(ctx, client, p)
+	report, err := apply.Apply(ctx, client, p, mode)
 
 	// The report is written even when the run ended early, because it is the only
 	// account of what was already changed. A failed apply that says nothing about
 	// what it did leaves a user with no way to find out but to look.
-	app.Out.WriteResult(report, "applied: %d created · %d updated · %d unchanged",
-		report.Created, report.Updated, report.Unchanged)
+	app.Out.WriteResult(report, "applied: %d created · %d updated · %d deleted · %d unchanged",
+		report.Created, report.Updated, report.Deleted, report.Unchanged)
 
 	return err
 }

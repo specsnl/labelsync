@@ -8,26 +8,62 @@ to GitHub, and it is deliberately the smallest package that can be: the planner 
 to do and in what order, so all that is left is to do it, in that order, and to be honest about what
 happened.
 
-## Append mode only
+## The mode decides whether deleting is allowed at all
 
-`Apply` creates missing configured labels, updates existing ones, and recolours displaced squatters.
-**It never deletes.** Prune is a later step with its own prompt in front of it, and until that lands
-`sync --mode=prune` refuses to apply rather than listing removal candidates and removing none of
-them.
+`Apply` takes the [`plan.Mode`](./plan.md) the plan was computed under, and it is the only thing that
+distinguishes an append from a prune once the writing starts:
 
-The guard is in this package and not only in the planner, because this is the package holding the
-destructive call. A plan carrying a `delete` — read back from a file, or produced by a prune path
-that has not grown its prompt yet — is refused **before the first write of the run**, so a refused
-apply has changed nothing. Refusing when the delete is *reached* would mean a run that created six
-labels on its way to declining the job.
+| Mode     | Deletes                                    |
+|----------|--------------------------------------------|
+| `append` | Refused, before the first write of the run |
+| `prune`  | Executed, last in each repository          |
+
+Any mode that is neither — a zero value, a string from somewhere unexpected — refuses as well. Only
+`prune` opts in, so a caller that lost track of which mode it was in deletes nothing; the default has
+to be the recoverable one.
+
+**Which** candidates a prune's plan carries is not this package's business. The selection happens in
+`internal/cmd`, ahead of the first write, and arrives here as a plan that has already been narrowed —
+see [Prune § The selection](#prune-the-selection) below. Nothing here can tell a candidate that was
+chosen from one that was never offered, which is precisely why the narrowing has to happen first.
+
+Under `append` the guard is in this package and not only in the planner, because this is the package
+holding the destructive call. A plan carrying a `delete` — read back from a file, or computed under
+prune and handed over by a caller that forgot which mode it was in — is refused **before the first
+write of the run**, so a refused apply has changed nothing. Refusing when the delete is *reached*
+would mean a run that created six labels on its way to declining the job.
+
+## Prune: the selection {#prune-the-selection}
+
+Prune is three parts in three packages, and the split is the design:
+
+1. `internal/plan` records every unconfigured label as a removal candidate and decides nothing.
+   `Candidates(p)` names them, in plan order; `RetainDeletes(p, keep)` returns the plan minus the
+   candidates that were not kept.
+2. `internal/cmd` asks — a `huh.MultiSelect`, or `--prune=all` — and narrows the plan.
+   See [Usage § Prune](../usage/_index.md).
+3. `internal/apply` executes what it is given.
+
+`RetainDeletes` only ever **filters**. A candidate can be dropped between the report on stdout and
+the writes, never introduced, so "the plan you were shown is the plan that ran, minus what you
+declined" is a property of the code rather than a promise about it. Passing every candidate back,
+which is what `--prune=all` does, returns the plan unchanged.
+
+Repositories survive a selection that empties them. One whose candidates were all declined is still a
+repository the run visited, and still applies its creates and updates.
 
 ## The order is a crash-consistency guarantee
 
 Actions go out in exactly the order the planner emitted them: renames, then squatter recolours, then
-creates, then updates. That order is what makes every intermediate state coherent — see
+creates, then updates, then deletes. That order is what makes every intermediate state coherent — see
 [Planner § Ordering](./plan.md) — so a run killed halfway through a repository leaves it consistent
 rather than with a configured label sharing a colour with a squatter that was supposed to have moved
 off it.
+
+Deletes are last for the same reason turned up a notch. A `DELETE` removes the label from every issue
+and pull request that carried it and nothing restores that, so every recoverable action for the
+repository has already been attempted by the time one goes out: a run cut short in the middle has lost
+a rename or a recolour, not a label and all of its associations.
 
 Nothing here reorders for throughput, and nothing writes to two repositories at once. That is not a
 sacrifice: the [write bucket](./rate-limiting.md#proactive) paces writes at roughly one a second, so
@@ -79,12 +115,16 @@ when a repository failed partway — and because a consumer discriminating on `k
 to guess which of two summaries it is holding.
 
 ```json
-{"kind":"applied","repositories":2,"created":4,"updated":0,"unchanged":0}
+{"kind":"applied","repositories":2,"created":4,"updated":0,"deleted":0,"unchanged":0}
 ```
 
 ```text
-applied: 4 created · 0 updated · 0 unchanged
+applied: 4 created · 0 updated · 0 deleted · 0 unchanged
 ```
+
+Every count is shown even at zero, including `deleted` on an append-mode run that could not have
+produced one. The line is read by eye across runs, and a column that appears only when non-zero moves
+the others — which is exactly what makes two runs hard to compare.
 
 `Abandoned` names the repositories a failure cut short. Being in that list does not say whether
 anything was written before the failure, which is the honest answer: the write that failed is the
@@ -109,9 +149,11 @@ requests, and waits for the window to turn over.
 
 ## Nothing here needs an HTTP mock to test
 
-`Apply` takes a `Writer` — the two methods of `*github.Client` it uses — so the semantics that matter
-here are testable against a fake that records calls in order: the emitted order, the abandonment of a
-failed repository, the refusal to delete, the no-op that is never sent. The end-to-end suite in
+`Apply` takes a `Writer` — the three methods of `*github.Client` it uses — so the semantics that
+matter here are testable against a fake that records calls in order: the emitted order, deletes going
+out last, the abandonment of a failed repository, the refusal to delete under append, the no-op that
+is never sent. `DeleteLabel` is on that interface unconditionally, which is what makes "append mode
+never called this" an assertion rather than a method the fake cannot see. The end-to-end suite in
 `internal/cmd` drives the real client against a **stateful** `httptest` fixture, which is what makes
 the convergence assertion possible: a server that answered every listing with the same fixed body
 could not tell an apply that worked from one that sent its requests into a void.

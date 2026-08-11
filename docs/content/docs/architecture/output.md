@@ -290,6 +290,12 @@ prompt asks about **stdin**, because the hang it prevents is a read with nobody 
 with a terminal attached to stderr and its stdin closed must still refuse to prompt. Two questions,
 two streams; check the one the decision actually depends on.
 
+The stdin the prompt asks about is `cmd.InOrStdin()` and never `os.Stdin`, for the same reason the
+writers come from `cmd.OutOrStdout()`: it is the stream the run was actually given, where `os.Stdin`
+is the one it would have had. That is also what lets the harness hand every test a buffer, so
+"stdin is not a terminal" is a property of the suite rather than of how `go test` happened to be
+invoked. The prompt itself draws on **stderr** — it narrates a run, and stdout is the product.
+
 ```go
 func IsTTY(stream any) bool
 ```

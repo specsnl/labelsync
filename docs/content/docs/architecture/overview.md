@@ -25,9 +25,9 @@ labelsync/
     ├── config/                   # YAML load, validation, group → repo resolution
     ├── github/                   # auth, client, enumeration, label CRUD, ETag cache
     │   └── ratelimit/            # token bucket, backoff, countdown rendering
-    ├── plan/                     # Compute() — pure, no network — Action, rendering
+    ├── plan/                     # Compute() — pure, no network — Action, rendering, candidates
     ├── palette/                  # Allocate() + deterministic HSL candidate grid
-    ├── apply/                    # executes a Plan in append mode
+    ├── apply/                    # executes a Plan, in append or prune mode
     └── util/
         ├── exit/                 # exit codes
         ├── output/               # Writer (pretty + NDJSON), table renderers, slog setup
@@ -41,12 +41,12 @@ labelsync/
 | `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf`                         |
 | `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes](./output.md)                           |
 | `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                                |
-| `internal/cmd`         | partial | Every command; `sync` applies in append mode, and refuses to apply a prune             |
+| `internal/cmd`         | landed  | Every command; `sync` applies in both modes, and owns the prune selection              |
 | `internal/config`      | landed  | Load, validate, resolve, the `init` scaffold — see [Configuration](./configuration.md) |
 | `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette](./palette.md)                 |
 | `internal/plan`        | landed  | `Action`, `Plan`, `Compute` in both modes, rendering — see [Planner](./plan.md)        |
 | `internal/github`      | landed  | Auth, client, enumeration, labels, ETag cache, the limiter and its countdown           |
-| `internal/apply`       | partial | Append mode — creates, updates, recolours. Never deletes; see [Apply](./apply.md)      |
+| `internal/apply`       | landed  | Creates, updates, recolours, and deletes under prune — see [Apply](./apply.md)         |
 | everything else        | planned | See the milestone table in the design plan                                             |
 
 ### Why `plan` and `palette` are isolated
@@ -80,10 +80,11 @@ labelsync [--config <path>]
 └── version [--dont-prettify]
 ```
 
-Everything above exists except pruning. `sync` applies in append mode; `sync --mode=prune` computes
-and prints under `--dry-run`, and refuses to apply until the prune prompt lands
-([#44](https://github.com/specsnl/labelsync/issues/44)) rather than listing removal candidates and
-removing none of them.
+Everything above exists. `sync` applies in both modes: append by default, and `--mode=prune`
+additionally reports every unconfigured label as a removal candidate and asks which of them to
+delete — `huh.MultiSelect` on a terminal, `--prune=all` without one, and a refusal
+(`interactive_required`) rather than a prompt shown to a pipe. See
+[Usage § Prune](../usage/_index.md) and [Apply](./apply.md).
 
 ### How the tree is wired
 
@@ -115,7 +116,16 @@ removing none of them.
   one that writes anything, and the only one whose answer is an exit code as much as a rendering —
   see [Exit codes](#exit-codes) below. The plan goes to stdout *before* anything is written, so a
   user watching a long apply can see what it is about to do, and so the stdout of an apply matches
-  the stdout of the dry run that preceded it.
+  the stdout of the dry run that preceded it. Under `--mode=prune` that ordering is load-bearing
+  rather than a courtesy: the plan is the removal report the selection is made against.
+- **`prune.go`** is the part of prune that needs a person, and the only part of the whole feature that
+  involves a terminal. It validates nothing and writes nothing: it turns the candidates a plan carries
+  into the ones that will be deleted, either from `--prune=all` or from a `huh.MultiSelect`, and hands
+  back a plan narrowed with `plan.RetainDeletes`. The prompt draws on **stderr**, like everything else
+  that narrates a run, so `--output=json | jq` never receives a redrawn form mid-stream. The guard
+  that keeps it away from a pipe lives in `sync.go`'s flag validation, because its whole value is
+  firing before the first request; `App.Prompt` is the seam a test replaces both the prompt and the
+  terminal through.
 - **`export.go`** dumps one repository's labels as config YAML. It is the only command that writes
   to `App.Stdout` rather than through `App.Out`, because its product is a *file* and not a record;
   see [Output § An export is a file](./output.md#an-export-is-a-file-not-a-record). The rendering

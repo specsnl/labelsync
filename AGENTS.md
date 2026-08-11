@@ -143,9 +143,9 @@ labelsync/
     ├── cmd/                      # one file per Cobra command
     ├── config/                   # YAML load, validation, group resolution
     ├── github/                   # auth, client, enumeration, label CRUD, ETag cache, ratelimit/
-    ├── plan/                     # Compute() — pure, no network — plus Action and rendering
+    ├── plan/                     # Compute() — pure, no network — plus Action, candidates, rendering
     ├── palette/                  # Allocate() and the deterministic HSL candidate grid
-    ├── apply/                    # executes a Plan in append mode; prune prompts to come
+    ├── apply/                    # executes a Plan in append or prune mode
     └── util/                     # exit/, output/, validate/
 ```
 
@@ -154,18 +154,18 @@ The full structure, with a file-level breakdown, is in
 
 ## Documentation
 
-| File                                                                                                   | Description                                                   |
-|--------------------------------------------------------------------------------------------------------|---------------------------------------------------------------|
-| [docs/design.md](./docs/design.md)                                                                     | The design plan: goals, algorithm, API surface, milestones    |
-| [docs/content/docs/architecture/_index.md](./docs/content/docs/architecture/_index.md)                 | Architecture section index                                    |
-| [docs/content/docs/architecture/overview.md](./docs/content/docs/architecture/overview.md)             | Package structure, CLI tree, data flow                        |
-| [docs/content/docs/architecture/error-handling.md](./docs/content/docs/architecture/error-handling.md) | Sentinel errors, the wrapping rule, and `error_kind` contract |
-| [docs/content/docs/architecture/output.md](./docs/content/docs/architecture/output.md)                 | `output.Writer`, pretty vs NDJSON, TTY detection, exit codes  |
-| [docs/content/docs/architecture/versioning.md](./docs/content/docs/architecture/versioning.md)         | The linker-injected `Version`, and what each build produces   |
-| [docs/content/docs/architecture/palette.md](./docs/content/docs/architecture/palette.md)               | The HSL candidate grid, legibility bounds, determinism        |
-| [docs/content/docs/architecture/rate-limiting.md](./docs/content/docs/architecture/rate-limiting.md)   | The write bucket, backoff, `--max-wait`, and the countdown    |
-| [docs/content/docs/architecture/plan.md](./docs/content/docs/architecture/plan.md)                     | The `Action` / `Plan` vocabulary and its JSON contract        |
-| [docs/content/docs/architecture/apply.md](./docs/content/docs/architecture/apply.md)                   | Executing a plan in append mode, and the startup budget check |
+| File                                                                                                   | Description                                                     |
+|--------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------|
+| [docs/design.md](./docs/design.md)                                                                     | The design plan: goals, algorithm, API surface, milestones      |
+| [docs/content/docs/architecture/_index.md](./docs/content/docs/architecture/_index.md)                 | Architecture section index                                      |
+| [docs/content/docs/architecture/overview.md](./docs/content/docs/architecture/overview.md)             | Package structure, CLI tree, data flow                          |
+| [docs/content/docs/architecture/error-handling.md](./docs/content/docs/architecture/error-handling.md) | Sentinel errors, the wrapping rule, and `error_kind` contract   |
+| [docs/content/docs/architecture/output.md](./docs/content/docs/architecture/output.md)                 | `output.Writer`, pretty vs NDJSON, TTY detection, exit codes    |
+| [docs/content/docs/architecture/versioning.md](./docs/content/docs/architecture/versioning.md)         | The linker-injected `Version`, and what each build produces     |
+| [docs/content/docs/architecture/palette.md](./docs/content/docs/architecture/palette.md)               | The HSL candidate grid, legibility bounds, determinism          |
+| [docs/content/docs/architecture/rate-limiting.md](./docs/content/docs/architecture/rate-limiting.md)   | The write bucket, backoff, `--max-wait`, and the countdown      |
+| [docs/content/docs/architecture/plan.md](./docs/content/docs/architecture/plan.md)                     | The `Action` / `Plan` vocabulary and its JSON contract          |
+| [docs/content/docs/architecture/apply.md](./docs/content/docs/architecture/apply.md)                   | Executing a plan, the prune selection, the startup budget check |
 
 `docs/design.md` is the *plan*; `docs/content/docs/architecture/` describes what has been built. As
 subsystems land, their behaviour moves from the former into the latter.

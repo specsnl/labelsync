@@ -294,8 +294,8 @@ labels:
 	}
 }
 
-// --mode is parsed here even though prune execution is not landed, so a config
-// written against prune fails on the flag rather than partway through a run.
+// --mode is parsed before anything is loaded, so a config written against a mode
+// that does not exist fails on the flag rather than partway through a run.
 func TestSync_ModeFlag(t *testing.T) {
 	for _, tc := range []struct {
 		mode string
