@@ -37,6 +37,10 @@ func (f *fake) PatchLabel(_ context.Context, owner, repo, current string, patch 
 			owner, repo, current, show(patch.NewName), show(patch.Color), show(patch.Description)))
 }
 
+func (f *fake) DeleteLabel(_ context.Context, owner, repo, name string) error {
+	return f.record("delete", owner+"/"+repo, name, fmt.Sprintf("delete %s/%s %s", owner, repo, name))
+}
+
 func (f *fake) record(op, repo, name, line string) error {
 	if f.fail != nil {
 		if err := f.fail(op, repo, name); err != nil {
@@ -98,7 +102,7 @@ func fullPlan() plan.Plan {
 func TestApplyExecutesInTheEmittedOrder(t *testing.T) {
 	client := &fake{}
 
-	report, err := apply.Apply(t.Context(), client, fullPlan())
+	report, err := apply.Apply(t.Context(), client, fullPlan(), plan.ModeAppend)
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -137,7 +141,7 @@ func TestApplyNeverSendsANoOp(t *testing.T) {
 		},
 	}}}
 
-	report, err := apply.Apply(t.Context(), client, p)
+	report, err := apply.Apply(t.Context(), client, p, plan.ModeAppend)
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -161,29 +165,146 @@ func TestApplyNeverSendsANoOp(t *testing.T) {
 // deletes" means in the package that holds the destructive call. Refusing when
 // the delete is *reached* would mean a run that created six labels on its way to
 // declining the job.
+//
+// A mode that is neither of the two refuses as well. Only ModePrune opts in, so a
+// caller that lost track of which mode it was in deletes nothing — the default has
+// to be the recoverable one.
 func TestApplyRefusesADeleteBeforeWritingAnything(t *testing.T) {
+	for _, mode := range []plan.Mode{plan.ModeAppend, plan.Mode(""), plan.Mode("whatever")} {
+		t.Run(string(mode), func(t *testing.T) {
+			client := &fake{}
+
+			p := fullPlan()
+			p.Repos[0].Actions = append(p.Repos[0].Actions, plan.Action{
+				Kind: plan.KindDelete, Repo: "specsnl/example-website", Name: "old-label", Reason: "unconfigured",
+			})
+
+			report, err := apply.Apply(t.Context(), client, p, mode)
+			if err == nil {
+				t.Fatal("Apply() error = nil, want a refusal")
+			}
+
+			if !strings.Contains(err.Error(), "old-label") {
+				t.Errorf("error = %q, want it to name the candidate", err)
+			}
+
+			if len(client.calls) != 0 {
+				t.Errorf("a refused apply wrote %v, want nothing at all", client.calls)
+			}
+
+			if report.Created != 0 || report.Updated != 0 {
+				t.Errorf("report = %+v, want an empty one", report)
+			}
+		})
+	}
+}
+
+// TestApplyDeletesLastUnderPrune is the ordering guarantee where it matters most.
+// A delete is the one request nothing recovers from, so every recoverable action
+// for the repository has to have been attempted before one goes out — a run cut
+// short in the middle has then lost a rename or a recolour, not a label and its
+// every association.
+func TestApplyDeletesLastUnderPrune(t *testing.T) {
 	client := &fake{}
 
 	p := fullPlan()
-	p.Repos[0].Actions = append(p.Repos[0].Actions, plan.Action{
-		Kind: plan.KindDelete, Repo: "specsnl/example-website", Name: "old-label", Reason: "unconfigured",
-	})
+	p.Repos[0].Actions = append(p.Repos[0].Actions,
+		plan.Action{Kind: plan.KindDelete, Repo: "specsnl/example-website", Name: "invalid", Reason: "unconfigured"},
+		plan.Action{Kind: plan.KindDelete, Repo: "specsnl/example-website", Name: "wontfix", Reason: "unconfigured"},
+	)
 
-	report, err := apply.Apply(t.Context(), client, p)
-	if err == nil {
-		t.Fatal("Apply() error = nil, want a refusal")
+	report, err := apply.Apply(t.Context(), client, p, plan.ModePrune)
+	if err != nil {
+		t.Fatalf("Apply() error = %v, want nil", err)
 	}
 
-	if !strings.Contains(err.Error(), "old-label") {
-		t.Errorf("error = %q, want it to name the candidate", err)
+	want := []string{
+		`patch specsnl/example-website bug new_name="type: bug" color=<nil> description=<nil>`,
+		`patch specsnl/example-website wontfix new_name=<nil> color="16a3c4" description=<nil>`,
+		`create specsnl/example-website type: feature #a2eeef "New functionality"`,
+		`patch specsnl/example-website type: bug new_name=<nil> color="d73a4a" description=""`,
+		`delete specsnl/example-website invalid`,
+		`delete specsnl/example-website wontfix`,
 	}
 
-	if len(client.calls) != 0 {
-		t.Errorf("a refused apply wrote %v, want nothing at all", client.calls)
+	if !slices.Equal(client.calls, want) {
+		t.Errorf("calls =\n  %s\nwant\n  %s", strings.Join(client.calls, "\n  "), strings.Join(want, "\n  "))
 	}
 
-	if report.Created != 0 || report.Updated != 0 {
-		t.Errorf("report = %+v, want an empty one", report)
+	if report.Deleted != 2 {
+		t.Errorf("report.Deleted = %d, want 2", report.Deleted)
+	}
+
+	// Writes counts the deletes too, so the startup budget check is made against
+	// the requests a prune will actually send.
+	if got, want := apply.Writes(p), 6; got != want {
+		t.Errorf("Writes() = %d, want %d", got, want)
+	}
+}
+
+// TestApplyPruneDeletesOnlyWhatThePlanCarries is the seam between the selection
+// and the executor. Whichever candidates a user declined were filtered out of the
+// plan before it arrived, and nothing here can tell those apart from candidates
+// the planner never found — which is exactly why the filtering has to happen
+// before, and why this asserts that no delete is invented.
+func TestApplyPruneDeletesOnlyWhatThePlanCarries(t *testing.T) {
+	client := &fake{}
+
+	p := plan.Plan{Repos: []plan.RepoPlan{{
+		Repo: "specsnl/example-website",
+		Actions: []plan.Action{
+			{Kind: plan.KindNoOp, Repo: "specsnl/example-website", Name: "type: bug"},
+			{Kind: plan.KindDelete, Repo: "specsnl/example-website", Name: "kept-candidate", Reason: "unconfigured"},
+		},
+	}}}
+
+	report, err := apply.Apply(t.Context(), client, p, plan.ModePrune)
+	if err != nil {
+		t.Fatalf("Apply() error = %v, want nil", err)
+	}
+
+	if !slices.Equal(client.calls, []string{`delete specsnl/example-website kept-candidate`}) {
+		t.Errorf("calls = %v, want the one delete the plan carried", client.calls)
+	}
+
+	if report.Deleted != 1 || report.Unchanged != 1 {
+		t.Errorf("report = %+v, want 1 deleted and 1 unchanged", report)
+	}
+}
+
+// TestApplyPruneAbandonsARepositoryThatFailsMidDelete keeps the per-repository
+// rule true of the destructive step as well. A repository whose token loses access
+// partway through its deletes is abandoned and named; the run carries on, because
+// that is one repository's problem and not the set's.
+func TestApplyPruneAbandonsARepositoryThatFailsMidDelete(t *testing.T) {
+	client := &fake{fail: func(op, repo, _ string) error {
+		if op == "delete" && repo == "specsnl/example-platform" {
+			return inaccessible(repo)
+		}
+
+		return nil
+	}}
+
+	p := plan.Plan{Repos: []plan.RepoPlan{
+		{Repo: "specsnl/example-platform", Actions: []plan.Action{
+			{Kind: plan.KindDelete, Repo: "specsnl/example-platform", Name: "gone"},
+		}},
+		{Repo: "specsnl/example-api", Actions: []plan.Action{
+			{Kind: plan.KindDelete, Repo: "specsnl/example-api", Name: "gone"},
+		}},
+	}}
+
+	report, err := apply.Apply(t.Context(), client, p, plan.ModePrune)
+	if err != nil {
+		t.Fatalf("Apply() error = %v, want nil: a skipped repository is not a failed run", err)
+	}
+
+	if !slices.Equal(report.Abandoned, []string{"specsnl/example-platform"}) {
+		t.Errorf("report.Abandoned = %v, want the one that failed", report.Abandoned)
+	}
+
+	if report.Deleted != 1 {
+		t.Errorf("report.Deleted = %d, want the one that landed", report.Deleted)
 	}
 }
 
@@ -205,7 +326,7 @@ func TestApplyContinuesPastAnInaccessibleRepository(t *testing.T) {
 		{Repo: "specsnl/example-api", Actions: []plan.Action{create("specsnl/example-api", "type: bug")}},
 	}}
 
-	report, err := apply.Apply(t.Context(), client, p)
+	report, err := apply.Apply(t.Context(), client, p, plan.ModeAppend)
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil: a skipped repository is not a failed run", err)
 	}
@@ -236,7 +357,7 @@ func TestApplyStopsAtTheFirstActionARepositoryRejects(t *testing.T) {
 		return nil
 	}}
 
-	report, err := apply.Apply(t.Context(), client, fullPlan())
+	report, err := apply.Apply(t.Context(), client, fullPlan(), plan.ModeAppend)
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -269,7 +390,7 @@ func TestApplyStopsTheRunOnAFailureThatIsNotARepositorys(t *testing.T) {
 		{Repo: "specsnl/example-api", Actions: []plan.Action{create("specsnl/example-api", "type: bug")}},
 	}}
 
-	report, err := apply.Apply(t.Context(), client, p)
+	report, err := apply.Apply(t.Context(), client, p, plan.ModeAppend)
 	if !errors.Is(err, labelsync.ErrMaxWaitExceeded) {
 		t.Fatalf("error = %v, want one wrapping ErrMaxWaitExceeded", err)
 	}
@@ -293,7 +414,7 @@ func TestApplyRejectsAMalformedRepository(t *testing.T) {
 
 			p := plan.Plan{Repos: []plan.RepoPlan{{Repo: repo, Actions: []plan.Action{create(repo, "type: bug")}}}}
 
-			if _, err := apply.Apply(t.Context(), client, p); !errors.Is(err, labelsync.ErrInvalidRepoRef) {
+			if _, err := apply.Apply(t.Context(), client, p, plan.ModeAppend); !errors.Is(err, labelsync.ErrInvalidRepoRef) {
 				t.Fatalf("error = %v, want one wrapping ErrInvalidRepoRef", err)
 			}
 

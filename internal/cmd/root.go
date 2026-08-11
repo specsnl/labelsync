@@ -152,11 +152,13 @@ func (a *App) resolveFlags(cmd *cobra.Command) error {
 		a.Out = output.NewPrettyWriter(cmd.OutOrStdout(), cmd.ErrOrStderr(), nil)
 	}
 
-	// The raw streams, for `export`'s file and the countdown's in-place line —
-	// see App.Stdout and App.Stderr. Taken from the command for the same reason
-	// the writers are.
+	// The raw streams, for `export`'s file, the countdown's in-place line, and the
+	// prune prompt — see App.Stdout, App.Stderr, and App.Stdin. Taken from the
+	// command for the same reason the writers are: cmd.InOrStdin() is the stream
+	// the run was actually given, where os.Stdin is the one it would have had.
 	a.Stdout = cmd.OutOrStdout()
 	a.Stderr = cmd.ErrOrStderr()
+	a.Stdin = cmd.InOrStdin()
 
 	// Stderr, and the command's stderr specifically: --debug output a test cannot
 	// capture is the one thing the accessors exist to prevent.

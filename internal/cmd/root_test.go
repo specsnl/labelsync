@@ -40,6 +40,12 @@ func runApp(t *testing.T, app *cmd.App, extra []*cobra.Command, args ...string) 
 	root := cmd.NewRootCmd(app)
 	root.SetOut(&stdout)
 	root.SetErr(&stderr)
+
+	// A buffer, so that "stdin is not a terminal" is a property of the harness
+	// rather than of how the suite happened to be invoked. Left unset, cobra hands
+	// back os.Stdin, and whether that is a terminal is up to whoever ran `go test`
+	// — which would make the prune guard's test pass or fail on the environment.
+	root.SetIn(&bytes.Buffer{})
 	root.SetArgs(args)
 
 	for _, c := range extra {

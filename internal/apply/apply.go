@@ -1,23 +1,28 @@
 // Package apply executes a [plan.Plan]. It is the only code in labelsync that
 // writes to GitHub.
 //
-// # Append mode only
+// # The mode decides whether deleting is allowed at all
 //
 // [Apply] creates missing configured labels, updates existing ones, and
-// recolours displaced squatters. **It never deletes.** A delete action is
-// refused rather than executed — see [Apply] — and the prune path that will
-// eventually produce one has its own prompt in front of it.
+// recolours displaced squatters. Under [plan.ModeAppend] that is all it does: a
+// delete action is refused before the first write rather than executed. Under
+// [plan.ModePrune] deletes execute, and the plan handed over is expected to carry
+// only the candidates a user chose — the selection happens in the command, ahead
+// of this package, because a prompt is not something the executor should own.
 //
 // # The order is a crash-consistency guarantee
 //
 // Actions go out in exactly the order the planner emitted them: renames, then
-// squatter recolours, then creates, then updates. That order is what makes every
-// intermediate state coherent, so a run killed halfway through a repository
-// leaves it consistent rather than with a configured label sharing a colour with
-// a squatter that was supposed to have moved off it. Nothing here reorders for
-// throughput, and nothing here writes to two repositories at once: the token
-// bucket paces writes at roughly one a second anyway, so parallelism would buy
-// no wall-clock time and would cost the guarantee.
+// squatter recolours, then creates, then updates, then deletes. That order is
+// what makes every intermediate state coherent, so a run killed halfway through a
+// repository leaves it consistent rather than with a configured label sharing a
+// colour with a squatter that was supposed to have moved off it. Deletes are last
+// for the same reason turned up a notch: they are the one step nothing recovers
+// from, so every recoverable action for the repository has already been attempted
+// by the time one goes out. Nothing here reorders for throughput, and nothing
+// here writes to two repositories at once: the token bucket paces writes at
+// roughly one a second anyway, so parallelism would buy no wall-clock time and
+// would cost the guarantee.
 //
 // # A failed repository is not a failed run
 //
@@ -62,6 +67,12 @@ const ReportKind = "applied"
 type Writer interface {
 	CreateLabel(ctx context.Context, owner, repo string, label github.Label) error
 	PatchLabel(ctx context.Context, owner, repo, current string, patch github.LabelPatch) error
+
+	// DeleteLabel is reached only under [plan.ModePrune]. It is on the interface
+	// unconditionally so that an append-mode fake still has to declare it, which
+	// is what makes "append mode never called this" an assertion a test can make
+	// rather than a method it cannot see.
+	DeleteLabel(ctx context.Context, owner, repo, name string) error
 }
 
 // Report is what a run of [Apply] did, as opposed to what its plan proposed. The
@@ -75,6 +86,7 @@ type Report struct {
 
 	Created   int `json:"created"`
 	Updated   int `json:"updated"`
+	Deleted   int `json:"deleted"`
 	Unchanged int `json:"unchanged"`
 
 	// Abandoned names the repositories a failure cut short, in the order they
@@ -84,20 +96,28 @@ type Report struct {
 	Abandoned []string `json:"abandoned,omitempty"`
 }
 
-// Apply executes p and reports what it did.
+// Apply executes p under mode and reports what it did.
 //
-// # Deletes are refused
+// # Deletes are refused unless the mode asked for them
 //
 // Append mode never deletes, and the guard is here rather than only in the
 // planner because this is the package holding the destructive call. A plan
-// carrying a delete — read back from a file, or produced by a prune path that
-// has not grown its prompt yet — is refused before the **first** write of the
-// run rather than partway through, so a refused apply has changed nothing.
-func Apply(ctx context.Context, client Writer, p plan.Plan) (Report, error) {
+// carrying a delete under [plan.ModeAppend] — read back from a file, or computed
+// under prune and applied by a caller that forgot which mode it was in — is
+// refused before the **first** write of the run rather than partway through, so a
+// refused apply has changed nothing.
+//
+// Under [plan.ModePrune] the deletes in p execute. p is expected to hold only the
+// candidates the user accepted: narrowing it is [plan.RetainDeletes]' job and the
+// command's decision, and nothing here can tell a candidate that was chosen from
+// one that was never offered.
+func Apply(ctx context.Context, client Writer, p plan.Plan, mode plan.Mode) (Report, error) {
 	report := Report{Kind: ReportKind}
 
-	if err := refuseDeletes(p); err != nil {
-		return report, err
+	if mode != plan.ModePrune {
+		if err := refuseDeletes(p); err != nil {
+			return report, err
+		}
 	}
 
 	for _, repoPlan := range p.Repos {
@@ -108,7 +128,7 @@ func Apply(ctx context.Context, client Writer, p plan.Plan) (Report, error) {
 
 		report.Repositories++
 
-		if err := applyRepo(ctx, client, owner, name, repoPlan, &report); err != nil {
+		if err := applyRepo(ctx, client, owner, name, repoPlan, mode, &report); err != nil {
 			// Already recorded by github.Client.Do, and the end-of-run summary
 			// will name it. Every other error is the run's.
 			if errors.Is(err, labelsync.ErrRepoInaccessible) {
@@ -124,9 +144,11 @@ func Apply(ctx context.Context, client Writer, p plan.Plan) (Report, error) {
 	}
 
 	slog.Debug("apply complete",
+		"mode", string(mode),
 		"repositories", report.Repositories,
 		"created", report.Created,
 		"updated", report.Updated,
+		"deleted", report.Deleted,
 		"unchanged", report.Unchanged,
 		"abandoned", len(report.Abandoned),
 	)
@@ -143,6 +165,7 @@ func applyRepo(
 	client Writer,
 	owner, name string,
 	repoPlan plan.RepoPlan,
+	mode plan.Mode,
 	report *Report,
 ) error {
 	for _, action := range repoPlan.Actions {
@@ -180,10 +203,21 @@ func applyRepo(
 			report.Updated++
 
 		case plan.KindDelete:
-			// Unreachable: refuseDeletes ran before the first write. The case is
-			// here so that adding a kind is a compiler error rather than a silent
-			// no-op, and so that a delete reaching this far fails loudly.
-			return fmt.Errorf("%w: %s: delete reached the executor", errNeverDeletes, action.Name)
+			// Unreachable under append mode: refuseDeletes ran before the first
+			// write. Reaching it there anyway is a bug in this file rather than
+			// something a plan can cause, and failing loudly beats deleting.
+			if mode != plan.ModePrune {
+				return fmt.Errorf("%w: %s: delete reached the executor", errNeverDeletes, action.Name)
+			}
+
+			// The only irreversible request labelsync sends. GitHub removes the
+			// label from every issue and pull request that carried it, and the
+			// candidate reaching this far means a user asked for exactly that.
+			if err := client.DeleteLabel(ctx, owner, name, action.Name); err != nil {
+				return err
+			}
+
+			report.Deleted++
 
 		default:
 			return fmt.Errorf("%w: %q in %s", errUnknownKind, action.Kind, repoPlan.Repo)
@@ -194,7 +228,7 @@ func applyRepo(
 }
 
 // refuseDeletes rejects a plan carrying anything destructive, before the first
-// write.
+// write. It runs under every mode but [plan.ModePrune].
 //
 // Refusing up front rather than when the delete is reached is what makes the
 // refusal safe: a run that created six labels and then refused would have

@@ -20,9 +20,9 @@ import (
 // one that sent its requests into a void, and could not answer the convergence
 // question at all.
 //
-// It implements the four things an apply touches: listing, creating with the
+// It implements the five things an apply touches: listing, creating with the
 // 422 GitHub returns for a name already present in any casing, patching the
-// fields a body carries, and the free budget reading.
+// fields a body carries, deleting, and the free budget reading.
 type labelStore struct {
 	mu sync.Mutex
 
@@ -80,6 +80,15 @@ func (s *labelStore) snapshot(repo string) []storedLabel {
 	return out
 }
 
+// requests returns every request the store saw, as a copy. A run that was refused
+// before it started made none of them.
+func (s *labelStore) requests() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return append([]string(nil), s.calls...)
+}
+
 // writes returns the recorded non-GET requests, which is how a test asserts that
 // a dry run wrote nothing and that a converged run wrote nothing either.
 func (s *labelStore) writes() []string {
@@ -98,6 +107,12 @@ func (s *labelStore) writes() []string {
 }
 
 func (s *labelStore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Every request, the free budget reading included, so that a test asserting a
+	// run made none at all is asserting exactly that.
+	s.mu.Lock()
+	s.calls = append(s.calls, r.Method+" "+r.URL.Path)
+	s.mu.Unlock()
+
 	if r.URL.Path == "/rate_limit" {
 		s.mu.Lock()
 		budget := s.budget
@@ -120,8 +135,6 @@ func (s *labelStore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.calls = append(s.calls, r.Method+" "+r.URL.Path)
-
 	if repo == s.forbid {
 		s.seen++
 
@@ -140,6 +153,8 @@ func (s *labelStore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.create(w, r, repo)
 	case http.MethodPatch:
 		s.patch(w, r, repo, name)
+	case http.MethodDelete:
+		s.delete(w, repo, name)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
@@ -226,6 +241,24 @@ func (s *labelStore) patch(w http.ResponseWriter, r *http.Request, repo, name st
 	writeJSON(w, string(out))
 }
 
+// delete removes the label, and answers 404 for one that is not there — which is
+// what GitHub does, and the only way a test can tell a prune that deleted the
+// wrong name from one that deleted the right one twice.
+func (s *labelStore) delete(w http.ResponseWriter, repo, name string) {
+	key := strings.ToLower(name)
+
+	if _, exists := s.labels[repo][key]; !exists {
+		w.WriteHeader(http.StatusNotFound)
+		writeJSON(w, `{"message":"Not Found"}`)
+
+		return
+	}
+
+	delete(s.labels[repo], key)
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // parseLabelPath splits /repos/{owner}/{repo}/labels[/{name}].
 func parseLabelPath(path string) (repo, name string, ok bool) {
 	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
@@ -291,7 +324,7 @@ func TestSync_AppliesAPlanAndConverges(t *testing.T) {
 		t.Errorf("the second run is not converged:\n%s", stdout)
 	}
 
-	if !strings.Contains(stdout, "applied: 0 created · 0 updated · 4 unchanged") {
+	if !strings.Contains(stdout, "applied: 0 created · 0 updated · 0 deleted · 4 unchanged") {
 		t.Errorf("stdout = %q, want an applied summary that wrote nothing", stdout)
 	}
 }
@@ -522,30 +555,6 @@ func manyLabels(n int) string {
 	}
 
 	return b.String()
-}
-
-// TestSync_RefusesToApplyAPrune is the same honesty the whole-command refusal
-// used to carry, narrowed to the mode whose write path is still unlanded: a
-// command that lists removal candidates and removes none of them is the one
-// outcome a user could not detect.
-func TestSync_RefusesToApplyAPrune(t *testing.T) {
-	store := newStore(emptyRepos())
-
-	app, flags := fakeGitHub(t, store)
-	config := writeConfig(t, syncConfig)
-
-	_, _, _, err := runApp(t, app, nil, args(config, flags, "sync", "--mode", "prune")...)
-	if err == nil {
-		t.Fatal("want an error for an unlanded prune apply, got none")
-	}
-
-	if !strings.Contains(err.Error(), "--dry-run") {
-		t.Errorf("error = %q, want it to point at --dry-run", err)
-	}
-
-	if writes := store.writes(); len(writes) != 0 {
-		t.Errorf("a refused prune issued %v, want nothing", writes)
-	}
 }
 
 // TestSync_AppliedSummaryIsATypedRecord keeps the NDJSON stream one typed object

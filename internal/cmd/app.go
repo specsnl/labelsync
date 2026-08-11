@@ -76,6 +76,15 @@ type App struct {
 	// stream being drawn to. Everything else that narrates a run goes through Out.
 	Stderr io.Writer
 
+	// Stdin is the raw stdin stream, for the one thing that reads: the prune
+	// prompt, which both draws its form over it and asks whether it is a terminal
+	// at all.
+	//
+	// It is taken from the command like the other two, so that a test drives the
+	// prompt through a stream it controls rather than through the developer's
+	// actual keyboard.
+	Stdin io.Reader
+
 	// LogLevel gates the debug logger. Cobra parses flags after the tree is
 	// built, so the level is held here and raised once --debug is known.
 	LogLevel *slog.LevelVar
@@ -123,6 +132,16 @@ type App struct {
 	CacheDir  string
 	CacheRoot string
 
+	// Prompt is the prune mode removal selection. Nil means the real
+	// huh.MultiSelect over Stdin.
+	//
+	// It is a test seam, and a wider one than it looks: supplying it also declares
+	// that this run *can* be asked a question, which in production is
+	// output.IsTTY(Stdin). A terminal file descriptor is not something a test can
+	// portably fake, so the two are one seam rather than two — see
+	// [App.canPrompt].
+	Prompt Selector
+
 	// Now is the clock, for the one command that renders an age. Nil means
 	// time.Now.
 	//
@@ -161,6 +180,7 @@ func NewApp() *App {
 		Out:         output.NewDefaultPrettyWriter(),
 		Stdout:      os.Stdout,
 		Stderr:      os.Stderr,
+		Stdin:       os.Stdin,
 		LogLevel:    output.SetupDefaultLogger(output.FormatPretty, false),
 		Format:      output.FormatPretty,
 		Concurrency: DefaultConcurrency,

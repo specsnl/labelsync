@@ -288,6 +288,30 @@ Keeping the split here is what makes prune semantics unit-testable with two slic
 The `plan → select → apply` shape also means the selection can drop actions from a plan without the
 plan having to be recomputed.
 
+`prune.go` is this package's half of that selection, and it is as pure as the rest:
+
+```go
+type Candidate struct{ Repo, Name string }
+
+func Candidates(p Plan) []Candidate                  // what to offer, in plan order
+func RetainDeletes(p Plan, keep []Candidate) Plan    // the plan minus what was declined
+```
+
+A `Candidate` is a comparable value rather than an `Action`, so a selection can be carried as a set
+and so the thing a user is shown and the thing they chose are the same type. It carries its
+**repository**, because the label name alone is not a key: two repositories holding a `wontfix` is the
+ordinary case, and selecting one must not take the other with it.
+
+`Candidates` walks the plan in order — repositories as the plan holds them, and within each the
+ascending name order `Compute` emitted. Order is the whole reason it exists rather than a caller
+walking the plan itself: a destructive prompt whose rows move between two runs over the same input is
+one a user cannot answer the same way twice.
+
+`RetainDeletes` only ever filters, and every non-delete action survives it untouched. A candidate can
+be dropped between the report and the writes, never introduced — so passing back a candidate the plan
+never carried adds nothing, and passing back all of them returns the plan unchanged. A repository
+whose candidates were all declined keeps its creates and updates; it was still visited.
+
 A recoloured squatter is **still a candidate**, and appears in the same plan twice: once as the
 recolour, once as the removal candidate. The two answer different questions. The recolour is what has
 to happen because a configured label wants that colour; the candidacy is what the user is asked
@@ -573,9 +597,10 @@ settle.
 The shuffle is seeded with a fixed value: the permutations have to vary from one another, not from
 one test run to the next, or a failure would not reproduce.
 
-## Still to come
+## Where the selection lives
 
-The selection half of prune: the `--mode` and `--prune` flags, the interactive `huh.MultiSelect`
-over the candidates, and the non-TTY guard that turns `prune` without `--prune=all` into an error
-rather than a hung prompt. All of it sits above `internal/plan`, which hands it a plan and is
-finished.
+The `--mode` and `--prune` flags, the interactive `huh.MultiSelect` over the candidates, and the
+non-TTY guard that turns `prune` without `--prune=all` into an error rather than a hung prompt all sit
+in `internal/cmd`. This package's share is `Candidates` and `RetainDeletes` — see
+[Prune](#prune) — and it stays as pure as everything else here: the offer is a slice, the answer is a
+slice, and no part of it knows a terminal exists.
