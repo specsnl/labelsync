@@ -1010,6 +1010,10 @@ become a field on `Action`, filled in by `Compute`, before the renderer could sh
 
 ## CI integration
 
+> **Landed.** `.github/workflows/labels.yml` runs this pattern against this repository's own labels;
+> what it actually does, and the token it needs, is documented in
+> [Running in CI](./content/docs/usage/ci.md).
+
 CI is a day-one target. The pattern needs no plan artifact:
 
 - **Pull request check:** `labelsync sync --dry-run --output=json`. Exit `2` fails the check when

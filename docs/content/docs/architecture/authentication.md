@@ -82,6 +82,31 @@ The flag exists because a script sometimes has nowhere else to put a credential,
 says what it costs: a token on the command line is in the shell history and in every process list on
 the machine. `GH_TOKEN` is the same convenience without either.
 
+## What CI resolves to, and what comes after it
+
+The token GitHub Actions injects into a workflow is scoped to **the repository the workflow runs
+in**, so it can write labels to exactly one repository — which is the one thing this tool is not
+for. Step 2 of the chain is what CI uses instead: a personal access token in a secret, exported as
+`GH_TOKEN`. `GH_TOKEN` and not `GITHUB_TOKEN`, because it is read first, so a workflow that has both
+cannot silently resolve to the useless one.
+
+This repository's own [`.github/workflows/labels.yml`](https://github.com/specsnl/labelsync/blob/main/.github/workflows/labels.yml)
+does exactly that, with the PAT in `secrets.LABELSYNC_TOKEN`.
+
+**The cost is rotation, and it is a real one.** A fine-grained PAT expires — a year at most, and
+GitHub's default is far less — and when it does, every scheduled run fails with `no_token` until
+somebody notices and mints a new one. Nothing in the chain warns as the date approaches, because
+nothing in the chain can see it: a token is an opaque string until a request is made with it. A
+calendar reminder is the whole mitigation.
+
+A **GitHub App installation token** is the answer to that: minted per run, so there is no expiry to
+diarise, with a higher rate limit and an install scoped to selected repositories rather than to
+everything the human who owns the PAT can reach. It is deliberately not built yet — the PAT works
+today with no code at all — and the reason it can wait is structural. An App token would be a fifth
+step in the same `Resolver`, or a value handed to step 1's field, and either way it resolves to the
+same `Token` and every call site keeps asking the same question. The chain is the seam that makes
+this a later decision instead of a migration.
+
 ## Testing
 
 The `Resolver`'s three seams — `LookupEnv`, `ConfigToken`, `CLIToken` — are function fields, nil in

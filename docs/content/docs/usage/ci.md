@@ -80,10 +80,34 @@ Set it as `GH_TOKEN` rather than `GITHUB_TOKEN`: `GH_TOKEN` is read first, so an
 Actions has already set `GITHUB_TOKEN` cannot silently win. Never pass `--token` in a workflow — it
 lands in the command line, and therefore in the log.
 
+### The rotation burden
+
+A PAT expires, and a scheduled job is the worst place to find that out. Once the token is dead every
+run fails with `no_token` (exit `1`) until somebody mints a replacement, and nothing warns as the
+date approaches — a token is an opaque string until a request is made with it, so there is no expiry
+for the tool to read.
+
+Two things make that survivable, and both are calendar work rather than code:
+
+- **Set the expiry deliberately and write the date down** where whoever owns the repository will see
+  it, rather than leaving it at whatever the token form defaulted to.
+- **Expect the weekly run to be how you find out.** A failed scheduled workflow emails the actor who
+  last ran it; that notification is the alarm, so do not filter it away.
+
+A **GitHub App** removes the chore entirely — an installation token is minted per run, so there is no
+expiry to diarise, the rate limit is higher, and the install is scoped to selected repositories
+rather than to everything the PAT's owner can reach. It costs an App and a token-minting step, which
+is why the PAT comes first; it can be swapped in later behind the same resolver without touching a
+single call site. See [Authentication](../architecture/authentication.md#what-ci-resolves-to-and-what-comes-after-it).
+
 ## A GitHub Actions workflow
 
+This is the workflow labelsync runs against **its own labels**, trimmed to the parts worth copying.
+The full file is
+[`.github/workflows/labels.yml`](https://github.com/specsnl/labelsync/blob/main/.github/workflows/labels.yml).
+
 ```yaml
-name: labels
+name: Labels
 
 on:
   pull_request:
@@ -93,13 +117,21 @@ on:
     paths: ["labels.yml"]
   schedule:
     - cron: "0 6 * * 1"          # weekly drift correction
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  sync:
+  labels:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ secrets.LABELSYNC_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -109,14 +141,10 @@ jobs:
       - name: Check for drift
         if: github.event_name == 'pull_request'
         run: labelsync sync --dry-run --output=json
-        env:
-          GH_TOKEN: ${{ secrets.LABELSYNC_TOKEN }}
 
       - name: Apply
         if: github.event_name != 'pull_request'
         run: labelsync sync --output=json
-        env:
-          GH_TOKEN: ${{ secrets.LABELSYNC_TOKEN }}
 ```
 
 - **The pull-request step is a check, not a preview.** It exits `2` when the committed config and
@@ -126,8 +154,26 @@ jobs:
   drift comes from people editing labels in the web UI, which no push triggers.
 - **The scheduled run is safe to repeat.** `sync` is convergent — a second run with nothing to fix
   does nothing at all and exits `0`.
+- **The token is job-level, not step-level**, so there is one place to change it and no step that
+  quietly runs without it.
+- **`go install` is the line to copy.** The real file builds the binary from its own checkout
+  instead, so a pull request is checked by the labelsync in the commit under test — which only makes
+  sense in this repository.
+- **`cancel-in-progress: false`**, because an apply halfway through its writes has to finish. The
+  check writes nothing and could be cancelled, but splitting the policy by event takes a second
+  workflow to say.
 - **`permissions: contents: read`** is all the job needs from the automatic token; every write goes
   through the PAT.
+
+### Not a required status check
+
+Two things keep this job off the branch protection list: `paths:` means it does not run on most pull
+requests at all, so requiring it would deadlock every unrelated change, and a pull request **from a
+fork cannot see the secret** — Actions withholds secrets from fork runs, so the job has nothing to
+authenticate with. The workflow this repository ships therefore checks for the token first and
+annotates a warning instead of failing when it is absent. That is a deliberate trade: a red X on
+every pull request until the secret exists is worse, and the warning is loud enough not to read as a
+pass.
 
 ## Pruning in CI
 
