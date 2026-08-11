@@ -7,8 +7,6 @@ resolves the desired set, computes an ordered plan, and then applies it — or p
 `--dry-run`. One `labels.yml` describes the labels you want; groups describe which repositories
 should have them. Running it twice changes nothing the second time.
 
-> **Work in progress.** Not ready for use yet.
-
 ```yaml
 # labels.yml
 version: 1
@@ -53,8 +51,6 @@ What it does, in one list:
   config and the live labels disagree; `--output=json` emits NDJSON with a stable `error_kind`.
 
 ## Install
-
-Once released:
 
 ```sh
 brew install specsnl/tap/labelsync
