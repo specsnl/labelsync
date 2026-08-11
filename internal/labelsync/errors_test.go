@@ -41,6 +41,7 @@ var allSentinels = []struct {
 	{"ErrRepoInaccessible", labelsync.ErrRepoInaccessible, "repo_inaccessible"},
 	{"ErrUnsafeCacheDir", labelsync.ErrUnsafeCacheDir, "unsafe_cache_dir"},
 	{"ErrMaxWaitExceeded", labelsync.ErrMaxWaitExceeded, "max_wait_exceeded"},
+	{"ErrBudgetExhausted", labelsync.ErrBudgetExhausted, "budget_exhausted"},
 }
 
 func TestKindOf_KnownSentinels(t *testing.T) {

@@ -264,8 +264,28 @@ func (c *Client) CreateLabel(ctx context.Context, owner, repo string, label Labe
 	return err
 }
 
-// UpdateLabel patches the label the repository holds as current so that it
-// carries the values in label.
+// LabelPatch is the set of fields an update changes. A nil field is **left
+// alone**: GitHub's update endpoint treats every one of them as optional and
+// leaves an omitted field as it was.
+//
+// The three fields line up with plan.Action's three optional fields, field for
+// field and pointer for pointer, because that is what an action is — the change
+// and not the state it replaces. A squatter's recolour carries a colour and
+// nothing else, and applying it must not touch the name or the description of a
+// label nobody configured.
+//
+// A pointer to the empty string is a value, not an absence: it clears the
+// description, which is a thing the config's authoritative descriptions
+// legitimately ask for. Plain strings could not carry that distinction, which is
+// the whole reason these are pointers.
+type LabelPatch struct {
+	NewName     *string
+	Color       *string
+	Description *string
+}
+
+// PatchLabel changes the fields of the label the repository holds as current,
+// and leaves the rest.
 //
 // A rename is a PATCH carrying new_name and never a delete plus a create,
 // because new_name **preserves** every issue and pull-request association and
@@ -274,28 +294,27 @@ func (c *Client) CreateLabel(ctx context.Context, owner, repo string, label Labe
 // nobody asked to be destructive.
 //
 // current is the name the repository was observed to hold, so the request stays
-// consistent with the state the plan was computed against; label.Name is the
-// desired spelling and is always sent as new_name. Sending one identical to the
-// path is a no-op on GitHub's side, which keeps recolours and renames one code
-// path rather than two.
+// consistent with the state the plan was computed against. Sending a new_name
+// identical to the path is a no-op on GitHub's side, which keeps recolours and
+// renames one code path rather than two.
 //
 // The request is built here rather than through go-github's EditLabel, which
 // sends the label's `name` field. GitHub's update endpoint reads **new_name**
 // and ignores `name`, so EditLabel would return a cheerful 200 having renamed
 // nothing.
-func (c *Client) UpdateLabel(ctx context.Context, owner, repo, current string, label Label) error {
+func (c *Client) PatchLabel(ctx context.Context, owner, repo, current string, patch LabelPatch) error {
+	// Pointers with omitempty: a nil field disappears from the body and is left
+	// alone, and a pointer to "" marshals as an explicit "" rather than being
+	// dropped. Plain strings with omitempty would silently turn "clear the
+	// description" into "leave it".
 	body := struct {
-		NewName     string `json:"new_name"`
-		Color       string `json:"color"`
-		Description string `json:"description"`
+		NewName     *string `json:"new_name,omitempty"`
+		Color       *string `json:"color,omitempty"`
+		Description *string `json:"description,omitempty"`
 	}{
-		NewName: label.Name,
-		Color:   label.Color,
-
-		// Descriptions are authoritative, so the field is always sent. Omitting
-		// it would leave a stale description in place on a label the config says
-		// has none.
-		Description: label.Description,
+		NewName:     patch.NewName,
+		Color:       patch.Color,
+		Description: patch.Description,
 	}
 
 	return c.Do(ctx, slug(owner, repo), "update label", func(ctx context.Context) (*gogithub.Response, error) {
@@ -305,6 +324,22 @@ func (c *Client) UpdateLabel(ctx context.Context, owner, repo, current string, l
 		}
 
 		return c.rest.Do(ctx, req, nil)
+	})
+}
+
+// UpdateLabel patches the label the repository holds as current so that it
+// carries every value in label.
+//
+// This is the whole-label form of [Client.PatchLabel], for the caller that has a
+// complete desired label rather than a diff: label.Name is always sent as
+// new_name, and the description is always sent because descriptions are
+// authoritative and omitting the field would leave a stale one in place on a
+// label the config says has none.
+func (c *Client) UpdateLabel(ctx context.Context, owner, repo, current string, label Label) error {
+	return c.PatchLabel(ctx, owner, repo, current, LabelPatch{
+		NewName:     &label.Name,
+		Color:       &label.Color,
+		Description: &label.Description,
 	})
 }
 

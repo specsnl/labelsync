@@ -189,6 +189,17 @@ func TestWritesArePacedByTheirMethod(t *testing.T) {
 	if got := clock.slept(); got != 1 {
 		t.Errorf("writes were paced %d times, want exactly one: the bucket starts full", got)
 	}
+
+	// The PATCH an apply spends most of its requests on is a write by the same
+	// rule, so applying a plan is paced without internal/apply knowing the bucket
+	// exists.
+	if err := client.PatchLabel(t.Context(), "specsnl", "labelsync", "bug", LabelPatch{Color: &label.Color}); err != nil {
+		t.Fatalf("PatchLabel() error = %v, want nil", err)
+	}
+
+	if got := clock.slept(); got != 2 {
+		t.Errorf("a PATCH was paced %d times in total, want the bucket to have counted it", got)
+	}
 }
 
 // TestRateLimitPrimesTheLimiter covers the free startup call. GET /rate_limit

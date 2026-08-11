@@ -23,5 +23,6 @@ lands, its behaviour moves from the design plan into this section.
 | [Authentication](./authentication.md) | The four-step token resolution chain, and why tokens are redacted at the type     |
 | [GitHub Client](./github-client.md)   | The go-github wrapper, the per-repository error taxonomy, and the `5xx` retry     |
 | [Rate Limiting](./rate-limiting.md)   | The write bucket, header tracking, backoff, and the `--max-wait` ceiling          |
+| [Apply](./apply.md)                   | Executing a plan in append mode, partial runs, and the startup budget check       |
 
 Pages are added here as the subsystems they document are implemented.

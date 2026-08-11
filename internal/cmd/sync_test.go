@@ -346,22 +346,6 @@ func TestSync_PruneModePlansDeletions(t *testing.T) {
 	}
 }
 
-// Applying is not landed, and a sync that printed a plan and quietly applied
-// nothing is the one outcome a user could not detect.
-func TestSync_RefusesToApply(t *testing.T) {
-	app, flags := fakeGitHub(t, labelServer(inSync))
-	config := writeConfig(t, syncConfig)
-
-	_, _, _, err := runApp(t, app, nil, args(config, flags, "sync")...)
-	if err == nil {
-		t.Fatal("want an error without --dry-run, got none")
-	}
-
-	if !strings.Contains(err.Error(), "--dry-run") {
-		t.Errorf("error = %q, want it to point at --dry-run", err)
-	}
-}
-
 // The pretty rendering is the diff a human reads, grouped per repository and
 // closed by the summary line.
 func TestSync_PrettyRendering(t *testing.T) {

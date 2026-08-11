@@ -105,6 +105,13 @@ var (
 	// ErrMaxWaitExceeded is returned when a rate-limit backoff would sleep for
 	// longer than the --max-wait ceiling allows.
 	ErrMaxWaitExceeded = errors.New("rate limit wait exceeds --max-wait")
+
+	// ErrBudgetExhausted is returned when an apply is refused before its first
+	// write because the plan needs more requests than the primary rate-limit
+	// budget has left. Refusing beats stopping halfway: the reading that predicts
+	// it is free, and a half-applied run leaves repositories in a state nobody
+	// asked for.
+	ErrBudgetExhausted = errors.New("not enough GitHub rate-limit budget to apply this plan")
 )
 
 // KindOf returns a stable, machine-readable string identifier for the sentinel
@@ -153,6 +160,8 @@ func KindOf(err error) string {
 		return "unsafe_cache_dir"
 	case errors.Is(err, ErrMaxWaitExceeded):
 		return "max_wait_exceeded"
+	case errors.Is(err, ErrBudgetExhausted):
+		return "budget_exhausted"
 	default:
 		return ""
 	}

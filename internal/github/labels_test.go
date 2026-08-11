@@ -252,6 +252,60 @@ func TestUpdateLabelRenamesWithNewName(t *testing.T) {
 	}
 }
 
+// TestPatchLabelSendsOnlyTheFieldsItChanges is the recoloured squatter: a
+// colour-only update that must not touch the name or the description of a label
+// nobody configured. A body carrying the two zero values would rename it to ""
+// and clear a description the config has no opinion about.
+func TestPatchLabelSendsOnlyTheFieldsItChanges(t *testing.T) {
+	var log []recorded
+
+	handler := recorder(&log, func(w http.ResponseWriter, _ *http.Request) {
+		write(w, `{"name":"wontfix"}`)
+	})
+
+	client, _ := newTestClient(t, handler)
+
+	color := "16a3c4"
+	if err := client.PatchLabel(t.Context(), "specsnl", "labelsync", "wontfix", LabelPatch{Color: &color}); err != nil {
+		t.Fatalf("PatchLabel() error = %v, want nil", err)
+	}
+
+	if len(log) != 1 {
+		t.Fatalf("requests = %d, want 1: %+v", len(log), log)
+	}
+
+	if got, want := len(log[0].Body), 1; got != want {
+		t.Fatalf("body carries %d fields, want %d: %+v", got, want, log[0].Body)
+	}
+
+	if got := log[0].Body["color"]; got != color {
+		t.Errorf("body[color] = %v, want %q", got, color)
+	}
+}
+
+// TestPatchLabelClearsADescription is the other half of the pointer: an empty
+// string is a value the config legitimately asks for, and omitempty on a plain
+// string would silently turn "clear it" into "leave it".
+func TestPatchLabelClearsADescription(t *testing.T) {
+	var log []recorded
+
+	handler := recorder(&log, func(w http.ResponseWriter, _ *http.Request) {
+		write(w, `{"name":"bug"}`)
+	})
+
+	client, _ := newTestClient(t, handler)
+
+	empty := ""
+	if err := client.PatchLabel(t.Context(), "specsnl", "labelsync", "bug", LabelPatch{Description: &empty}); err != nil {
+		t.Fatalf("PatchLabel() error = %v, want nil", err)
+	}
+
+	got, sent := log[0].Body["description"]
+	if !sent || got != "" {
+		t.Errorf("body[description] = %v (present %t), want an explicit empty string", got, sent)
+	}
+}
+
 // TestLabelNamesAreEscapedInPaths covers `area/api`, which is an ordinary label
 // name and two path segments if interpolated raw — addressing, and in the delete
 // case destroying, something else entirely.

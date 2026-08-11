@@ -27,7 +27,7 @@ labelsync/
     │   └── ratelimit/            # token bucket, backoff, countdown rendering
     ├── plan/                     # Compute() — pure, no network — Action, rendering
     ├── palette/                  # Allocate() + deterministic HSL candidate grid
-    ├── apply/                    # executes a Plan, prune prompts
+    ├── apply/                    # executes a Plan in append mode
     └── util/
         ├── exit/                 # exit codes
         ├── output/               # Writer (pretty + NDJSON), table renderers, slog setup
@@ -36,17 +36,18 @@ labelsync/
 
 ### Implemented so far
 
-| Package                | Status  | Notes                                                                                               |
-|------------------------|---------|-----------------------------------------------------------------------------------------------------|
-| `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf`                                      |
-| `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes](./output.md)                                        |
-| `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                                             |
-| `internal/cmd`         | partial | Every command but applying — root, `sync --dry-run`, `export`, `groups`, `init`, `cache`, `version` |
-| `internal/config`      | landed  | Load, validate, resolve, the `init` scaffold — see [Configuration](./configuration.md)              |
-| `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette](./palette.md)                              |
-| `internal/plan`        | landed  | `Action`, `Plan`, `Compute` in both modes, rendering — see [Planner](./plan.md)                     |
-| `internal/github`      | landed  | Auth, client, enumeration, labels, ETag cache — see [Client](./github-client.md)                    |
-| everything else        | planned | See the milestone table in the design plan                                                          |
+| Package                | Status  | Notes                                                                                  |
+|------------------------|---------|----------------------------------------------------------------------------------------|
+| `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf`                         |
+| `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes](./output.md)                           |
+| `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                                |
+| `internal/cmd`         | partial | Every command; `sync` applies in append mode, and refuses to apply a prune             |
+| `internal/config`      | landed  | Load, validate, resolve, the `init` scaffold — see [Configuration](./configuration.md) |
+| `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette](./palette.md)                 |
+| `internal/plan`        | landed  | `Action`, `Plan`, `Compute` in both modes, rendering — see [Planner](./plan.md)        |
+| `internal/github`      | landed  | Auth, client, enumeration, labels, ETag cache — see [Client](./github-client.md)       |
+| `internal/apply`       | partial | Append mode — creates, updates, recolours. Never deletes; see [Apply](./apply.md)      |
+| everything else        | planned | See the milestone table in the design plan                                             |
 
 ### Why `plan` and `palette` are isolated
 
@@ -79,9 +80,10 @@ labelsync [--config <path>]
 └── version [--dont-prettify]
 ```
 
-Everything above exists except applying: `sync` requires `--dry-run` until
-[#43](https://github.com/specsnl/labelsync/issues/43) lands, and refuses rather than printing a
-plan it will not apply.
+Everything above exists except pruning. `sync` applies in append mode; `sync --mode=prune` computes
+and prints under `--dry-run`, and refuses to apply until the prune prompt lands
+([#44](https://github.com/specsnl/labelsync/issues/44)) rather than listing removal candidates and
+removing none of them.
 
 ### How the tree is wired
 
@@ -107,10 +109,13 @@ plan it will not apply.
 - **`groups.go`** resolves group membership and prints it. The product is the table on stdout; the
   explanation — what each filter removed, which groups came back empty — is on stderr, because
   `labelsync groups --output=json | jq` has to keep working.
-- **`sync.go`** is the read pipeline end to end: config, client, groups, enumeration, label reads,
-  `plan.Compute` per repository, render, exit code. It is the only command that assembles a `Plan`,
-  and the only one whose answer is an exit code as much as a rendering — see
-  [Exit codes](#exit-codes) below.
+- **`sync.go`** is the pipeline end to end: config, client, groups, enumeration, label reads,
+  `plan.Compute` per repository, render, and then — unless `--dry-run` said otherwise — the writes,
+  through [`internal/apply`](./apply.md). It is the only command that assembles a `Plan`, the only
+  one that writes anything, and the only one whose answer is an exit code as much as a rendering —
+  see [Exit codes](#exit-codes) below. The plan goes to stdout *before* anything is written, so a
+  user watching a long apply can see what it is about to do, and so the stdout of an apply matches
+  the stdout of the dry run that preceded it.
 - **`export.go`** dumps one repository's labels as config YAML. It is the only command that writes
   to `App.Stdout` rather than through `App.Out`, because its product is a *file* and not a record;
   see [Output § An export is a file](./output.md#an-export-is-a-file-not-a-record). The rendering
@@ -200,10 +205,12 @@ flowchart TD
     I --> J[render summary · exit 0 or 4]
 ```
 
-**Landed** as `sync --dry-run` through step `H`. Two things the diagram does not show: the
-repositories no configured label selects are dropped *before* the label reads, so no request is
-spent on a repository nothing would be done to; and `GET /rate_limit` is read at startup under
-`--debug` only, because it is free but still a round trip.
+**Landed** in append mode, both branches. Step `I` is `apply.Apply`; the diagram calls it `apply.Run`
+and the name it was built under is `Apply`. Two things the diagram does not show: the repositories no
+configured label selects are dropped *before* the label reads, so no request is spent on a repository
+nothing would be done to; and `GET /rate_limit` is read at startup under `--debug` **or** whenever the
+run is about to write, because it is free, it seeds the limiter, and its answer is what an apply that
+cannot finish is refused on — see [Apply § The startup budget check](./apply.md#the-startup-budget-check).
 
 Steps up to `Compute` never write. Per-repository failures — `403` archived, `404` renamed
 mid-run, `410` — are collected and reported at the end rather than aborting the run.

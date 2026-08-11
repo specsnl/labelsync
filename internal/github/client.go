@@ -300,6 +300,37 @@ func (c *Client) RateLimit(ctx context.Context) (*gogithub.Rate, error) {
 	return core, nil
 }
 
+// Affordable reports whether writes requests fit in the primary budget as the
+// limiter last understood it.
+//
+// It is the question an apply asks before its first write: a run that spends
+// half its plan and then stalls for an hour has left every repository it touched
+// in a state nobody asked for, and the reading that would have predicted it was
+// free.
+//
+// An unknown budget is affordable, and so is a client with no limiter — refusing
+// on no information would stop a run that would have succeeded.
+func (c *Client) Affordable(writes int) bool {
+	if c.limiter == nil {
+		return true
+	}
+
+	return c.limiter.Affordable(writes)
+}
+
+// RemainingBudget is the last primary-budget reading, when it resets, and
+// whether there has been one. A client with no limiter has never had one.
+//
+// It is what a refusal quotes: "not enough budget" is not actionable, and "42
+// requests left until 14:22Z" is.
+func (c *Client) RemainingBudget() (int, time.Time, bool) {
+	if c.limiter == nil {
+		return 0, time.Time{}, false
+	}
+
+	return c.limiter.Remaining()
+}
+
 // Login returns the login of the user the token belongs to, from GET /user.
 //
 // It is asked for one reason: config.Resolve needs it to decide which of the two

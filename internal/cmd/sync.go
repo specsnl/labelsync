@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/specsnl/labelsync/internal/apply"
 	"github.com/specsnl/labelsync/internal/config"
 	"github.com/specsnl/labelsync/internal/github"
+	"github.com/specsnl/labelsync/internal/labelsync"
 	"github.com/specsnl/labelsync/internal/plan"
 	"github.com/specsnl/labelsync/internal/util/exit"
 )
@@ -20,35 +23,41 @@ const (
 	flagRepo   = "repo"
 )
 
-// notImplementedHelp is what a `sync` without --dry-run says. Refusing is the
-// honest answer while the write path is unlanded: the alternative is a command
-// that reports a plan and quietly applies nothing, which is the one behaviour a
-// user could not detect.
-const notImplementedHelp = "applying is not implemented yet — run with --dry-run to see what would change"
+// pruneNotImplementedHelp is what a `sync --mode=prune` without --dry-run says.
+// Refusing is the honest answer while the prune prompt is unlanded: the
+// alternative is a command that lists removal candidates and quietly removes
+// none of them, which is the one behaviour a user could not detect.
+const pruneNotImplementedHelp = "applying --mode=prune is not implemented yet — " +
+	"run with --dry-run to see what would be removed, or drop --mode to apply in append mode"
 
 func newSyncCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Reconcile labels against the config",
-		Long: `Compute what it would take to make every selected repository match the config.
+		Long: `Make every selected repository match the config, or with --dry-run, print what
+that would take and write nothing.
 
-  labelsync sync --dry-run                      # every group
-  labelsync sync --dry-run --group websites     # only these groups, repeatable
-  labelsync sync --dry-run --repo specsnl/labelsync   # only these repositories
+  labelsync sync                                # apply, every group
+  labelsync sync --dry-run                      # print the plan, write nothing
+  labelsync sync --group websites               # only these groups, repeatable
+  labelsync sync --repo specsnl/labelsync       # only these repositories
+
+Applying is append mode: missing labels are created, existing ones are updated,
+and unconfigured labels sitting on a configured colour are recoloured. Nothing
+is ever deleted. "--mode=prune --dry-run" lists what a prune would remove;
+applying a prune is not implemented yet.
 
 Exit codes follow terraform plan -detailed-exitcode, and the outcome codes are
 bits that combine:
 
-  0  in sync                       4  some repositories could not be reached
+  0  in sync, or applied cleanly   4  some repositories could not be reached
   1  the run failed                6  both of the above
   2  --dry-run found pending changes
 
 Run "labelsync export <owner/repo>" first, before the first sync against
 repositories that already have labels. Descriptions are authoritative: a label
 whose description the config does not carry has its description cleared, and
-export is what captures the ones you already have.
-
-Applying is not implemented yet; --dry-run is required.`,
+export is what captures the ones you already have.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts, err := syncOptions(cmd)
@@ -96,15 +105,15 @@ func syncOptions(cmd *cobra.Command) (syncOpts, error) {
 		return opts, fmt.Errorf("invalid --%s %q: want %q or %q", flagMode, mode, plan.ModeAppend, plan.ModePrune)
 	}
 
-	if !opts.dryRun {
-		return opts, fmt.Errorf("%s", notImplementedHelp)
+	if !opts.dryRun && opts.mode == plan.ModePrune {
+		return opts, fmt.Errorf("%s", pruneNotImplementedHelp)
 	}
 
 	return opts, nil
 }
 
-// runSync is the whole read pipeline: config, client, groups, enumeration,
-// label reads, plan, render. It writes nothing.
+// runSync is the whole pipeline: config, client, groups, enumeration, label
+// reads, plan, render — and then, unless --dry-run said otherwise, the writes.
 func runSync(ctx context.Context, app *App, opts syncOpts) error {
 	cfg, err := config.Load(app.ConfigPath)
 	if err != nil {
@@ -116,11 +125,12 @@ func runSync(ctx context.Context, app *App, opts syncOpts) error {
 		return err
 	}
 
-	// Free — GET /rate_limit does not itself count against the limit — and only
-	// worth the round trip when somebody is reading the diagnostics. It also
+	// Free — GET /rate_limit does not itself count against the limit — and worth
+	// the round trip for two reasons: somebody is reading the diagnostics, or the
+	// run is about to write and the budget decides whether it can finish. It also
 	// seeds the limiter, so the first request of the run is as informed as the
 	// last.
-	if app.Debug {
+	if app.Debug || !opts.dryRun {
 		if _, err := client.RateLimit(ctx); err != nil {
 			slog.Debug("could not read the rate limit at startup", "error", err)
 		}
@@ -155,11 +165,52 @@ func runSync(ctx context.Context, app *App, opts syncOpts) error {
 		))
 	}
 
+	// The plan is the product either way, and it goes out before anything is
+	// written: a user watching a long apply should be able to see what it is
+	// about to do, and the stdout of an apply then matches the stdout of the dry
+	// run that preceded it.
 	plan.Render(app.Out, p)
+
+	if !opts.dryRun {
+		if err := applyPlan(ctx, app, client, p); err != nil {
+			return err
+		}
+	}
 
 	client.Failures().Report(app.Out)
 
 	return outcome(p, client.Failures(), opts.dryRun)
+}
+
+// applyPlan does the writing half, once the plan is on stdout.
+//
+// The budget check is here rather than in internal/apply because it is a policy
+// question — is a half-finished apply worse than none at all — and the answer is
+// yes for this command. The limiter knows the budget and deliberately only
+// answers; refusing is the caller's call.
+func applyPlan(ctx context.Context, app *App, client *github.Client, p plan.Plan) error {
+	writes := apply.Writes(p)
+
+	if !client.Affordable(writes) {
+		remaining, reset, _ := client.RemainingBudget()
+
+		return fmt.Errorf("%w: %s to make, %s left until the budget resets at %s",
+			labelsync.ErrBudgetExhausted,
+			plural(writes, "write"),
+			plural(remaining, "request"),
+			reset.UTC().Format(time.RFC3339),
+		)
+	}
+
+	report, err := apply.Apply(ctx, client, p)
+
+	// The report is written even when the run ended early, because it is the only
+	// account of what was already changed. A failed apply that says nothing about
+	// what it did leaves a user with no way to find out but to look.
+	app.Out.WriteResult(report, "applied: %d created · %d updated · %d unchanged",
+		report.Created, report.Updated, report.Unchanged)
+
+	return err
 }
 
 // targets resolves which repositories the run is about: the ones --repo named,

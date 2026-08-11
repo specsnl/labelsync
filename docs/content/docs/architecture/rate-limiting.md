@@ -103,5 +103,6 @@ level, which is the diagnostic channel and not a report.
 
 `Limiter.Affordable` answers whether a number of writes fits in what is known to be left, and an
 unknown budget is affordable — refusing on no information would stop a run that would have succeeded.
-Turning that answer into a refusal to start belongs to `apply`, which knows whether a half-finished
-run is worse than none at all.
+Turning that answer into a refusal is `sync`'s, because whether a half-finished run is worse than none
+at all is a policy question rather than a rate-limiting one — see
+[Apply § The startup budget check](./apply.md#the-startup-budget-check).

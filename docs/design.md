@@ -90,13 +90,19 @@ no group resolves to is **never touched** — this is the primary safety propert
 
 ### Modes
 
+> **Append mode landed** ([#43](https://github.com/specsnl/labelsync/issues/43)) as
+> `internal/apply` — see [Architecture § Apply](./content/docs/architecture/apply.md). Prune's write
+> path is still the plan below.
+
 | Mode                 | Behaviour                                                                                                                    |
 |----------------------|------------------------------------------------------------------------------------------------------------------------------|
 | `append` *(default)* | Create missing configured labels, update existing configured labels, recolour displaced squatters. **Never deletes.**        |
 | `prune`              | Everything `append` does, plus removal of unconfigured labels. **Report-first** — lists them and prompts for what to remove. |
 
 `prune` is never implicit. It requires `--mode=prune`, and removal requires either an interactive
-selection or `--prune=all`.
+selection or `--prune=all`. Until that selection lands, `sync --mode=prune` computes and prints under
+`--dry-run` and refuses to apply — listing removal candidates and removing none of them is the one
+outcome a user could not detect.
 
 ---
 
@@ -728,10 +734,10 @@ Exceeding it exits with an error and a summary of what remained.
 
 ## CLI
 
-> **Partly landed.** Every command below except applying is implemented in `internal/cmd` — the
-> root, `sync --dry-run`, `export`, `init`, `groups`, `cache`, and `version`. See
+> **Partly landed.** Every command below is implemented in `internal/cmd` — the root, `sync`,
+> `export`, `init`, `groups`, `cache`, and `version` — and `sync` applies, in append mode. See
 > [Overview § How the tree is wired](./content/docs/architecture/overview.md#how-the-tree-is-wired).
-> The remaining subcommands below are still the plan.
+> What is left of the sketch is `--prune all` and the prune write path.
 >
 > `init` takes a `--force`, which this sketch does not show, and honours `--config` as its
 > destination rather than only writing into the working directory. What it scaffolds is the
@@ -808,11 +814,18 @@ The outcome codes are disjoint bits and combine: a dry run that finds drift *and
 repository exits `6`. `1` stays exclusive — a failed run cannot also report on a live state it never
 established.
 
-**Landed** ([#41](https://github.com/specsnl/labelsync/issues/41)) — `sync --dry-run` assembles the
-code by OR-ing outcomes as it discovers them; see
-[Overview § Exit codes](./content/docs/architecture/overview.md#exit-codes). Applying is
-[#43](https://github.com/specsnl/labelsync/issues/43), so `--dry-run` is required until then and a
-bare `sync` refuses rather than printing a plan it will not apply.
+**Landed** ([#41](https://github.com/specsnl/labelsync/issues/41)) — `sync` assembles the code by
+OR-ing outcomes as it discovers them; see
+[Overview § Exit codes](./content/docs/architecture/overview.md#exit-codes). Applying landed with it
+([#43](https://github.com/specsnl/labelsync/issues/43)) in append mode: `2` stays a `--dry-run` code,
+because an apply that succeeds has no drift left to report, and a partially applied run exits `4`
+with the repositories it abandoned named. See
+[Architecture § Apply](./content/docs/architecture/apply.md).
+
+One deviation from that issue: it asked for exit code `3`, which the landed bit scheme cannot
+produce. `1` is exclusive and the outcome bits are `2` and `4`, so `3` would have to mean "failed and
+drifted" — the very claim a failure invalidates. A partially applied run is `exit.Skipped`, which is
+`4`, exactly as the table above and `--dry-run` already use it.
 
 ### Non-interactive guard
 
@@ -921,6 +934,7 @@ The kind strings are a public contract. They may be added to, never renamed.
 | `ErrInteractiveRequired`      | `interactive_required`       |
 | `ErrRepoInaccessible`         | `repo_inaccessible`          |
 | `ErrMaxWaitExceeded`          | `max_wait_exceeded`          |
+| `ErrBudgetExhausted`          | `budget_exhausted`           |
 
 **Adding a sentinel means adding a row here, a `KindOf` case, and an entry in the `allSentinels`
 test table.** The test derives its expected set by parsing the package source for exported `Err*`

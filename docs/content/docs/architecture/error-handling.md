@@ -47,6 +47,7 @@ The kind strings are a **public contract**. They may be added to, never renamed.
 | `ErrInteractiveRequired`      | `interactive_required`       | An operation needs a prompt but stdin is not a TTY                             |
 | `ErrRepoInaccessible`         | `repo_inaccessible`          | A repository is missing, archived, or outside the token's scopes               |
 | `ErrMaxWaitExceeded`          | `max_wait_exceeded`          | A rate-limit backoff would sleep past the `--max-wait` ceiling                 |
+| `ErrBudgetExhausted`          | `budget_exhausted`           | An apply needs more requests than the rate-limit budget has left               |
 
 All config validation runs at load, before any network call, and fails fast.
 `ErrRepoInaccessible` is the exception to fail-fast: it is reported per repository and the run
