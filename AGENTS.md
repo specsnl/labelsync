@@ -28,6 +28,10 @@ Run `task --list` for the full set. The ones used most:
 | `task md:check`        | markdownlint over every Markdown file                             |
 | `task md:fix`          | Align Markdown tables, then apply autofixable rules               |
 | `task build`           | Build the binary into the working directory                       |
+| `task docs:serve`      | Hugo dev server with live reload on <http://localhost:1313>       |
+| `task docs:preview`    | Build, then serve the static site over nginx on port 8080         |
+| `task docs:build`      | Build the site into `docs/public/`                                |
+| `task docs:mod:tidy`   | Tidy the Hugo module in `docs/`                                   |
 | `task release:dry-run` | Local goreleaser snapshot, no publishing                          |
 | `task dc:shell`        | Shell into the `go-builder` service                               |
 
