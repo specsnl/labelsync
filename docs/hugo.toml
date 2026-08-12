@@ -1,0 +1,42 @@
+baseURL = "https://labelsync.specs.dev/"
+locale = "en-us"
+title = "Labelsync"
+
+enableRobotsTXT = true
+enableGitInfo = true
+cleanDestinationDir = true
+
+[module]
+  [[module.imports]]
+    path = "github.com/imfing/hextra"
+
+[markup]
+  [markup.highlight]
+    noClasses = false
+  [markup.goldmark.renderer]
+    unsafe = true
+
+[params]
+  description = "Synchronise GitHub issue and pull request labels across repositories from one YAML file."
+
+  [params.navbar]
+    logo.path = "logo.svg"
+    logo.dark = "logo.svg"
+    logo.width = 28
+    logo.height = 28
+
+  [params.mermaid]
+    enable = true
+
+[[menu.main]]
+  identifier = "docs"
+  name = "Docs"
+  pageRef = "/docs"
+  weight = 1
+
+[[menu.main]]
+  identifier = "github"
+  name = "GitHub"
+  url = "https://github.com/specsnl/labelsync"
+  weight = 2
+  params = { type = "icon", icon = "github" }
