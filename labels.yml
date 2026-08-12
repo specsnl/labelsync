@@ -17,6 +17,19 @@ groups:
 defaults:
   groups: [self]
 
+# ── Migrations from GitHub's stock labels ─────────────────────────────
+#
+# A rename is a PATCH, so the label keeps its identity and stays on every issue
+# and pull request that already carries it. It is emitted only where "from"
+# exists and "to" does not — on a repository that already has both, the rename
+# has effectively already happened and the stock leftover is left to prune.
+renames:
+  - from: "bug"
+    to: "type: bug"
+
+  - from: "enhancement"
+    to: "type: feature"
+
 # ── Labels ────────────────────────────────────────────────────────────
 labels:
   # Area — which part of the codebase an issue touches.
