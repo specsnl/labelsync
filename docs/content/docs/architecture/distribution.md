@@ -8,7 +8,7 @@ A release is one git tag. Pushing `v1.2.3` runs
 which runs goreleaser once; goreleaser builds every binary, creates the GitHub release, and commits
 the updated cask to [`specsnl/homebrew-tap`](https://github.com/specsnl/homebrew-tap). Nothing else
 is manual, and there is no version to bump anywhere in the tree —
-see [Versioning](./versioning.md).
+see [Versioning]({{< ref "./versioning.md" >}}).
 
 ## What a release produces
 

@@ -424,6 +424,6 @@ task test:update   # rewrite the goldens, here and in every other golden package
 
 ---
 
-The user-facing reference for every field is [Configuration file](../usage/configuration.md); the
+The user-facing reference for every field is [Configuration file]({{< ref "../usage/configuration.md" >}}); the
 design record, with the reasoning behind the schema, is
 [design.md § Configuration](https://github.com/specsnl/labelsync/blob/main/docs/design.md#configuration).

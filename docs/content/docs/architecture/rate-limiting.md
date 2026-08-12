@@ -5,12 +5,12 @@ weight: 10
 
 `internal/github/ratelimit` keeps a run inside GitHub's limits, proactively and reactively. It is
 wired into the client as a transport and as a retry loop around `Client.Do`; the client itself is
-[GitHub Client](./github-client.md).
+[GitHub Client]({{< ref "./github-client.md" >}}).
 
 ## Writes are the problem, not reads
 
 Reads are already cheap — roughly 51 requests for 50 repositories against 5,000 an hour, and a
-[cached read](./github-client.md#the-etag-cache) costs nothing at all. **Writes are what need
+[cached read]({{< ref "./github-client.md#the-etag-cache" >}}) costs nothing at all. **Writes are what need
 managing**: a few hundred label operations against a content-creation ceiling of roughly 80 a minute,
 and that ceiling is an undocumented, body-shaped *secondary* limit rather than a header-shaped
 primary one.
@@ -40,7 +40,7 @@ The write/read distinction is made from the **HTTP method**, in a `RoundTripper`
 can label itself wrong and a `POST` cannot. It also catches the requests nothing in this tree issues
 explicitly — the ones go-github makes on its own for pagination.
 
-It sits *under* the [5xx retry wrapper](./github-client.md#retrying-5xx), closest to the network, so
+It sits *under* the [5xx retry wrapper]({{< ref "./github-client.md#retrying-5xx" >}}), closest to the network, so
 a retried attempt is paced and observed like any other request rather than slipping past the bucket
 because the first attempt already paid for it.
 
@@ -160,7 +160,7 @@ bucket's refill observable at all.
 unknown budget is affordable — refusing on no information would stop a run that would have succeeded.
 Turning that answer into a refusal is `sync`'s, because whether a half-finished run is worse than none
 at all is a policy question rather than a rate-limiting one — see
-[Apply § The startup budget check](./apply.md#the-startup-budget-check).
+[Apply § The startup budget check]({{< ref "./apply.md#the-startup-budget-check" >}}).
 
 ---
 
