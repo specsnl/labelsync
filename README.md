@@ -82,21 +82,10 @@ labelsync export yourorg/yourrepo --out labels.yml
 ```
 
 The rest — describing the repositories, the dry run, the first apply — is in
-[Getting started](./docs/content/docs/usage/getting-started.md).
+[Getting started](https://labelsync.specs.dev/docs/usage/getting-started/).
 
-## Documentation
-
-| Page                                                             | Covers                                                                     |
-|------------------------------------------------------------------|----------------------------------------------------------------------------|
-| [Getting started](./docs/content/docs/usage/getting-started.md)  | From install to a first apply, in six steps                                |
-| [Configuration file](./docs/content/docs/usage/configuration.md) | `version`, `groups`, `defaults`, `renames`, `labels`, and what is rejected |
-| [Commands](./docs/content/docs/usage/commands.md)                | Every command and flag, with the rename and prune recipes                  |
-| [Running in CI](./docs/content/docs/usage/ci.md)                 | Exit codes, NDJSON, the workflow recipe, and the token CI needs            |
-| [Architecture](./docs/content/docs/architecture/_index.md)       | How it is built: packages, planner, palette, rate limiting, output         |
-| [Design plan](./docs/design.md)                                  | The design record — goals, prior art, the algorithm, milestones            |
-
-The architecture section describes **what has been built**; `docs/design.md` is the forward-looking
-plan, kept as the design record and linked from the pages that grew out of it.
+Everything else — the configuration file, every command and flag, running in CI, and how it is
+built — is at **[labelsync.specs.dev](https://labelsync.specs.dev/)**.
 
 ## Contributing
 
