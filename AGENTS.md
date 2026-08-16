@@ -28,6 +28,10 @@ Run `task --list` for the full set. The ones used most:
 | `task md:check`        | markdownlint over every Markdown file                             |
 | `task md:fix`          | Align Markdown tables, then apply autofixable rules               |
 | `task build`           | Build the binary into the working directory                       |
+| `task docs:serve`      | Hugo dev server with live reload on <http://localhost:1313>       |
+| `task docs:preview`    | Build, then serve the static site over nginx on port 8080         |
+| `task docs:build`      | Build the site into `docs/public/`                                |
+| `task docs:mod:tidy`   | Tidy the Hugo module in `docs/`                                   |
 | `task release:dry-run` | Local goreleaser snapshot, no publishing                          |
 | `task dc:shell`        | Shell into the `go-builder` service                               |
 
@@ -154,6 +158,20 @@ The full structure, with a file-level breakdown, is in
 [docs/design.md](./docs/design.md#package-structure).
 
 ## Documentation
+
+`docs/` is a [Hugo](https://gohugo.io) site on the [Hextra](https://github.com/imfing/hextra)
+theme, published at <https://labelsync.specs.dev/>. The theme is consumed as a Hugo module from
+`docs/go.mod` — a module of its own, so the root `go mod tidy -diff` never sees it. `task
+docs:serve` renders the site locally.
+
+Everything under `docs/content/` is published; `docs/design.md` sits outside it and is deliberately
+not part of the site, so pages link to it by absolute github.com URL.
+
+**Links between content pages go through `{{< ref >}}`**, keeping the path exactly as it is on
+disk — `[Plan]({{< ref "./plan.md" >}})`, `[Commands]({{< ref "../usage/commands.md#prune" >}})`.
+A plain `./plan.md` link 404s on the built site — Hugo does not rewrite `.md` links and Hextra
+ships no render-link hook — while `task md:check` stays green. `ref` instead fails the build when
+its target moves or disappears.
 
 ### The design record
 

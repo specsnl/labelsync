@@ -36,18 +36,18 @@ labelsync/
 
 ### Implemented so far
 
-| Package                | Status  | Notes                                                                                  |
-|------------------------|---------|----------------------------------------------------------------------------------------|
-| `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf`                         |
-| `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes](./output.md)                           |
-| `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                                |
-| `internal/cmd`         | landed  | Every command; `sync` applies in both modes, and owns the prune selection              |
-| `internal/config`      | landed  | Load, validate, resolve, the `init` scaffold — see [Configuration](./configuration.md) |
-| `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette](./palette.md)                 |
-| `internal/plan`        | landed  | `Action`, `Plan`, `Compute` in both modes, rendering — see [Planner](./plan.md)        |
-| `internal/github`      | landed  | Auth, client, enumeration, labels, ETag cache, the limiter and its countdown           |
-| `internal/apply`       | landed  | Creates, updates, recolours, and deletes under prune — see [Apply](./apply.md)         |
-| everything else        | planned | See the milestone table in the design plan                                             |
+| Package                | Status  | Notes                                                                                                |
+|------------------------|---------|------------------------------------------------------------------------------------------------------|
+| `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf`                                       |
+| `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes]({{< ref "./output.md" >}})                           |
+| `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                                              |
+| `internal/cmd`         | landed  | Every command; `sync` applies in both modes, and owns the prune selection                            |
+| `internal/config`      | landed  | Load, validate, resolve, the `init` scaffold — see [Configuration]({{< ref "./configuration.md" >}}) |
+| `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette]({{< ref "./palette.md" >}})                 |
+| `internal/plan`        | landed  | `Action`, `Plan`, `Compute` in both modes, rendering — see [Planner]({{< ref "./plan.md" >}})        |
+| `internal/github`      | landed  | Auth, client, enumeration, labels, ETag cache, the limiter and its countdown                         |
+| `internal/apply`       | landed  | Creates, updates, recolours, and deletes under prune — see [Apply]({{< ref "./apply.md" >}})         |
+| everything else        | planned | See the milestone table in the design plan                                                           |
 
 ### Why `plan` and `palette` are isolated
 
@@ -84,7 +84,7 @@ Everything above exists. `sync` applies in both modes: append by default, and `-
 additionally reports every unconfigured label as a removal candidate and asks which of them to
 delete — `huh.MultiSelect` on a terminal, `--prune=all` without one, and a refusal
 (`interactive_required`) rather than a prompt shown to a pipe. See
-[Usage § Prune](../usage/commands.md#prune) and [Apply](./apply.md).
+[Usage § Prune]({{< ref "../usage/commands.md#prune" >}}) and [Apply]({{< ref "./apply.md" >}}).
 
 ### How the tree is wired
 
@@ -99,7 +99,7 @@ delete — `huh.MultiSelect` on a terminal, `--prune=all` without one, and a ref
 - **`init.go`** writes the starter config. The file it writes belongs to `internal/config` —
   `config.Scaffold()` — so it is validated by that package's own suite rather than being a string
   literal here that nothing checks; see
-  [Configuration § The scaffold](./configuration.md#the-scaffold). The command's own share is where
+  [Configuration § The scaffold]({{< ref "./configuration.md#the-scaffold" >}}). The command's own share is where
   the file goes and when it refuses to write.
 - **`client.go`** is the shared plumbing every network command runs on: resolve a token, build the
   client from the persistent flags, load and resolve the config, print whatever the resolution
@@ -112,7 +112,7 @@ delete — `huh.MultiSelect` on a terminal, `--prune=all` without one, and a ref
   `labelsync groups --output=json | jq` has to keep working.
 - **`sync.go`** is the pipeline end to end: config, client, groups, enumeration, label reads,
   `plan.Compute` per repository, render, and then — unless `--dry-run` said otherwise — the writes,
-  through [`internal/apply`](./apply.md). It is the only command that assembles a `Plan`, the only
+  through [`internal/apply`]({{< ref "./apply.md" >}}). It is the only command that assembles a `Plan`, the only
   one that writes anything, and the only one whose answer is an exit code as much as a rendering —
   see [Exit codes](#exit-codes) below. The plan goes to stdout *before* anything is written, so a
   user watching a long apply can see what it is about to do, and so the stdout of an apply matches
@@ -128,18 +128,18 @@ delete — `huh.MultiSelect` on a terminal, `--prune=all` without one, and a ref
   terminal through.
 - **`export.go`** dumps one repository's labels as config YAML. It is the only command that writes
   to `App.Stdout` rather than through `App.Out`, because its product is a *file* and not a record;
-  see [Output § An export is a file](./output.md#an-export-is-a-file-not-a-record). The rendering
+  see [Output § An export is a file]({{< ref "./output.md#an-export-is-a-file-not-a-record" >}}). The rendering
   itself belongs to `internal/config`, next to the loader whose normalisation it has to match.
 - **`cache.go`** inspects and empties the ETag store. It is the command that most needs the
   record/table split — an `int64` of bytes and an RFC 3339 timestamp in the record, `1.2 MiB` and
   `3 days ago` in the columns — and the only one that deletes anything, which is why the directory
   it is pointed at is bounded explicitly; see
-  [GitHub Client § Inspecting and clearing](./github-client.md#inspecting-and-clearing-the-cache).
+  [GitHub Client § Inspecting and clearing]({{< ref "./github-client.md#inspecting-and-clearing-the-cache" >}}).
 - **`version.go`** owns `Version`, the variable `.goreleaser.yml` and the `Dockerfile` inject with
   `-ldflags -X github.com/specsnl/labelsync/internal/cmd.Version`. That path is a build-file string
   the compiler never checks, so `version_test.go` asserts both files still name it — a rename would
   otherwise ship every release as `dev`. What each build produces is in
-  [Versioning](./versioning.md).
+  [Versioning]({{< ref "./versioning.md" >}}).
 
 `labelsync --version` is defined to mean `labelsync version --dont-prettify`, and both call the same
 `writeVersion` so the two cannot drift. It is a hand-rolled flag rather than Cobra's built-in
@@ -151,7 +151,7 @@ writer the user asked for. Giving the root a `RunE` is also why there is a test 
 `labelsync` still prints help and an unknown subcommand still fails.
 
 Two invariants carry the weight, both detailed in
-[Output & Exit Codes](./output.md#wiring-it-in-cobra): writers and the logger come from
+[Output & Exit Codes]({{< ref "./output.md#wiring-it-in-cobra" >}}): writers and the logger come from
 `cmd.OutOrStdout()` / `cmd.ErrOrStderr()` rather than the `NewDefault*` constructors, and `os.Exit`
 lives in `main` and nowhere else. Commands return errors; `exit.Of` turns them into codes.
 
@@ -166,7 +166,7 @@ lives in `main` and nowhere else. Commands return errors; `exit.Of` turns them i
 
 The outcome codes are disjoint bits and combine — a dry run that both drifts and cannot reach a
 repository exits `6`. Defined in `internal/util/exit`; the rationale is in
-[Output & Exit Codes](./output.md#exit-codes).
+[Output & Exit Codes]({{< ref "./output.md#exit-codes" >}}).
 
 `sync` is where they are assembled, and it assembles them by OR-ing outcomes as they are discovered
 rather than by assigning over a previous value:
@@ -196,9 +196,9 @@ A `--config` value naming a directory is searched the same way. Both spellings i
 from `internal/labelsync/configuration.go`.
 
 How that resolution, the YAML load, and the normalisation rules work is in
-[Configuration](./configuration.md). For the `groups`, `defaults`, `renames`, and `labels` sections
+[Configuration]({{< ref "./configuration.md" >}}). For the `groups`, `defaults`, `renames`, and `labels` sections
 themselves, see the
-[configuration reference](../usage/configuration.md).
+[configuration reference]({{< ref "../usage/configuration.md" >}}).
 
 ## Data flow — `labelsync sync`
 
@@ -220,7 +220,7 @@ and the name it was built under is `Apply`. Two things the diagram does not show
 configured label selects are dropped *before* the label reads, so no request is spent on a repository
 nothing would be done to; and `GET /rate_limit` is read at startup under `--debug` **or** whenever the
 run is about to write, because it is free, it seeds the limiter, and its answer is what an apply that
-cannot finish is refused on — see [Apply § The startup budget check](./apply.md#the-startup-budget-check).
+cannot finish is refused on — see [Apply § The startup budget check]({{< ref "./apply.md#the-startup-budget-check" >}}).
 
 Steps up to `Compute` never write. Per-repository failures — `403` archived, `404` renamed
 mid-run, `410` — are collected and reported at the end rather than aborting the run.
@@ -234,12 +234,12 @@ sync normally and `410` never appears on them. See
 
 Stdlib `testing` by default — no test framework dependency so far. Run with `task test`.
 
-| Package     | Approach                                                                                                                                    |
-|-------------|---------------------------------------------------------------------------------------------------------------------------------------------|
-| `config`    | Table-driven over every validation rule, valid and invalid; group composition and cycles                                                    |
-| `plan`      | The core suite: `(desired, current, mode, renames) → expected actions`, plus [determinism and convergence](./plan.md#the-determinism-suite) |
-| `palette`   | Same input → same output, no duplicate allocation, exhaustion, legibility bounds — see [Colour Palette](./palette.md#testing)               |
-| `github`    | `net/http/httptest` fake: pagination, ETag `304`, per-repo skips, `422` reclassification                                                    |
-| `ratelimit` | Injected clock: primary vs secondary backoff, `Retry-After`, the `--max-wait` ceiling                                                       |
-| `output`    | Golden files for the pretty and JSON renderings                                                                                             |
-| `cmd`       | The tree driven through `SetOut`/`SetErr` buffers: flags, writer choice, exit codes                                                         |
+| Package     | Approach                                                                                                                                                  |
+|-------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `config`    | Table-driven over every validation rule, valid and invalid; group composition and cycles                                                                  |
+| `plan`      | The core suite: `(desired, current, mode, renames) → expected actions`, plus [determinism and convergence]({{< ref "./plan.md#the-determinism-suite" >}}) |
+| `palette`   | Same input → same output, no duplicate allocation, exhaustion, legibility bounds — see [Colour Palette]({{< ref "./palette.md#testing" >}})               |
+| `github`    | `net/http/httptest` fake: pagination, ETag `304`, per-repo skips, `422` reclassification                                                                  |
+| `ratelimit` | Injected clock: primary vs secondary backoff, `Retry-After`, the `--max-wait` ceiling                                                                     |
+| `output`    | Golden files for the pretty and JSON renderings                                                                                                           |
+| `cmd`       | The tree driven through `SetOut`/`SetErr` buffers: flags, writer choice, exit codes                                                                       |

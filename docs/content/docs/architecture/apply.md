@@ -3,14 +3,14 @@ title: Apply
 weight: 9
 ---
 
-`internal/apply` executes a [`plan.Plan`](./plan.md). It is the only code in `labelsync` that writes
+`internal/apply` executes a [`plan.Plan`]({{< ref "./plan.md" >}}). It is the only code in `labelsync` that writes
 to GitHub, and it is deliberately the smallest package that can be: the planner already decided what
 to do and in what order, so all that is left is to do it, in that order, and to be honest about what
 happened.
 
 ## The mode decides whether deleting is allowed at all
 
-`Apply` takes the [`plan.Mode`](./plan.md) the plan was computed under, and it is the only thing that
+`Apply` takes the [`plan.Mode`]({{< ref "./plan.md" >}}) the plan was computed under, and it is the only thing that
 distinguishes an append from a prune once the writing starts:
 
 | Mode     | Deletes                                    |
@@ -41,7 +41,7 @@ Prune is three parts in three packages, and the split is the design:
    `Candidates(p)` names them, in plan order; `RetainDeletes(p, keep)` returns the plan minus the
    candidates that were not kept.
 2. `internal/cmd` asks — a `huh.MultiSelect`, or `--prune=all` — and narrows the plan.
-   See [Usage § Prune](../usage/commands.md#prune).
+   See [Usage § Prune]({{< ref "../usage/commands.md#prune" >}}).
 3. `internal/apply` executes what it is given.
 
 `RetainDeletes` only ever **filters**. A candidate can be dropped between the report on stdout and
@@ -56,7 +56,7 @@ repository the run visited, and still applies its creates and updates.
 
 Actions go out in exactly the order the planner emitted them: renames, then squatter recolours, then
 creates, then updates, then deletes. That order is what makes every intermediate state coherent — see
-[Planner § Ordering](./plan.md) — so a run killed halfway through a repository leaves it consistent
+[Planner § Ordering]({{< ref "./plan.md" >}}) — so a run killed halfway through a repository leaves it consistent
 rather than with a configured label sharing a colour with a squatter that was supposed to have moved
 off it.
 
@@ -66,7 +66,7 @@ repository has already been attempted by the time one goes out: a run cut short 
 a rename or a recolour, not a label and all of its associations.
 
 Nothing here reorders for throughput, and nothing writes to two repositories at once. That is not a
-sacrifice: the [write bucket](./rate-limiting.md#proactive) paces writes at roughly one a second, so
+sacrifice: the [write bucket]({{< ref "./rate-limiting.md#proactive" >}}) paces writes at roughly one a second, so
 parallelism would buy no wall-clock time and would cost the guarantee.
 
 Within a repository, the **first** failure stops that repository. The steps after a failed rename
@@ -91,7 +91,7 @@ Both halves matter, and each is a bug the other would cause:
 
 `Client.UpdateLabel` is the whole-label form, for the one caller that has a complete desired label:
 the `422 already_exists` path, where a create is
-[reclassified as an update](./github-client.md) and there is no observed label to diff against.
+[reclassified as an update]({{< ref "./github-client.md" >}}) and there is no observed label to diff against.
 
 ## A failed repository is not a failed run
 
@@ -144,7 +144,7 @@ The decision lives in `internal/cmd` rather than in the limiter or in this packa
 all is a policy question, and for this command the answer is yes.
 
 Note the two thresholds are different mechanisms. This one refuses to start; the limiter's own
-[threshold pause](./rate-limiting.md#proactive) stops mid-run when the budget drops to its last 20
+[threshold pause]({{< ref "./rate-limiting.md#proactive" >}}) stops mid-run when the budget drops to its last 20
 requests, and waits for the window to turn over.
 
 ## Nothing here needs an HTTP mock to test
@@ -173,7 +173,7 @@ first write) and the convergence (the second run writes nothing).
 
 That is a model of GitHub, not GitHub. What the live API does with `new_name` is checked by hand
 against a scratch repository, and the result recorded in the pull request that wired renames
-through — see [GitHub client § the update request](./github-client.md).
+through — see [GitHub client § the update request]({{< ref "./github-client.md" >}}).
 
 ---
 

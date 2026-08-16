@@ -7,10 +7,10 @@ One YAML file describes every label you want and which repositories should have 
 source of truth: `labelsync` reconciles repositories towards it and never the other way round.
 
 `labelsync init` writes a working example, and
-[`labelsync export <owner/repo>`](./commands.md#labelsync-export) writes one from a repository that
+[`labelsync export <owner/repo>`]({{< ref "./commands.md#labelsync-export" >}}) writes one from a repository that
 already has labels — which is where to start if any of your repositories do. How the loader
 implements all of this is in
-[Architecture § Configuration](../architecture/configuration.md).
+[Architecture § Configuration]({{< ref "../architecture/configuration.md" >}}).
 
 ## Where the file is found
 
@@ -106,7 +106,7 @@ schema change can be introduced without having to infer which one an existing fi
 
 **Descriptions are authoritative, and that is the one thing to know before a first run.** Omitting
 `description` does not mean "leave it alone"; it means "the description is empty", and the next
-sync makes it so. Run [`export`](./commands.md#labelsync-export) first and the descriptions you
+sync makes it so. Run [`export`]({{< ref "./commands.md#labelsync-export" >}}) first and the descriptions you
 already have are in the file, so this never happens by accident.
 
 Both length bounds are GitHub's own and count **characters, not bytes** — a description of 100
@@ -115,7 +115,7 @@ emoji is exactly at the limit, the same as 100 letters.
 Colours have to be **unique across the whole file**, not per repository. That is what lets the
 planner treat a colour as an identity: an unconfigured label found sitting on a configured colour
 is moved off it, onto a colour of its own from the
-[generated palette](../architecture/palette.md).
+[generated palette]({{< ref "../architecture/palette.md" >}}).
 
 ## `groups`
 
@@ -147,7 +147,7 @@ error, and so is setting none.
 The rule the whole tool rests on: a repository gets every label whose `groups` contain a group that
 selects it — and **if no group selects a repository, `labelsync` never touches it**.
 
-[`labelsync groups`](./commands.md#labelsync-groups) prints what each group actually resolves to,
+[`labelsync groups`]({{< ref "./commands.md#labelsync-groups" >}}) prints what each group actually resolves to,
 and on stderr why each filtered repository was dropped. Run it whenever a selector is doing
 something you did not expect.
 
@@ -191,7 +191,7 @@ because GitHub's label identity does:
 Because a rename whose `from` no longer exists is skipped silently, an entry can be left in the
 file indefinitely: it is a migration that has already happened, and it is also what migrates the
 repository you add to the group next month. The worked end-to-end recipe is in
-[Commands § Renaming labels](./commands.md#renames).
+[Commands § Renaming labels]({{< ref "./commands.md#renames" >}}).
 
 That is why labelsync's own
 [`labels.yml`](https://github.com/specsnl/labelsync/blob/main/labels.yml) carries `bug` →
@@ -248,4 +248,4 @@ it can never hand you a file the next command rejects.
 
 Under `--output=json`, each of these carries a stable `error_kind` — `duplicate_label_name`,
 `invalid_color`, `cyclic_group`, and so on. The full list is in
-[Error Handling](../architecture/error-handling.md).
+[Error Handling]({{< ref "../architecture/error-handling.md" >}}).

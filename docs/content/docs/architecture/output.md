@@ -137,7 +137,7 @@ prevent.
 
 The record carries its own `"level"`, because the stderr stream has one shape and a caller inventing
 a new one would break `jq 'select(.level == "warn")'`. Today the only caller is the
-[rate-limit countdown](./rate-limiting.md#the-countdown).
+[rate-limit countdown]({{< ref "./rate-limiting.md#the-countdown" >}}).
 
 ### Tables are typed rows, not strings
 
@@ -222,7 +222,7 @@ ignores the text entirely, so no line of stdout is ever prose.
 
 **Do not build a `DiffData` by hand.** `output` deliberately knows nothing about actions —
 `plan.Render(w, p)` owns the vocabulary and prepares both projections. See
-[Planner § Rendering](./plan.md#rendering).
+[Planner § Rendering]({{< ref "./plan.md#rendering" >}}).
 
 ### An export is a file, not a record
 
@@ -328,7 +328,7 @@ stderr carries the narration, every line carrying a `level`:
 ```
 
 `WriteErr` adds `error_kind` when the error wraps a known sentinel — see
-[Error Handling](./error-handling.md). The message is prose and may be reworded; `error_kind` is the
+[Error Handling]({{< ref "./error-handling.md" >}}). The message is prose and may be reworded; `error_kind` is the
 contract.
 
 Row keys come from the row struct's `json` tags — see

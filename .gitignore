@@ -2,6 +2,7 @@
 .DS_Store
 /dev
 Taskfile.yml
+.playwright-mcp
 
 /labelsync
 /dist/

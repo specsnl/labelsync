@@ -4,8 +4,8 @@ weight: 3
 ---
 
 Every command, every flag, and what each one writes. The config file itself has its own page:
-[Configuration file](./configuration.md). The reasoning behind these choices lives in the
-[architecture section](../architecture/).
+[Configuration file]({{< ref "./configuration.md" >}}). The reasoning behind these choices lives in the
+[architecture section]({{< ref "../architecture" >}}).
 
 ```text
 labelsync [flags] <command>
@@ -56,7 +56,7 @@ is never written to a log, including under `--debug` — that only reports *whic
 won, which is worth knowing when a run turns out to have used a different account than you expected.
 
 In CI the token needs more care than that: the `GITHUB_TOKEN` a workflow is handed automatically
-**cannot** write labels to other repositories. See [Running in CI](./ci.md#the-token).
+**cannot** write labels to other repositories. See [Running in CI]({{< ref "./ci.md#the-token" >}}).
 
 With nothing to find, the run fails with `no_token` before any request is sent.
 
@@ -199,7 +199,7 @@ stopping halfway.
 
 A repository that cannot be reached partway through is abandoned, the rest are still applied, and the
 run exits `4`. The exit codes in full, and what to branch on in a CI job, are in
-[Running in CI § Exit codes](./ci.md#exit-codes).
+[Running in CI § Exit codes]({{< ref "./ci.md#exit-codes" >}}).
 
 #### What a rate-limit wait looks like
 
@@ -448,4 +448,4 @@ labelsync version --output=json      # {"version":"1.2.3"}
 ```
 
 What the string itself looks like depends on how the binary was built:
-[Versioning](../architecture/versioning.md).
+[Versioning]({{< ref "../architecture/versioning.md" >}}).

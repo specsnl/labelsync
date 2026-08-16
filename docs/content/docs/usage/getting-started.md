@@ -31,8 +31,8 @@ gh auth status
 
 Otherwise put a personal access token in `GH_TOKEN` — fine-grained with **Read and write** on
 *Issues* for the repositories you intend to sync, or `repo` on a classic one. The full resolution
-order is in [Commands § Where the token comes from](./commands.md#where-the-token-comes-from), and
-CI needs its own token for reasons of its own: [Running in CI](./ci.md#the-token).
+order is in [Commands § Where the token comes from]({{< ref "./commands.md#where-the-token-comes-from" >}}), and
+CI needs its own token for reasons of its own: [Running in CI]({{< ref "./ci.md#the-token" >}}).
 
 ## 3. Export what you already have
 
@@ -81,7 +81,7 @@ labelsync groups
 stdout is the table of groups and their repositories; **stderr explains every repository a filter
 removed**, one line each, with the reason. A repository you expected and do not see is what this
 command exists to explain. Every field of every section is in
-[Configuration file](./configuration.md).
+[Configuration file]({{< ref "./configuration.md" >}}).
 
 The rule underneath all of it: **if no group selects a repository, `labelsync` never touches it.**
 
@@ -120,10 +120,10 @@ is refused before its first write rather than stopping halfway.
 
 ## Where to go next
 
-| You want to                                     | Read                                     |
-|-------------------------------------------------|------------------------------------------|
-| Move `bug` onto `type: bug`, keeping its issues | [Renaming labels](./commands.md#renames) |
-| Remove labels the config does not mention       | [Removing labels](./commands.md#prune)   |
-| Run this on every merge, or on a schedule       | [Running in CI](./ci.md)                 |
-| Know what every config field does               | [Configuration file](./configuration.md) |
-| Know why any of it works the way it does        | [Architecture](../architecture/)         |
+| You want to                                     | Read                                                   |
+|-------------------------------------------------|--------------------------------------------------------|
+| Move `bug` onto `type: bug`, keeping its issues | [Renaming labels]({{< ref "./commands.md#renames" >}}) |
+| Remove labels the config does not mention       | [Removing labels]({{< ref "./commands.md#prune" >}})   |
+| Run this on every merge, or on a schedule       | [Running in CI]({{< ref "./ci.md" >}})                 |
+| Know what every config field does               | [Configuration file]({{< ref "./configuration.md" >}}) |
+| Know why any of it works the way it does        | [Architecture]({{< ref "../architecture" >}})          |

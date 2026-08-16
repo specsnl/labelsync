@@ -69,7 +69,7 @@ never sent to the API.
 
 An update carries only the fields it changes, and a nil field means "unchanged". Plain strings cannot
 carry that, because the design makes descriptions
-[authoritative](../usage/configuration.md#labels): an
+[authoritative]({{< ref "../usage/configuration.md#labels" >}}): an
 omitted description in `labels.yml` means *clear it*, so the empty string is a value an update
 legitimately sets. With a `string`, "leave the description alone" and "set the description to empty"
 are the same zero value, and clearing a description would be indistinguishable from not touching one.
@@ -120,7 +120,7 @@ An empty plan marshals as `{"repos":null}`: `Repos` carries no `omitempty`, and 
 - **Displacement** — `displaced by "type: bug"` on a recoloured squatter. A recolour that looks
   arbitrary in a diff becomes obvious when annotated with which configured label displaced it.
 - **Palette exhaustion** — the warning
-  [`palette.Allocation.Exhausted`](./palette.md#exhaustion-is-a-warning-never-a-failure) reports.
+  [`palette.Allocation.Exhausted`]({{< ref "./palette.md#exhaustion-is-a-warning-never-a-failure" >}}) reports.
   Turning it into a reason is the planner's half of that contract.
 
 ## `Compute`
@@ -178,7 +178,7 @@ also why `config.Label.Description` can be a plain string while `Action.Descript
    in a `Reason`, which keeps the text deterministic without changing the recolour.
 4. **Recolour squatters.** An unconfigured label sitting on a reserved colour is displaced. In
    ascending name order, each one is given
-   [`palette.Allocate(used, reserved)`](./palette.md#the-allocation-rule) and the result is fed back
+   [`palette.Allocate(used, reserved)`]({{< ref "./palette.md#the-allocation-rule" >}}) and the result is fed back
    into `used` — the allocator is stateless, and feeding it back is the only thing stopping two
    squatters from being handed the same colour. `used` starts as the colours of the unconfigured
    labels that are staying put; matched labels contribute nothing, because they are about to hold
@@ -238,7 +238,7 @@ design leans on.
 
 The existence checks run against the **rewritten** view rather than a snapshot of what the API
 returned. Chained renames (`a → b`, `b → c`) are
-[rejected by config validation](./configuration.md), but the planner does not depend on that holding:
+[rejected by config validation]({{< ref "./configuration.md" >}}), but the planner does not depend on that holding:
 reading the live view means the second entry sees the name the first produced, so a chain resolves to
 `c` in one run instead of two actions fighting over `b`. A half-empty entry is ignored for the same
 defensive reason — renaming a label to `""` is not a request the API can honour.
@@ -267,7 +267,7 @@ for it to leave alone.
 One leading `#` is stripped and the rest lower-cased before any comparison, on both sides. `#D73A4A`
 in a repository is not drift against `d73a4a` in the config, and a squatter is still detected through
 it. Whether what remains is valid hex is
-[config validation's](./configuration.md) question; here an unparseable colour simply never matches
+[config validation's]({{< ref "./configuration.md" >}}) question; here an unparseable colour simply never matches
 and never enters a colour set.
 
 ### Prune
@@ -338,7 +338,7 @@ which a resolution bug upstream turns into a mass deletion here. A test runs bot
 repository full of labels, with a rename configured, and asserts the plan is empty.
 
 The same rule holds one level up in
-[config validation](./configuration.md): an empty config is rejected outright, so "no labels
+[config validation]({{< ref "./configuration.md" >}}): an empty config is rejected outright, so "no labels
 configured anywhere" never reaches the planner at all.
 
 ## Rendering
@@ -351,7 +351,7 @@ plan.Render(app.Out, p)
 ```
 
 Both renderings come out of one pass over the plan. `plan.Diff(p)` returns the same
-[`output.DiffData`](./output.md#a-diff-is-neither-a-table-nor-a-value) without writing it, for a test
+[`output.DiffData`]({{< ref "./output.md#a-diff-is-neither-a-table-nor-a-value" >}}) without writing it, for a test
 or for a future `plan -o file` that wants the records with no writer in hand.
 
 ### The pretty diff
@@ -378,7 +378,7 @@ specsnl/example-prs-only
 ```
 
 A block per repository, indented two spaces under its heading, aligned by
-[`output.RenderColumns`](./output.md#table-rendering) into six columns: gutter, verb, name, colour,
+[`output.RenderColumns`]({{< ref "./output.md#table-rendering" >}}) into six columns: gutter, verb, name, colour,
 description, reason. Every row carries all six cells even when they are empty, so the reason column
 starts at the same offset whether or not the rows above it set a description.
 
@@ -493,7 +493,7 @@ labelsync sync --dry-run --output=json | jq 'select(.kind != "summary" and .kind
 
 Like the action kinds, `"summary"` is a wire contract: added to, never renamed. `plan.Summarise(p)`
 returns the same counts to a caller that needs them without rendering — deciding an
-[exit code](./output.md#exit-codes), for one: a dry run with anything but no-ops has found drift.
+[exit code]({{< ref "./output.md#exit-codes" >}}), for one: a dry run with anything but no-ops has found drift.
 
 `Unchanged` counts no-ops. They are reported precisely so a clean run says *I looked* rather than
 saying nothing at all — and they are still never sent to the API.

@@ -36,7 +36,7 @@ drift left to report once it has been reconciled.
 
 The shape is `terraform plan -detailed-exitcode`'s, for the same reason: a check job wants "did
 anything differ" as a status rather than as text to grep. The full contract, with the reasoning, is
-in [Output & Exit Codes](../architecture/output.md#exit-codes).
+in [Output & Exit Codes]({{< ref "../architecture/output.md#exit-codes" >}}).
 
 `4` is the one to decide about. Whether an unreachable repository should fail your pipeline depends
 on whether the set is stable — a `repos:` list, where a `4` means something is wrong — or an `org:`
@@ -58,7 +58,7 @@ labelsync sync --dry-run --output=json > plan.ndjson
 jq -r 'select(.kind != "summary" and .kind != "noop") | "\(.repo) \(.kind) \(.name)"' plan.ndjson
 ```
 
-Both renderings are described in full in [Output & Exit Codes](../architecture/output.md).
+Both renderings are described in full in [Output & Exit Codes]({{< ref "../architecture/output.md" >}}).
 
 ## The token
 
@@ -74,7 +74,7 @@ this tool, so it is not a token to start from. A run using it fails on every rep
 Start with a PAT in a secret, exported as `GH_TOKEN` — a fine-grained token with **Read and write**
 on *Issues* for the repositories you sync, or `repo` on a classic one. A GitHub App can be swapped
 in later behind the same resolver without touching anything else; see
-[Authentication](../architecture/authentication.md) for the four-step chain both go through.
+[Authentication]({{< ref "../architecture/authentication.md" >}}) for the four-step chain both go through.
 
 Set it as `GH_TOKEN` rather than `GITHUB_TOKEN`: `GH_TOKEN` is read first, so an environment where
 Actions has already set `GITHUB_TOKEN` cannot silently win. Never pass `--token` in a workflow — it
@@ -98,7 +98,7 @@ A **GitHub App** removes the chore entirely — an installation token is minted 
 expiry to diarise, the rate limit is higher, and the install is scoped to selected repositories
 rather than to everything the PAT's owner can reach. It costs an App and a token-minting step, which
 is why the PAT comes first; it can be swapped in later behind the same resolver without touching a
-single call site. See [Authentication](../architecture/authentication.md#what-ci-resolves-to-and-what-comes-after-it).
+single call site. See [Authentication]({{< ref "../architecture/authentication.md#what-ci-resolves-to-and-what-comes-after-it" >}}).
 
 ## A GitHub Actions workflow
 
@@ -194,7 +194,7 @@ label as a removal candidate, exits `2` if there is anything to report, and writ
 `--prune=all` deletes without asking, and deleting a label removes it from every issue and pull
 request that carries it — so put it behind a manual `workflow_dispatch` rather than a schedule, and
 read the dry run first. The full semantics are in
-[Commands § Removing labels](./commands.md#prune).
+[Commands § Removing labels]({{< ref "./commands.md#prune" >}}).
 
 ## Rate limits and long runs
 
@@ -209,7 +209,7 @@ minute (default 70) to stay under GitHub's content-creation limit. Two consequen
 `--max-wait` (default `15m`) caps the total time a run may spend asleep waiting for a limit to
 clear; exceeding it fails with `max_wait_exceeded` instead of taking the wait. In CI that is a
 guard against a job billing an hour of runner time to a countdown — see
-[Rate Limiting](../architecture/rate-limiting.md).
+[Rate Limiting]({{< ref "../architecture/rate-limiting.md" >}}).
 
 ## Other CI systems
 

@@ -2,6 +2,7 @@
 version: "3"
 
 includes:
+  docs: ./taskfiles/Taskfile.docs.yml
   md: ./taskfiles/Taskfile.md.yml
   lint:
     taskfile: ./taskfiles/Taskfile.lint.yml

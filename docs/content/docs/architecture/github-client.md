@@ -5,7 +5,7 @@ weight: 9
 
 `internal/github/client.go` wraps [go-github](https://github.com/google/go-github) and classifies
 its errors **once**, so that no caller anywhere else in the tree sniffs a status code. Credential
-resolution is the other half of the package: [Authentication](./authentication.md).
+resolution is the other half of the package: [Authentication]({{< ref "./authentication.md" >}}).
 
 ## Why go-github
 
@@ -40,15 +40,15 @@ against every repository in the set.
 only thing that calls it. Everything downstream reasons about `ErrRepoInaccessible` and
 `IsAlreadyExists` instead.
 
-| What came back                       | Classified as                                  | The run                                         |
-|--------------------------------------|------------------------------------------------|-------------------------------------------------|
-| `403` archived, or no permission     | `RepoError` → `repo_inaccessible`              | continues, repo skipped                         |
-| `404` renamed, deleted, or invisible | `RepoError` → `repo_inaccessible`              | continues, repo skipped                         |
-| `410` gone                           | `RepoError` → `repo_inaccessible`              | continues, repo skipped                         |
-| `422` with `already_exists`          | `IsAlreadyExists` — a create becomes an update | continues                                       |
-| Rate limit, primary or secondary     | passed through, typed                          | waits — see [Rate Limiting](./rate-limiting.md) |
-| Cancelled context                    | passed through                                 | stops                                           |
-| Anything else (`401`, `5xx`, …)      | passed through                                 | fails                                           |
+| What came back                       | Classified as                                  | The run                                                       |
+|--------------------------------------|------------------------------------------------|---------------------------------------------------------------|
+| `403` archived, or no permission     | `RepoError` → `repo_inaccessible`              | continues, repo skipped                                       |
+| `404` renamed, deleted, or invisible | `RepoError` → `repo_inaccessible`              | continues, repo skipped                                       |
+| `410` gone                           | `RepoError` → `repo_inaccessible`              | continues, repo skipped                                       |
+| `422` with `already_exists`          | `IsAlreadyExists` — a create becomes an update | continues                                                     |
+| Rate limit, primary or secondary     | passed through, typed                          | waits — see [Rate Limiting]({{< ref "./rate-limiting.md" >}}) |
+| Cancelled context                    | passed through                                 | stops                                                         |
+| Anything else (`401`, `5xx`, …)      | passed through                                 | fails                                                         |
 
 `RepoError` wraps `ErrRepoInaccessible`, so `errors.Is` matches it and `KindOf` renders
 `repo_inaccessible` through the struct, while its fields carry what a summary line needs.
@@ -82,7 +82,7 @@ configured values — which an update reaches:
 
 ## Repository enumeration
 
-`internal/github/repos.go` turns the selectors [`config.Resolve`](./configuration.md#resolution)
+`internal/github/repos.go` turns the selectors [`config.Resolve`]({{< ref "./configuration.md#resolution" >}})
 produced into concrete repositories:
 
 ```go
@@ -162,7 +162,7 @@ func (c *Client) Login(ctx context.Context) (string, error)
 ```
 
 `GET /user`, cached for the life of the client. It exists for one caller:
-[`config.Resolve`](./configuration.md#the-user-split) needs the authenticated login to decide which
+[`config.Resolve`]({{< ref "./configuration.md#the-user-split" >}}) needs the authenticated login to decide which
 of the two `user` endpoints a selector calls.
 
 A command asks for it **only when the config actually has a `user:` group**, because it costs a
@@ -391,7 +391,7 @@ repositories turn out to be archived.
 
 `Failures.ExitCode` is `exit.Skipped` — code **`4`** — when anything was skipped. It is an outcome
 *bit*, so the caller ORs it with whatever else the run concluded and a dry run that both drifted and
-skipped exits `6`. See [Output & Exit Codes](./output.md#exit-codes).
+skipped exits `6`. See [Output & Exit Codes]({{< ref "./output.md#exit-codes" >}}).
 
 ## Retrying `5xx`
 

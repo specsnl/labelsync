@@ -45,7 +45,7 @@ has to remember to change.
 
 goreleaser injects `{{ .Version }}`, which is the release tag with the leading `v` already stripped.
 Tagging `v1.2.3` ships a binary that reports `1.2.3`. See
-[Distribution](./distribution.md) for the pipeline that tag drives, and for why a
+[Distribution]({{< ref "./distribution.md" >}}) for the pipeline that tag drives, and for why a
 `go install` build is one of the two that report `dev`.
 
 ### Local builds
@@ -76,8 +76,8 @@ correspond to any commit says so.
 ## Reaching the user
 
 The value is a result, not narration, so it goes to stdout through
-[`WriteResult`](./output.md#a-result-that-is-not-a-table) — see
-[Overview § How the tree is wired](./overview.md#how-the-tree-is-wired) for why `--version` is a
+[`WriteResult`]({{< ref "./output.md#a-result-that-is-not-a-table" >}}) — see
+[Overview § How the tree is wired]({{< ref "./overview.md#how-the-tree-is-wired" >}}) for why `--version` is a
 hand-rolled flag rather than Cobra's built-in one.
 
 ```sh

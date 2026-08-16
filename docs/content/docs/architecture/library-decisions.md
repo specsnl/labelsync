@@ -34,7 +34,7 @@ Two rules decide most of it:
 | `github.com/charmbracelet/x/term`       | `IsTerminal`, for the decisions colour cannot | `internal/util/output/tty.go`       | **new (direct)** — already indirect via lipgloss |
 
 `log/slog` carries debug diagnostics, from the standard library — see
-[Output § Debug logging](./output.md#debug-logging).
+[Output § Debug logging]({{< ref "./output.md#debug-logging" >}}).
 
 The three "new (direct)" rows are libraries the module already pulled in through lipgloss. Naming
 them in `go.mod` does not add a dependency; it stops the code depending on a transitive one it
@@ -56,7 +56,7 @@ against a limit of roughly 80 a minute. Distinguishing the primary hourly budget
 content-creation limit decides which backoff to take and what to tell the user, and with go-github
 that is a type switch rather than sniffing a status code and a header combination that GitHub is
 free to change. The backoff logic stays clean and, more to the point, stays testable:
-[Rate Limiting](./rate-limiting.md).
+[Rate Limiting]({{< ref "./rate-limiting.md" >}}).
 
 `resp.NextPage` for enumeration and the `Response` wrapper carrying the rate-limit headers on every
 call are the bonus, not the reason.
@@ -73,7 +73,7 @@ keeps its token in the system keychain, where reading its config file finds noth
 
 Its REST client is deliberately not used. Two HTTP clients with different error types would put
 the rate-limit handling back where it started. The resolution chain the package feeds is in
-[Authentication](./authentication.md).
+[Authentication]({{< ref "./authentication.md" >}}).
 
 ## `huh`, and why prune has a form at all
 
@@ -85,7 +85,7 @@ library specs-cli uses.
 It is confined to one file, `internal/cmd/prune.go`, behind `App.Prompt` so tests replace it
 wholesale, and it is never reached without a terminal on stdin — a prune with nobody to ask fails
 with `interactive_required` rather than blocking a CI job. See
-[Apply § Prune: the selection](./apply.md#prune-the-selection).
+[Apply § Prune: the selection]({{< ref "./apply.md#prune-the-selection" >}}).
 
 ## `fnmatch`, not `path.Match`
 
@@ -102,7 +102,7 @@ The palette allocator has to answer "is this colour too close to that one?" in a
 what an eye sees, which RGB distance does not. `go-colorful` provides CIELAB and CIEDE2000, both of
 which are enough numerical work that a hand-rolled version would be a source of subtle wrongness
 rather than a saving. Determinism matters here — the same config must always allocate the same
-colour — and pinning the library is part of what guarantees it: [Colour Palette](./palette.md).
+colour — and pinning the library is part of what guarantees it: [Colour Palette]({{< ref "./palette.md" >}}).
 
 ## Testing: the standard library
 
@@ -114,7 +114,7 @@ This is a default rather than a prohibition. A helper library is worth proposing
 improves a test that is hard to read; it is not worth adding by reflex, and so far nothing here has
 needed one. What makes it affordable is the package layout: `internal/plan` and `internal/palette`
 never import `internal/github`, so the interesting logic is tested with plain structs and no HTTP
-at all — [Overview § Why `plan` and `palette` are isolated](./overview.md#why-plan-and-palette-are-isolated).
+at all — [Overview § Why `plan` and `palette` are isolated]({{< ref "./overview.md#why-plan-and-palette-are-isolated" >}}).
 
 ## What was rejected
 
@@ -148,7 +148,7 @@ would mean maintaining a compatibility contract for a file nobody writes.
 Config validation is hand-written in `internal/config/validate.go`, not driven by a JSON Schema.
 Every rule it enforces is one GitHub enforces anyway, and the value of checking locally is the
 *message* — the line to fix, and a stable `error_kind` a CI job can branch on. A schema validator
-produces neither. See [Error Handling](./error-handling.md).
+produces neither. See [Error Handling]({{< ref "./error-handling.md" >}}).
 
 ---
 
