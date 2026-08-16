@@ -1,4 +1,10 @@
-# specsnl/labelsync
+<!-- markdownlint-disable MD033 -->
+<p align="center">
+  <img src="docs/static/logo.svg" width="200" alt="labelsync">
+  <h1 align="center">labelsync</h1>
+  <p align="center"><strong>Documentation:</strong> <a href="https://labelsync.specs.dev">labelsync.specs.dev</a></p>
+</p>
+<!-- markdownlint-enable MD033 -->
 
 Synchronise GitHub issue/PR labels across a set of repositories from a local YAML file.
 
@@ -57,6 +63,8 @@ What it does, in one list:
   committed config and the live labels disagree — test the bit, because a run that also skipped a
   repository exits `6`. `--output=json` emits NDJSON with a stable `error_kind`.
 
+---
+
 ## Install
 
 ```sh
@@ -73,6 +81,8 @@ Building from a checkout needs nothing but Docker and [Task](https://taskfile.de
 task build
 ```
 
+---
+
 ## Getting started
 
 **Export before you write a config.** Descriptions in the config file are authoritative, so a
@@ -87,6 +97,8 @@ The rest — describing the repositories, the dry run, the first apply — is in
 the configuration file, every command and flag, running in CI, and how it is built — is on the same
 site: **[labelsync.specs.dev](https://labelsync.specs.dev/)**.
 
+---
+
 ## Contributing
 
 Every command runs through [Task](https://taskfile.dev), which wraps the Docker Compose services
@@ -98,3 +110,9 @@ task checkall   # tidy:check, lint, test, md:check — run this before opening a
 ```
 
 Conventions, workflow, and the house rules that reviews are held to: [AGENTS.md](./AGENTS.md).
+
+---
+
+## License
+
+MIT — see [LICENSE](./LICENSE).
