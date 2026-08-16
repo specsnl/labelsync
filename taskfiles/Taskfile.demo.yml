@@ -20,36 +20,41 @@ tasks:
         --set "go-binary.args.LABELSYNC_VERSION={{.LABELSYNC_VERSION}}"
         go-binary
 
-  record:
-    desc: Re-record the demo GIF into docs/static/demo/
+  record:*:
+    desc: Re-record one demo GIF — `task demo:record:labelsync`, `task demo:record:init`
     summary: |
-      Builds a Linux labelsync, then runs docs/demo/labelsync.tape in the pinned
-      vhs image, overwriting docs/static/demo/labelsync.gif.
+      Builds a Linux labelsync, then runs docs/demo/<name>.tape in the pinned vhs
+      image, overwriting the GIF that tape names in its Output line.
 
-      The tape runs `labelsync groups` and `labelsync sync --dry-run` against
-      specsnl/php83, php84 and php85 — public repositories, and both commands
-      are read-only. Nothing in the recording writes to them.
+      One tape at a time, on purpose: every recording produces different bytes
+      even when nothing it shows has changed, so recording all of them dirties
+      GIFs nobody asked about.
 
-      Needs a GitHub token: GH_TOKEN, or a logged-in `gh` on the host, which is
-      where the token below is read from. Only `public_repo` scope is needed to
-      read the labels of three public repositories.
+        task demo:record:labelsync   # groups + sync --dry-run, needs a token
+        task demo:record:init        # the init scaffold, offline
 
-      Re-recording produces a different GIF every time even with no change to
-      the tape, because the frames carry the live state of those repositories
-      and timing jitter. Commit it only when what it shows actually changed.
+      The token is GH_TOKEN, or a logged-in `gh` on the host. Only `public_repo`
+      scope is needed: the recorded commands read the labels of three public
+      repositories, and write to nothing.
+    vars:
+      TAPE: '{{ index .MATCH 0 }}'
     env:
       GH_TOKEN:
         sh: echo "${GH_TOKEN:-$(gh auth token 2>/dev/null)}"
     preconditions:
-      - sh: test -n "${GH_TOKEN:-}" || gh auth token >/dev/null 2>&1
+      - sh: test -f docs/demo/{{.TAPE}}.tape
+        msg: "No such tape: docs/demo/{{.TAPE}}.tape"
+      # Only the tapes that reach the API need one; init records offline.
+      - sh: >-
+          ! grep -qE '^Type "labelsync (sync|export|groups|cache)' docs/demo/{{.TAPE}}.tape
+          || test -n "${GH_TOKEN:-}" || gh auth token >/dev/null 2>&1
         msg: |
-          No GitHub token. Export GH_TOKEN, or run `gh auth login` — the
-          recording reads labels from the API and labelsync has no anonymous
-          path.
+          No GitHub token. Export GH_TOKEN, or run `gh auth login` — this tape
+          reads labels from the API and labelsync has no anonymous path.
     cmds:
       - task: binary
       # Not routed through :dc:run:*, because a task's env: does not follow a
       # task call and compose interpolates GH_TOKEN from its own environment.
       - >-
         FIXUID=${FIXUID:-$(id -u)} FIXGID=${FIXGID:-$(id -g)}
-        docker compose run --rm vhs labelsync.tape
+        docker compose run --rm vhs {{.TAPE}}.tape

@@ -33,7 +33,7 @@ Run `task --list` for the full set. The ones used most:
 | `task docs:build`      | Build the site into `docs/public/`                                |
 | `task docs:mod:tidy`   | Tidy the Hugo module in `docs/`                                   |
 | `task release:dry-run` | Local goreleaser snapshot, no publishing                          |
-| `task demo:record`     | Re-record the demo GIF with VHS — needs a GitHub token            |
+| `task demo:record:*`   | Re-record one demo GIF with VHS: `:labelsync`, `:init`            |
 | `task dc:shell`        | Shell into the `go-builder` service                               |
 
 ### Local check sequence
