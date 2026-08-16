@@ -53,8 +53,9 @@ What it does, in one list:
   pull request that carried the old label still carries it under the new name.
 - **Never touches a repository no group selects.** That is the safety property the rest is built
   on.
-- **Runs in CI.** `--dry-run` exits `2` on drift, so a pull-request check fails when the committed
-  config and the live labels disagree; `--output=json` emits NDJSON with a stable `error_kind`.
+- **Runs in CI.** `--dry-run` sets the `2` bit on drift, so a pull-request check fails when the
+  committed config and the live labels disagree — test the bit, because a run that also skipped a
+  repository exits `6`. `--output=json` emits NDJSON with a stable `error_kind`.
 
 ## Install
 
@@ -82,16 +83,15 @@ labelsync export yourorg/yourrepo --out labels.yml
 ```
 
 The rest — describing the repositories, the dry run, the first apply — is in
-[Getting started](https://labelsync.specs.dev/docs/usage/getting-started/).
-
-Everything else — the configuration file, every command and flag, running in CI, and how it is
-built — is at **[labelsync.specs.dev](https://labelsync.specs.dev/)**.
+[Getting started](https://labelsync.specs.dev/docs/usage/getting-started/), and everything else —
+the configuration file, every command and flag, running in CI, and how it is built — is on the same
+site: **[labelsync.specs.dev](https://labelsync.specs.dev/)**.
 
 ## Contributing
 
 Every command runs through [Task](https://taskfile.dev), which wraps the Docker Compose services
-that pin the Go, golangci-lint, and Node versions — so a check runs the same way locally as it does
-in CI. Run `task --list` for the full set.
+that pin the Go, golangci-lint, Node, and Hugo versions — so a check runs the same way locally as it
+does in CI. Run `task --list` for the full set.
 
 ```sh
 task checkall   # tidy:check, lint, test, md:check — run this before opening a pull request
