@@ -96,6 +96,45 @@ does not, the release fails at `loading go mod information`, before it builds an
 sets `GOTOOLCHAIN=auto` so `go.mod` stays the only pin, matching the workflow, which resolves its
 toolchain from `go-version-file: go.mod`.
 
+## The documentation site
+
+This site is the other thing the repository publishes, and it ships on its own schedule: not on a
+tag, but on every push to `main` that touches `docs/**` or the workflow itself.
+[`.github/workflows/docs.yml`](https://github.com/specsnl/labelsync/blob/main/.github/workflows/docs.yml)
+runs `hugo --minify` in `docs/` and hands `docs/public/` to `actions/deploy-pages`. There is no
+`gh-pages` branch: Pages is configured with **GitHub Actions** as its source, so the artifact the
+workflow uploads *is* the deployment.
+
+Three details are load-bearing:
+
+- **`fetch-depth: 0`.** `hugo.toml` sets `enableGitInfo`, which dates each page from the last commit
+  that touched it. A shallow clone has no such commit for most files, and the dates silently
+  collapse onto the checkout.
+- **`concurrency: { group: pages, cancel-in-progress: false }`.** Pages allows one deployment at a
+  time. Cancelling in progress would abort a deploy midway and leave the live site on whatever the
+  half-uploaded artifact contained, so runs queue instead.
+- **The Hugo version is pinned to the `hugomods/hugo` tag in `compose.yml`.** Hextra is consumed as
+  a Hugo module and tracks Hugo's template API; a floating `latest` in CI means the site that
+  builds locally is not the site that builds on `main`. One version, two places, kept in step by
+  hand.
+
+The theme itself is cached across runs by `docs/go.sum`, which is why the module download does not
+show up in the build time of a typical docs change.
+
+### The custom domain
+
+`labelsync.specs.dev` is set in Settings → Pages rather than in a `CNAME` file under
+`docs/static/` — the same arrangement as `cli.specs.dev`. Keeping it in settings means a local
+`hugo` build never emits a `CNAME` that could disagree with what the repository is actually
+configured to serve.
+
+DNS is a `CNAME` at `labelsync.specs.dev` pointing at **`specsnl.github.io`** — the *account*, not
+the repository. A record pointing at `labelsync.github.io` resolves anyway, because `*.github.io`
+is a wildcard onto the same Pages edge addresses and the edge routes on the `Host` header, but
+GitHub's Pages DNS check flags it and it can block certificate issuance. Domain ownership is
+already proven by the `_github-pages-challenge-specsnl` TXT record on the `specs.dev` apex, which
+covers subdomains, so no per-repository verification step is needed.
+
 ---
 
 The design record this grew out of — including why a `gh` CLI extension was considered and rejected
