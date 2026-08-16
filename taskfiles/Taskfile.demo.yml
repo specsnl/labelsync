@@ -1,0 +1,55 @@
+# https://taskfile.dev
+version: "3"
+
+tasks:
+
+  binary:
+    desc: Build a Linux labelsync into dev/, for the recording container to run
+    internal: true
+    vars:
+      LABELSYNC_VERSION:
+        sh: described=$(git describe --tags --always --dirty="-dev" 2>/dev/null || echo "dev"); echo "${described#v}"
+    cmds:
+      # GOOS=linux regardless of the host, because the tape runs inside the vhs
+      # image. dest=dev keeps it clear of `task build`'s ./labelsync.
+      - >-
+        docker buildx bake --file compose.yml
+        --set "go-binary.output=type=local,dest=dev"
+        --set "go-binary.args.GOOS=linux"
+        --set "go-binary.args.GOARCH={{ARCH}}"
+        --set "go-binary.args.LABELSYNC_VERSION={{.LABELSYNC_VERSION}}"
+        go-binary
+
+  record:
+    desc: Re-record the demo GIF into docs/static/demo/
+    summary: |
+      Builds a Linux labelsync, then runs docs/demo/labelsync.tape in the pinned
+      vhs image, overwriting docs/static/demo/labelsync.gif.
+
+      The tape runs `labelsync groups` and `labelsync sync --dry-run` against
+      specsnl/php83, php84 and php85 — public repositories, and both commands
+      are read-only. Nothing in the recording writes to them.
+
+      Needs a GitHub token: GH_TOKEN, or a logged-in `gh` on the host, which is
+      where the token below is read from. Only `public_repo` scope is needed to
+      read the labels of three public repositories.
+
+      Re-recording produces a different GIF every time even with no change to
+      the tape, because the frames carry the live state of those repositories
+      and timing jitter. Commit it only when what it shows actually changed.
+    env:
+      GH_TOKEN:
+        sh: echo "${GH_TOKEN:-$(gh auth token 2>/dev/null)}"
+    preconditions:
+      - sh: test -n "${GH_TOKEN:-}" || gh auth token >/dev/null 2>&1
+        msg: |
+          No GitHub token. Export GH_TOKEN, or run `gh auth login` — the
+          recording reads labels from the API and labelsync has no anonymous
+          path.
+    cmds:
+      - task: binary
+      # Not routed through :dc:run:*, because a task's env: does not follow a
+      # task call and compose interpolates GH_TOKEN from its own environment.
+      - >-
+        FIXUID=${FIXUID:-$(id -u)} FIXGID=${FIXGID:-$(id -g)}
+        docker compose run --rm vhs labelsync.tape

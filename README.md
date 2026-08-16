@@ -7,6 +7,12 @@ resolves the desired set, computes an ordered plan, and then applies it — or p
 `--dry-run`. One `labels.yml` describes the labels you want; groups describe which repositories
 should have them. Running it twice changes nothing the second time.
 
+![labelsync selecting three repositories and printing the plan for them](./docs/static/demo/labelsync.gif)
+
+The command surface, then a real dry run against three public repositories — two renames each, one
+drifted description, and everything else already in sync. It writes nothing, and the exit code
+carries the `2` bit because it found drift.
+
 ```yaml
 # labels.yml
 version: 1

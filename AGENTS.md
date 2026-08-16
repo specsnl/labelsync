@@ -33,6 +33,7 @@ Run `task --list` for the full set. The ones used most:
 | `task docs:build`      | Build the site into `docs/public/`                                |
 | `task docs:mod:tidy`   | Tidy the Hugo module in `docs/`                                   |
 | `task release:dry-run` | Local goreleaser snapshot, no publishing                          |
+| `task demo:record`     | Re-record the demo GIF with VHS — needs a GitHub token            |
 | `task dc:shell`        | Shell into the `go-builder` service                               |
 
 ### Local check sequence
@@ -201,6 +202,7 @@ design section it grew out of.
 | [apply.md](./docs/content/docs/architecture/apply.md)                         | Executing a plan, prune, the budget check        |
 | [distribution.md](./docs/content/docs/architecture/distribution.md)           | The release pipeline, install channels, the cask |
 | [library-decisions.md](./docs/content/docs/architecture/library-decisions.md) | Every direct dependency, and the rejects         |
+| [demo.md](./docs/content/docs/architecture/demo.md)                           | The VHS tape, and how to re-record the GIF       |
 
 ### Usage — `docs/content/docs/usage/`
 
