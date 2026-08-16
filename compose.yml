@@ -102,6 +102,22 @@ services:
     ports:
       - "8080:80"
 
+  vhs:
+    profiles: ["demo"]
+    user: ${FIXUID:-1000}:${FIXGID:-1000}
+    # Latest version: https://github.com/charmbracelet/vhs/pkgs/container/vhs
+    image: ghcr.io/charmbracelet/vhs:v0.11.0
+    working_dir: /src/docs/demo
+    environment:
+      # The image expects root; ttyd needs a writable HOME under the host user.
+      HOME: /tmp
+      # Required even though the recording only reads: labelsync has no
+      # anonymous path, and `gh` is not installed here to resolve one.
+      GH_TOKEN: ${GH_TOKEN:-}
+    volumes:
+      - .:/src
+      - ./dev:/usr/local/bin:ro
+
   node:
     profiles: ["markdown"]
     user: ${FIXUID:-1000}:${FIXGID:-1000}

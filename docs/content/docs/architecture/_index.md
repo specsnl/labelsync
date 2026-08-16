@@ -26,5 +26,6 @@ lands, its behaviour moves from the design plan into this section.
 | [Apply]({{< ref "./apply.md" >}})                         | Executing a plan in append mode, partial runs, and the startup budget check       |
 | [Distribution]({{< ref "./distribution.md" >}})           | The release pipeline, the three install channels, and the Homebrew cask           |
 | [Library Decisions]({{< ref "./library-decisions.md" >}}) | Every direct dependency, what it is for, and what it was chosen over              |
+| [Demo Recording]({{< ref "./demo.md" >}})                 | The VHS tape behind the GIF, and how to re-record it                              |
 
 Pages are added here as the subsystems they document are implemented.

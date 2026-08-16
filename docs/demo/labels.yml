@@ -1,0 +1,51 @@
+# The config docs/demo/labelsync.tape records against.
+#
+# Not labelsync's own label catalogue — that is /labels.yml at the root of the
+# repository, and nothing here is applied to anything.
+
+version: 1
+
+# Named rather than selected with `org:` + an include glob: enumerating the
+# organisation makes `groups` print every rejected repository by name, private
+# ones included, into a recording that is published.
+groups:
+  php-images:
+    repos:
+      - specsnl/php83
+      - specsnl/php84
+      - specsnl/php85
+
+defaults:
+  groups: [php-images]
+
+renames:
+  - from: "bug"
+    to: "type: bug"
+
+  - from: "enhancement"
+    to: "type: feature"
+
+labels:
+  - name: "type: bug"
+    color: "d73a4a"
+    description: "Something isn't working"
+
+  - name: "type: feature"
+    color: "0e8a16"
+    description: "New functionality"
+
+  - name: "dependencies"
+    color: "0366d6"
+    description: "Pull requests that update a dependency file"
+
+  - name: "docker"
+    color: "21ceff"
+    description: "Pull requests that update Docker code"
+
+  - name: "github_actions"
+    color: "000000"
+    description: "Pull requests that update GitHub Actions code"
+
+  - name: "documentation"
+    color: "0075ca"
+    description: "Improvements or additions to documentation"

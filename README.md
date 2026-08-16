@@ -7,6 +7,12 @@ resolves the desired set, computes an ordered plan, and then applies it — or p
 `--dry-run`. One `labels.yml` describes the labels you want; groups describe which repositories
 should have them. Running it twice changes nothing the second time.
 
+![labelsync selecting three repositories and printing the plan for them](./docs/static/demo/labelsync.gif)
+
+The command surface, then a real dry run against three public repositories — two renames each, one
+drifted description, and everything else already in sync. It writes nothing, and the exit code
+carries the `2` bit because it found drift.
+
 ```yaml
 # labels.yml
 version: 1
@@ -47,8 +53,9 @@ What it does, in one list:
   pull request that carried the old label still carries it under the new name.
 - **Never touches a repository no group selects.** That is the safety property the rest is built
   on.
-- **Runs in CI.** `--dry-run` exits `2` on drift, so a pull-request check fails when the committed
-  config and the live labels disagree; `--output=json` emits NDJSON with a stable `error_kind`.
+- **Runs in CI.** `--dry-run` sets the `2` bit on drift, so a pull-request check fails when the
+  committed config and the live labels disagree — test the bit, because a run that also skipped a
+  repository exits `6`. `--output=json` emits NDJSON with a stable `error_kind`.
 
 ## Install
 
@@ -76,27 +83,15 @@ labelsync export yourorg/yourrepo --out labels.yml
 ```
 
 The rest — describing the repositories, the dry run, the first apply — is in
-[Getting started](./docs/content/docs/usage/getting-started.md).
-
-## Documentation
-
-| Page                                                             | Covers                                                                     |
-|------------------------------------------------------------------|----------------------------------------------------------------------------|
-| [Getting started](./docs/content/docs/usage/getting-started.md)  | From install to a first apply, in six steps                                |
-| [Configuration file](./docs/content/docs/usage/configuration.md) | `version`, `groups`, `defaults`, `renames`, `labels`, and what is rejected |
-| [Commands](./docs/content/docs/usage/commands.md)                | Every command and flag, with the rename and prune recipes                  |
-| [Running in CI](./docs/content/docs/usage/ci.md)                 | Exit codes, NDJSON, the workflow recipe, and the token CI needs            |
-| [Architecture](./docs/content/docs/architecture/_index.md)       | How it is built: packages, planner, palette, rate limiting, output         |
-| [Design plan](./docs/design.md)                                  | The design record — goals, prior art, the algorithm, milestones            |
-
-The architecture section describes **what has been built**; `docs/design.md` is the forward-looking
-plan, kept as the design record and linked from the pages that grew out of it.
+[Getting started](https://labelsync.specs.dev/docs/usage/getting-started/), and everything else —
+the configuration file, every command and flag, running in CI, and how it is built — is on the same
+site: **[labelsync.specs.dev](https://labelsync.specs.dev/)**.
 
 ## Contributing
 
 Every command runs through [Task](https://taskfile.dev), which wraps the Docker Compose services
-that pin the Go, golangci-lint, and Node versions — so a check runs the same way locally as it does
-in CI. Run `task --list` for the full set.
+that pin the Go, golangci-lint, Node, and Hugo versions — so a check runs the same way locally as it
+does in CI. Run `task --list` for the full set.
 
 ```sh
 task checkall   # tidy:check, lint, test, md:check — run this before opening a pull request

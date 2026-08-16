@@ -413,6 +413,11 @@ listed does not stop the run — the other groups still resolve, and the exit co
 Writes a starter `labels.yml` — a worked example with a group per source kind, `defaults.groups`,
 a rename, and four labels — into the working directory.
 
+![labelsync init writing a scaffolded labels.yml, and the config it contains](/demo/init.gif)
+
+The recording strips the file's header comments, which are two thirds of it — the scaffold itself
+explains each section in place.
+
 ```sh
 labelsync init                            # ./labels.yml
 labelsync --config ops init               # ops/labels.yml

@@ -7,6 +7,10 @@ Ten minutes from nothing to a set of repositories with the same labels. The orde
 one place, and it is the first step: **export before you write a config**, because descriptions are
 authoritative and a config written from scratch clears every description you already have.
 
+![labelsync selecting three repositories and printing the plan for them](/demo/labelsync.gif)
+
+That is steps 4 and 5 below, recorded against three public repositories.
+
 ## 1. Install
 
 ```sh
