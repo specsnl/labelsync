@@ -2,7 +2,7 @@
 # check=error=true
 
 # Latest version: https://hub.docker.com/_/golang/tags
-FROM golang:1.26.5-trixie AS base
+FROM --platform=$BUILDPLATFORM golang:1.26.5-trixie AS base
 
 WORKDIR /src
 
@@ -15,8 +15,6 @@ RUN apt-get update \
 
 FROM base AS builder-download
 
-ARG GOARCH=amd64
-
 COPY go.mod .
 COPY go.sum .
 
@@ -27,33 +25,40 @@ FROM builder-download AS build
 
 COPY . .
 
-ARG GOOS=linux
-ARG GOARCH=amd64
+ARG TARGETOS
+ARG TARGETARCH
+ARG GOOS
+ARG GOARCH
 ARG GO_MODULE=github.com/specsnl/labelsync
 ARG LABELSYNC_VERSION=dev
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     go generate \
-    && CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build \
+    && CGO_ENABLED=0 GOOS=${GOOS:-$TARGETOS} GOARCH=${GOARCH:-$TARGETARCH} go build \
         -trimpath \
         -tags netgo \
         -ldflags "-s -w -X ${GO_MODULE}/internal/cmd.Version=${LABELSYNC_VERSION}" -o ./labelsync
 
 # Latest version: https://hub.docker.com/_/debian/tags
-FROM debian:13.6-slim
+FROM debian:13.6-slim AS debian
 
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build /src/labelsync /usr/local/bin
 
-CMD ["labelsync"]
+USER 65534:65534
+
+ENTRYPOINT ["labelsync"]
 
 FROM scratch AS binary
 
-COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build /src/labelsync /
 COPY --from=build /etc/passwd /etc/passwd
 
-CMD ["/labelsync"]
+USER 65534:65534
+
+ENTRYPOINT ["/labelsync"]
 
 FROM scratch AS export
 
