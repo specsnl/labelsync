@@ -75,6 +75,9 @@ Or `go install github.com/specsnl/labelsync@latest`, or download a `tar.gz` for 
 the [releases page](https://github.com/specsnl/labelsync/releases) — Linux and macOS, amd64 and
 arm64.
 
+In a container, `docker run --rm ghcr.io/specsnl/labelsync:0.1 --help` — also published as
+`ghcr.io/specsnl/labelsync/debian` for when a step needs a shell.
+
 Building from a checkout needs nothing but Docker and [Task](https://taskfile.dev):
 
 ```sh
