@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"text/template"
 
 	"gopkg.in/yaml.v3"
 )
@@ -14,12 +15,14 @@ import (
 // so this stays a view of the promises rather than a second copy of the file.
 type releaseConfig struct {
 	Builds []struct {
+		Binary string   `yaml:"binary"`
 		Goos   []string `yaml:"goos"`
 		Goarch []string `yaml:"goarch"`
 		Env    []string `yaml:"env"`
 	} `yaml:"builds"`
 	HomebrewCasks []struct {
-		Name       string `yaml:"name"`
+		Name       string   `yaml:"name"`
+		Binaries   []string `yaml:"binaries"`
 		Repository struct {
 			Owner string `yaml:"owner"`
 			Name  string `yaml:"name"`
@@ -93,10 +96,6 @@ func TestRelease_CaskPublishesToTheTapWithItsOwnToken(t *testing.T) {
 
 	cask := casks[0]
 
-	if cask.Name != "labelsync" {
-		t.Errorf("cask name = %q, want %q — it is what `brew install` spells", cask.Name, "labelsync")
-	}
-
 	if got := cask.Repository.Owner + "/" + cask.Repository.Name; got != "specsnl/homebrew-tap" {
 		t.Errorf("tap = %q, want %q", got, "specsnl/homebrew-tap")
 	}
@@ -114,6 +113,60 @@ func TestRelease_CaskPublishesToTheTapWithItsOwnToken(t *testing.T) {
 
 	if !strings.Contains(string(workflow), secret) {
 		t.Errorf("the release workflow does not pass %s; the cask step would fail after the release is created", secret)
+	}
+}
+
+// A pre-release tag and a stable tag must write different files in the tap, or an
+// rc overwrites the one cask `brew upgrade` follows and hands everyone a release
+// candidate until the stable ships. The name templates on .Prerelease, which is
+// `rc.1` for v0.1.0-rc.1 and empty for v0.1.0.
+func TestRelease_PrereleasesGetTheirOwnCask(t *testing.T) {
+	casks := loadReleaseConfig(t).HomebrewCasks
+	if len(casks) != 1 {
+		t.Fatalf("want exactly one cask, got %d", len(casks))
+	}
+
+	tmpl, err := template.New("cask").Parse(casks[0].Name)
+	if err != nil {
+		t.Fatalf("parse the cask name as a template: %v", err)
+	}
+
+	for _, tc := range []struct {
+		tag        string
+		prerelease string
+		want       string
+	}{
+		{tag: "v0.9.9", prerelease: "", want: "labelsync"},
+		{tag: "v0.9.9-rc.1", prerelease: "rc.1", want: "labelsync@rc"},
+	} {
+		t.Run(tc.tag, func(t *testing.T) {
+			var got strings.Builder
+			if err := tmpl.Execute(&got, struct{ Prerelease string }{tc.prerelease}); err != nil {
+				t.Fatalf("render the cask name: %v", err)
+			}
+
+			if got.String() != tc.want {
+				t.Errorf("cask name for %s = %q, want %q", tc.tag, got.String(), tc.want)
+			}
+		})
+	}
+}
+
+// goreleaser defaults `binaries` to the cask *name*, so templating the name alone
+// emits `binary "labelsync@rc"` while the archive holds `labelsync` — a cask that
+// installs nothing, and nothing goes red until someone tries the rc.
+func TestRelease_CaskNamesTheBinaryInTheArchive(t *testing.T) {
+	cfg := loadReleaseConfig(t)
+
+	casks := cfg.HomebrewCasks
+	if len(casks) != 1 {
+		t.Fatalf("want exactly one cask, got %d", len(casks))
+	}
+
+	want := []string{cfg.Builds[0].Binary}
+
+	if !slices.Equal(casks[0].Binaries, want) {
+		t.Errorf("cask binaries = %v, want %v — what the archive actually contains", casks[0].Binaries, want)
 	}
 }
 

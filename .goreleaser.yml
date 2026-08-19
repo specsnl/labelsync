@@ -30,7 +30,8 @@ release:
   prerelease: auto
 
 homebrew_casks:
-  - name: labelsync
+  - name: 'labelsync{{ if .Prerelease }}@rc{{ end }}'
+    binaries: [labelsync]
     repository:
       owner: specsnl
       name: homebrew-tap
