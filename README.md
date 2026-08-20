@@ -78,6 +78,16 @@ arm64.
 In a container, `docker run --rm ghcr.io/specsnl/labelsync:0.1 --help` — also published as
 `ghcr.io/specsnl/labelsync/debian` for when a step needs a shell.
 
+Release candidates are a separate, opt-in cask, so `brew upgrade` never moves a stable install onto
+one:
+
+```sh
+brew install specsnl/tap/labelsync@rc
+```
+
+The two casks both provide a `labelsync` command and cannot be installed side by side — see
+[Install channels](https://labelsync.specs.dev/docs/architecture/distribution/#stable-and-rc-are-two-casks).
+
 Building from a checkout needs nothing but Docker and [Task](https://taskfile.dev):
 
 ```sh

@@ -24,6 +24,26 @@ Or `go install github.com/specsnl/labelsync@latest`, or a `tar.gz` from the
 labelsync version
 ```
 
+### Or track release candidates
+
+Pre-releases ship as their own cask, so a stable install never gets upgraded onto one by accident:
+
+```sh
+brew install specsnl/tap/labelsync@rc
+```
+
+Both casks provide a command named `labelsync`, so they cannot be installed side by side —
+installing one over the other fails at link time. Switching channels means uninstalling first:
+
+```sh
+brew uninstall labelsync@rc && brew install specsnl/tap/labelsync
+```
+
+The rc cask keeps pointing at the last release candidate until the next one is tagged, so a series
+that has already gone stable leaves an old rc behind. Prefer the stable cask unless you are
+deliberately testing what is next; the details are in
+[Distribution]({{< ref "../architecture/distribution.md#stable-and-rc-are-two-casks" >}}).
+
 ## 2. Have a token
 
 `labelsync` never asks for a credential. If you are logged in with `gh auth login`, you already
