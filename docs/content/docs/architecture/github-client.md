@@ -184,12 +184,13 @@ that synced nothing.
 
 ## Label operations
 
-`internal/github/labels.go` holds the four operations and nothing else. Every one goes through
+`internal/github/labels.go` holds the label operations and nothing else. Every one goes through
 `Client.Do`, so an inaccessible repository is recorded and skipped rather than ending the run.
 
 ```go
 labels, err := client.ListLabels(ctx, owner, repo)
 err = client.CreateLabel(ctx, owner, repo, github.Label{Name: "bug", Color: "d73a4a"})
+err = client.PatchLabel(ctx, owner, repo, "bug", github.LabelPatch{NewName: new("defect")})
 err = client.UpdateLabel(ctx, owner, repo, "bug", github.Label{Name: "defect", Color: "d73a4a"})
 err = client.DeleteLabel(ctx, owner, repo, "wontfix")
 ```
@@ -198,10 +199,22 @@ err = client.DeleteLabel(ctx, owner, repo, "wontfix")
 truncated list does not read as "truncated" — it reads as "these labels do not exist", and the plan
 would plan their creation on every run.
 
-`UpdateLabel` takes the **observed** remote name as its own argument and the desired label as the
-body, so the request stays consistent with the state the plan was computed against. The desired name
-always goes out as `new_name`, even when it is identical to the path, which keeps a rename and a
-recolour one code path instead of two.
+`PatchLabel` is the update, and it takes a **diff** rather than a whole label: `LabelPatch` mirrors
+the optional fields of an [`Action`]({{< ref "./plan.md#why-the-optional-fields-are-pointers" >}})
+field for field, so a nil one disappears from the body and is left alone while a pointer to `""`
+clears the description. It is what [`internal/apply`]({{< ref "./apply.md" >}}) calls for every
+update, because a recoloured squatter's action carries a colour and nothing else — filling the rest
+in would rename a label nobody configured.
+
+`UpdateLabel` is the whole-label form over the same request, for the one caller holding a complete
+desired label: the `422 already_exists` path, where a create is reclassified as an update and there
+is no observed label to diff against. It sends all three fields, because a description omitted from
+the body leaves a stale one in place on a label the config says has none.
+
+Both take the **observed** remote name as their own argument and send the change as the body, so the
+request stays consistent with the state the plan was computed against. The desired name always goes
+out as `new_name`, even when it is identical to the path, which keeps a rename and a recolour one
+code path instead of two.
 
 ### Reading many repositories at once
 
@@ -223,7 +236,8 @@ caller depends on:
 
 go-github's `EditLabel` sends the label's `name` field. GitHub's update endpoint reads **`new_name`**
 and ignores `name`, so `EditLabel` would return a cheerful `200` having renamed nothing and the
-drift would come back on every run. `UpdateLabel` therefore builds its own `PATCH` body:
+drift would come back on every run. `PatchLabel` therefore builds its own `PATCH` body — and the
+table below is `UpdateLabel`, the whole-label caller, which fills every field in:
 
 | Field         | Always sent | Why                                                                     |
 |---------------|-------------|-------------------------------------------------------------------------|

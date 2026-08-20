@@ -1,6 +1,6 @@
 ---
 title: Demo Recording
-weight: 12
+weight: 14
 ---
 
 The GIFs in the README and the usage pages are [VHS](https://github.com/charmbracelet/vhs)

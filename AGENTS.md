@@ -152,7 +152,7 @@ labelsync/
     ├── plan/                     # Compute() — pure, no network — plus Action, candidates, rendering
     ├── palette/                  # Allocate() and the deterministic HSL candidate grid
     ├── apply/                    # executes a Plan in append or prune mode
-    └── util/                     # exit/, output/, validate/
+    └── util/                     # exit/, output/
 ```
 
 The full structure, with a file-level breakdown, is in

@@ -126,7 +126,7 @@ An empty plan marshals as `{"repos":null}`: `Repos` carries no `omitempty`, and 
 ## `Compute`
 
 ```go
-func Compute(repo string, desired []config.Label, current []Label, mode Mode, renames []config.Rename) RepoPlan
+func Compute(repo config.Repo, desired []config.Label, current []Label, mode Mode, renames []config.Rename) RepoPlan
 ```
 
 Pure: no network, no clock, no randomness. The same input always produces the same actions, colours
@@ -143,8 +143,9 @@ design says elsewhere:
 - **`current []Label`, not `[]github.Label`.** The planner never imports `internal/github`, so the
   remote half of the input is a plain struct this package declares. Translating an API response into
   it is the caller's job, and the interesting logic stays testable with two slices and no HTTP mock.
-- **`repo string`.** Both `Action` and `RepoPlan` carry the repository, and a pure function has
-  nowhere else to get it from.
+- **`repo config.Repo`.** Both `Action` and `RepoPlan` carry the repository, and a pure function has
+  nowhere else to get it from. It is the whole `config.Repo` rather than the slug because
+  `RepoPlan.IssuesDisabled` is derived from `HasIssues`, which travels on the same value.
 - **Returns `RepoPlan`, not `Plan`.** `Compute` reconciles *one* repository. A run assembles the
   `Plan` from the per-repository results, in the order its repositories were resolved.
 

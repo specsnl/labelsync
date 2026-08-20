@@ -353,8 +353,8 @@ fight the per-repository grouping. But the columns still have to line up down th
 changes are unreadable.
 
 ```text
-+  create    type: bug       #d73a4a            "Something isn't working"
-~  recolour  wontfix         #d73a4a → #16a3c4  (displaced by "type: bug")
++  create    type: bug       #d73a4a  "Something isn't working"
+~  recolour  wontfix         #16a3c4  (displaced by "type: bug")
 =  ok        priority: high
 ```
 

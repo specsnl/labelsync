@@ -23,7 +23,7 @@ lands, its behaviour moves from the design plan into this section.
 | [Authentication]({{< ref "./authentication.md" >}})       | The four-step token resolution chain, and why tokens are redacted at the type     |
 | [GitHub Client]({{< ref "./github-client.md" >}})         | The go-github wrapper, the per-repository error taxonomy, and the `5xx` retry     |
 | [Rate Limiting]({{< ref "./rate-limiting.md" >}})         | The write bucket, header tracking, backoff, and the `--max-wait` ceiling          |
-| [Apply]({{< ref "./apply.md" >}})                         | Executing a plan in append mode, partial runs, and the startup budget check       |
+| [Apply]({{< ref "./apply.md" >}})                         | Executing a plan, the prune selection, partial runs, and the startup budget check |
 | [Distribution]({{< ref "./distribution.md" >}})           | The release pipeline, the three install channels, and the Homebrew cask           |
 | [Library Decisions]({{< ref "./library-decisions.md" >}}) | Every direct dependency, what it is for, and what it was chosen over              |
 | [Demo Recording]({{< ref "./demo.md" >}})                 | The VHS tape behind the GIF, and how to re-record it                              |

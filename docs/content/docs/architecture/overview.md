@@ -30,24 +30,29 @@ labelsync/
     ├── apply/                    # executes a Plan, in append or prune mode
     └── util/
         ├── exit/                 # exit codes
-        ├── output/               # Writer (pretty + NDJSON), table renderers, slog setup
-        └── validate/             # shared validators
+        └── output/               # Writer (pretty + NDJSON), table renderers, slog setup
 ```
 
-### Implemented so far
+The design plan sketched a `util/validate/` for shared validators. It was never built: every rule
+belongs to the package that has to establish it anyway — label and rename rules to
+`internal/config/validate.go`, the group graph to `resolve.go` — and a shared package would have
+been a second home for one of them.
 
-| Package                | Status  | Notes                                                                                                |
-|------------------------|---------|------------------------------------------------------------------------------------------------------|
-| `internal/labelsync`   | landed  | XDG config/cache paths, config file names, sentinels, `KindOf`                                       |
-| `internal/util/exit`   | landed  | The four exit codes — see [Output & Exit Codes]({{< ref "./output.md" >}})                           |
-| `internal/util/output` | landed  | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                                              |
-| `internal/cmd`         | landed  | Every command; `sync` applies in both modes, and owns the prune selection                            |
-| `internal/config`      | landed  | Load, validate, resolve, the `init` scaffold — see [Configuration]({{< ref "./configuration.md" >}}) |
-| `internal/palette`     | landed  | The candidate grid and `Allocate` — see [Colour Palette]({{< ref "./palette.md" >}})                 |
-| `internal/plan`        | landed  | `Action`, `Plan`, `Compute` in both modes, rendering — see [Planner]({{< ref "./plan.md" >}})        |
-| `internal/github`      | landed  | Auth, client, enumeration, labels, ETag cache, the limiter and its countdown                         |
-| `internal/apply`       | landed  | Creates, updates, recolours, and deletes under prune — see [Apply]({{< ref "./apply.md" >}})         |
-| everything else        | planned | See the milestone table in the design plan                                                           |
+### The packages
+
+Every package the design plan called for has landed.
+
+| Package                | Notes                                                                                                        |
+|------------------------|--------------------------------------------------------------------------------------------------------------|
+| `internal/labelsync`   | XDG config/cache paths, config file names, sentinels, `KindOf`                                               |
+| `internal/util/exit`   | The four exit codes — see [Output & Exit Codes]({{< ref "./output.md" >}})                                   |
+| `internal/util/output` | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                                                      |
+| `internal/cmd`         | Every command; `sync` applies in both modes, and owns the prune selection                                    |
+| `internal/config`      | Load, validate, resolve, export, the `init` scaffold — see [Configuration]({{< ref "./configuration.md" >}}) |
+| `internal/palette`     | The candidate grid and `Allocate` — see [Colour Palette]({{< ref "./palette.md" >}})                         |
+| `internal/plan`        | `Action`, `Plan`, `Compute` in both modes, rendering — see [Planner]({{< ref "./plan.md" >}})                |
+| `internal/github`      | Auth, client, enumeration, labels, ETag cache, the limiter and its countdown                                 |
+| `internal/apply`       | Creates, updates, recolours, and deletes under prune — see [Apply]({{< ref "./apply.md" >}})                 |
 
 ### Why `plan` and `palette` are isolated
 

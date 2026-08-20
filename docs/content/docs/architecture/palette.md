@@ -178,9 +178,11 @@ A tolerance of `1/255` is allowed on the lightness and saturation assertions: th
 24-bit hex moves each channel by up to one step, and HSL lightness is the midpoint of the largest
 and smallest channel. The tolerance absorbs rounding; it is not headroom for a wider grid.
 
-## Still to come
+## The caller
 
-Nothing in this package. What is missing is its caller: `internal/plan` decides *which* labels are
-displaced, processes them in ascending name order, grows the `used` set as it goes, and turns an
-`Exhausted` allocation into the warning that reaches the user. That is
+`internal/plan` is the only one. It decides *which* labels are displaced, processes them in
+ascending name order, grows the `used` set as it goes — which is what keeps the caller's contract —
+and turns an `Exhausted` allocation into the `Reason` that reaches the user. See
+[Planner § What it does]({{< ref "./plan.md#what-it-does" >}}), step 4, and the design record it
+grew out of,
 [design.md § Reconciliation algorithm](https://github.com/specsnl/labelsync/blob/main/docs/design.md#reconciliation-algorithm).

@@ -46,6 +46,7 @@ The kind strings are a **public contract**. They may be added to, never renamed.
 | `ErrNoToken`                  | `no_token`                   | The token resolution chain found no GitHub credential                          |
 | `ErrInteractiveRequired`      | `interactive_required`       | An operation needs a prompt but stdin is not a TTY                             |
 | `ErrRepoInaccessible`         | `repo_inaccessible`          | A repository is missing, archived, or outside the token's scopes               |
+| `ErrUnsafeCacheDir`           | `unsafe_cache_dir`           | A cache command was pointed at a directory outside the XDG cache home          |
 | `ErrMaxWaitExceeded`          | `max_wait_exceeded`          | A rate-limit backoff would sleep past the `--max-wait` ceiling                 |
 | `ErrBudgetExhausted`          | `budget_exhausted`           | An apply needs more requests than the rate-limit budget has left               |
 

@@ -10,12 +10,12 @@ behind the choices they describe lives in the [architecture section]({{< ref "..
 labelsync [flags] <command>
 ```
 
-| Page                                                   | Covers                                                                     |
-|--------------------------------------------------------|----------------------------------------------------------------------------|
-| [Getting started]({{< ref "./getting-started.md" >}})  | Install, export first, describe the repositories, dry run, apply           |
-| [Configuration file]({{< ref "./configuration.md" >}}) | `version`, `groups`, `defaults`, `renames`, `labels`, and what is rejected |
-| [Commands]({{< ref "./commands.md" >}})                | Every command and flag: `sync`, `export`, `groups`, `init`, `cache`        |
-| [Running in CI]({{< ref "./ci.md" >}})                 | Exit codes, NDJSON, the workflow recipe, and the token CI needs            |
+| Page                                                   | Covers                                                                         |
+|--------------------------------------------------------|--------------------------------------------------------------------------------|
+| [Getting started]({{< ref "./getting-started.md" >}})  | Install, export first, describe the repositories, dry run, apply               |
+| [Configuration file]({{< ref "./configuration.md" >}}) | `version`, `groups`, `defaults`, `renames`, `labels`, and what is rejected     |
+| [Commands]({{< ref "./commands.md" >}})                | Every command and flag: `sync`, `export`, `groups`, `init`, `cache`, `version` |
+| [Running in CI]({{< ref "./ci.md" >}})                 | Exit codes, NDJSON, the workflow recipe, and the token CI needs                |
 
 New to it? [Getting started]({{< ref "./getting-started.md" >}}) — and note the one thing that is not reversible
 by rerunning: descriptions in the config file are authoritative, so

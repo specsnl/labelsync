@@ -1,6 +1,6 @@
 ---
 title: Distribution
-weight: 11
+weight: 12
 ---
 
 A release is one git tag. Pushing `v1.2.3` runs

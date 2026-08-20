@@ -1,6 +1,6 @@
 ---
 title: Apply
-weight: 9
+weight: 11
 ---
 
 `internal/apply` executes a [`plan.Plan`]({{< ref "./plan.md" >}}). It is the only code in `labelsync` that writes
