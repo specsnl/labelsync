@@ -408,8 +408,8 @@ listed does not stop the run — the other groups still resolve, and the exit co
 
 ### `labelsync init`
 
-Writes a starter `labels.yml` — a worked example with a group per source kind, `defaults.groups`,
-a rename, and four labels — into the working directory.
+Writes a starter `labels.yml` — a worked example with an `org` group and a `repos` group,
+`defaults.groups`, a rename, and four labels — into the working directory.
 
 ![labelsync init writing a scaffolded labels.yml, and the config it contains](/demo/init.gif)
 

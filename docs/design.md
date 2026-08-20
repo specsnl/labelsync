@@ -280,7 +280,7 @@ Pure function, no I/O:
 
 ```go
 // internal/plan
-func Compute(repo string, desired []config.Label, current []plan.Label, mode Mode, renames []config.Rename) RepoPlan
+func Compute(repo config.Repo, desired []config.Label, current []plan.Label, mode Mode, renames []config.Rename) RepoPlan
 ```
 
 **Landed** ([#26](https://github.com/specsnl/labelsync/issues/26),
@@ -958,6 +958,7 @@ The kind strings are a public contract. They may be added to, never renamed.
 | `ErrNoToken`                  | `no_token`                   |
 | `ErrInteractiveRequired`      | `interactive_required`       |
 | `ErrRepoInaccessible`         | `repo_inaccessible`          |
+| `ErrUnsafeCacheDir`           | `unsafe_cache_dir`           |
 | `ErrMaxWaitExceeded`          | `max_wait_exceeded`          |
 | `ErrBudgetExhausted`          | `budget_exhausted`           |
 

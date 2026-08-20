@@ -18,20 +18,20 @@ Two rules decide most of it:
 
 ## The direct dependencies
 
-| Package                                 | Purpose                                       | Where it is used                    | Shared with specs-cli                            |
-|-----------------------------------------|-----------------------------------------------|-------------------------------------|--------------------------------------------------|
-| `github.com/spf13/cobra`                | The command tree                              | `internal/cmd`                      | yes                                              |
-| `gopkg.in/yaml.v3`                      | Config parsing and export rendering           | `internal/config`                   | yes                                              |
-| `charm.land/huh/v2`                     | The prune `MultiSelect`                       | `internal/cmd/prune.go`             | yes                                              |
-| `charm.land/lipgloss/v2`                | Diff colouring, tables, the countdown         | `internal/util/output`              | yes                                              |
-| `github.com/adrg/xdg`                   | Config and cache directory resolution         | `internal/labelsync`                | yes                                              |
-| `github.com/danwakefield/fnmatch`       | Repository `include` / `exclude` globs        | `internal/config/resolve.go`        | yes                                              |
-| `golang.org/x/sync`                     | `errgroup` for the bounded parallel reads     | `internal/github`                   | yes                                              |
-| `github.com/google/go-github/v76`       | The GitHub REST client                        | `internal/github`                   | **new**                                          |
-| `github.com/cli/go-gh/v2`               | Token resolution, and nothing else            | `internal/github/auth.go`           | **new**                                          |
-| `github.com/lucasb-eyer/go-colorful`    | CIELAB and CIEDE2000 for colour distance      | `internal/palette`, `internal/plan` | **new (direct)** — already indirect via lipgloss |
-| `github.com/charmbracelet/colorprofile` | Downsampling colour per output stream         | `internal/util/output`              | **new (direct)** — already indirect via lipgloss |
-| `github.com/charmbracelet/x/term`       | `IsTerminal`, for the decisions colour cannot | `internal/util/output/tty.go`       | **new (direct)** — already indirect via lipgloss |
+| Package                                 | Purpose                                       | Where it is used                                                     | Shared with specs-cli                            |
+|-----------------------------------------|-----------------------------------------------|----------------------------------------------------------------------|--------------------------------------------------|
+| `github.com/spf13/cobra`                | The command tree                              | `internal/cmd`                                                       | yes                                              |
+| `gopkg.in/yaml.v3`                      | Config parsing and export rendering           | `internal/config`                                                    | yes                                              |
+| `charm.land/huh/v2`                     | The prune `MultiSelect`                       | `internal/cmd/prune.go`                                              | yes                                              |
+| `charm.land/lipgloss/v2`                | Diff colouring, tables, the countdown         | `internal/util/output`, `internal/plan`, `internal/github/ratelimit` | yes                                              |
+| `github.com/adrg/xdg`                   | Config and cache directory resolution         | `internal/labelsync`                                                 | yes                                              |
+| `github.com/danwakefield/fnmatch`       | Repository `include` / `exclude` globs        | `internal/config/resolve.go`                                         | yes                                              |
+| `golang.org/x/sync`                     | `errgroup` for the bounded parallel reads     | `internal/github`                                                    | yes                                              |
+| `github.com/google/go-github/v76`       | The GitHub REST client                        | `internal/github`                                                    | **new**                                          |
+| `github.com/cli/go-gh/v2`               | Token resolution, and nothing else            | `internal/github/auth.go`                                            | **new**                                          |
+| `github.com/lucasb-eyer/go-colorful`    | CIELAB and CIEDE2000 for colour distance      | `internal/palette`, `internal/plan`                                  | **new (direct)** — already indirect via lipgloss |
+| `github.com/charmbracelet/colorprofile` | Downsampling colour per output stream         | `internal/util/output`                                               | **new (direct)** — already indirect via lipgloss |
+| `github.com/charmbracelet/x/term`       | `IsTerminal`, for the decisions colour cannot | `internal/util/output/tty.go`                                        | **new (direct)** — already indirect via lipgloss |
 
 `log/slog` carries debug diagnostics, from the standard library — see
 [Output § Debug logging]({{< ref "./output.md#debug-logging" >}}).

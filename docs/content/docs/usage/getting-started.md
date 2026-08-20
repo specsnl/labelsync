@@ -53,9 +53,9 @@ complete, valid config file — sorted by name, normalised the way the loader no
 carrying a `groups:` section naming the repository it came from with a `defaults.groups` pointing
 at it. It works as it lands.
 
-Starting from nothing instead? `labelsync init` writes a worked example with a group per source
-kind, a rename, and four labels. It is the right start only for repositories that have no labels
-worth keeping.
+Starting from nothing instead? `labelsync init` writes a worked example with an `org` group and a
+`repos` group, a rename, and four labels. It is the right start only for repositories that have no
+labels worth keeping.
 
 > One thing an export can produce that a config cannot contain: two labels sharing a colour.
 > Colours must be unique across a config file. The export says so in a comment and warns on stderr,

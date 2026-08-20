@@ -3,16 +3,16 @@ title: Configuration
 weight: 6
 ---
 
-`internal/config` turns a YAML file into the structs every later stage reads. It is deliberately
-three separate concerns in three files, all of which have landed:
+`internal/config` turns a YAML file into the structs every later stage reads. It is deliberately one
+concern per file:
 
-| File          | Concern                                            | Status |
-|---------------|----------------------------------------------------|--------|
-| `config.go`   | Find the file, parse it, normalise it              | landed |
-| `validate.go` | The rules in the design's validation table         | landed |
-| `resolve.go`  | Groups → selectors, and every rule about the graph | landed |
-| `scaffold.go` | The starter config `labelsync init` writes         | landed |
-| `export.go`   | Labels back out as a config file                   | landed |
+| File          | Concern                                            |
+|---------------|----------------------------------------------------|
+| `config.go`   | Find the file, parse it, normalise it              |
+| `validate.go` | The rules in the design's validation table         |
+| `resolve.go`  | Groups → selectors, and every rule about the graph |
+| `scaffold.go` | The starter config `labelsync init` writes         |
+| `export.go`   | Labels back out as a config file                   |
 
 Nothing in the package touches the network, and nothing in `config.go` rejects a config: an
 invalid colour parses into the struct exactly as written and is `validate.go`'s answer to give.
@@ -226,10 +226,10 @@ The starter config `labelsync init` writes lives here, in `scaffold.yml`, embedd
 `Scaffold` returns a copy. The embedded bytes are package state for the life of the process, and a
 caller that sliced into them would change what every later call returns.
 
-The file is a worked example rather than the smallest thing that validates: a group per source
-kind, `defaults.groups`, a rename, and a label that names groups of its own to contrast with the
-default. A test asserts each of those is still in there, because "the scaffold demonstrates the
-sections" is a claim the documentation makes and an edit could quietly withdraw.
+The file is a worked example rather than the smallest thing that validates: an `org` group and a
+`repos` group, `defaults.groups`, a rename, and a label that names groups of its own to contrast
+with the default. A test asserts each of those is still in there, because "the scaffold
+demonstrates the sections" is a claim the documentation makes and an edit could quietly withdraw.
 
 ## Export
 
