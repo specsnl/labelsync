@@ -165,6 +165,44 @@ jobs:
 - **`permissions: contents: read`** is all the job needs from the automatic token; every write goes
   through the PAT.
 
+### From a container image
+
+The alternative to installing a toolchain is pulling one. Two images are published to GHCR on every
+release:
+
+| Image                              | Contents                                                                  |
+|------------------------------------|---------------------------------------------------------------------------|
+| `ghcr.io/specsnl/labelsync`        | `scratch` — the binary and a CA bundle, nothing else                      |
+| `ghcr.io/specsnl/labelsync/debian` | `debian:13.6-slim` — has a shell, so a step can run more than one command |
+
+Both are manifest lists over `linux/amd64` and `linux/arm64`, and both run as uid `65534` with the
+binary as their entrypoint, so arguments append:
+
+```yaml
+      - name: Check for drift
+        if: github.event_name == 'pull_request'
+        run: |
+          docker run --rm \
+            -e GH_TOKEN \
+            -v "$PWD:/work" -w /work \
+            ghcr.io/specsnl/labelsync:0.1 sync --dry-run --output=json
+        env:
+          GH_TOKEN: ${{ secrets.LABELSYNC_TOKEN }}
+```
+
+**Pin to a moving minor tag.** `:0.1` is the narrowest tag that still picks up patch releases — a
+fixed `:0.1.0` never moves again, and pinning it is how a job ends up two years behind. There is
+deliberately no `:0` while labelsync is pre-1.0, because semver lets a `0.x` bump break; from 1.0.0
+on, `:1` becomes the tag to pin. `:latest` exists but is the wrong choice for CI, for the usual
+reason: it changes under you across a major version.
+
+A pre-release publishes only its own exact tag — `:0.2.0-rc.1` — and moves neither `:latest` nor any
+minor tag, so a pinned job never wakes up on a release candidate.
+
+The container needs the config file, which is why the working directory is mounted; `--config` takes
+a path if it lives somewhere else. Everything on this page applies unchanged — the exit codes are the
+container's exit codes, and `--output=json` still writes NDJSON to stdout.
+
 ### Not a required status check
 
 Two things keep this job off the branch protection list: `paths:` means it does not run on most pull
@@ -213,7 +251,8 @@ guard against a job billing an hour of runner time to a countdown — see
 
 ## Other CI systems
 
-Nothing here is Actions-specific. Any runner works the same way: install the binary, put a token in
-`GH_TOKEN`, run `labelsync sync --dry-run --output=json` for a check and `labelsync sync` for an
-apply, and branch on the exit code. The only Actions-specific note on this page is the one about
+Nothing here is Actions-specific. Any runner works the same way: install the binary — or pull
+[the image](#from-a-container-image), which is the shorter route on a runner that already has docker —
+put a token in `GH_TOKEN`, run `labelsync sync --dry-run --output=json` for a check and `labelsync
+sync` for an apply, and branch on the exit code. The only Actions-specific note on this page is the one about
 its injected `GITHUB_TOKEN`, which no other system has.

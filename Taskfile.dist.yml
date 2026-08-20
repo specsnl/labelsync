@@ -11,6 +11,15 @@ includes:
 
 silent: true
 
+vars:
+  # The leading v is stripped so a local build and a release agree on how a
+  # version is spelled: goreleaser injects {{ .Version }}, and the release
+  # workflow hands the images metadata-action's version output — both of which
+  # are the tag without it. The fallback is captured before the strip so that a
+  # tree git cannot describe at all yields "dev" rather than an empty version.
+  LABELSYNC_VERSION:
+    sh: described=$(git describe --tags --always --dirty="-dev" 2>/dev/null || echo "dev"); echo "${described#v}"
+
 # env:
 #   BUILDKIT_PROGRESS: plain
 
@@ -63,13 +72,6 @@ tasks:
 
   build:
     desc: Build Labelsync
-    vars:
-      # The leading v is stripped so a local build and a release agree on how a
-      # version is spelled: goreleaser injects {{ .Version }}, which is the tag
-      # without it. The fallback is captured before the strip so that a tree git
-      # cannot describe at all yields "dev" rather than an empty version.
-      LABELSYNC_VERSION:
-        sh: described=$(git describe --tags --always --dirty="-dev" 2>/dev/null || echo "dev"); echo "${described#v}"
     cmds:
       - task: lint
       - >-
@@ -79,6 +81,42 @@ tasks:
         --set "go-binary.args.GOOS={{OS}}"
         --set "go-binary.args.LABELSYNC_VERSION={{.LABELSYNC_VERSION}}"
         go-binary
+
+  images:
+    desc: Build both container images locally, tagged :dev
+    summary: |
+      Builds the two images the release workflow publishes, from the same
+      Dockerfile stages, and loads them into the local docker:
+
+        ghcr.io/specsnl/labelsync:dev          the scratch image, `binary` stage
+        ghcr.io/specsnl/labelsync/debian:dev   the debian image, `debian` stage
+
+      `task release:dry-run` cannot do this: the goreleaser service has no
+      docker socket, and the images do not go through goreleaser at all.
+
+      Host platform only. --load writes into the docker image store, which holds
+      one platform per tag, so the multi-platform manifest list is the one part
+      of the published result that only a real release produces.
+    cmds:
+      - task: image
+        vars: { TARGET: binary, IMAGE: "ghcr.io/specsnl/labelsync" }
+      - task: image
+        vars: { TARGET: debian, IMAGE: "ghcr.io/specsnl/labelsync/debian" }
+      - docker run --rm ghcr.io/specsnl/labelsync:dev version
+      - docker run --rm ghcr.io/specsnl/labelsync/debian:dev version
+
+  image:
+    desc: Build one container image locally
+    internal: true
+    cmds:
+      - >-
+        docker buildx build .
+        --target {{ .TARGET }}
+        --tag {{ .IMAGE }}:dev
+        --build-arg LABELSYNC_VERSION={{ .LABELSYNC_VERSION }}
+        --load
+    requires:
+      vars: [TARGET, IMAGE]
 
   tidy:check:
     desc: Check that go.mod and go.sum are tidy
