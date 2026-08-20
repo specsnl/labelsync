@@ -1,6 +1,6 @@
 ---
 title: Library Decisions
-weight: 11
+weight: 13
 ---
 
 Every direct dependency, what it does, and — where the choice was not obvious — what it was chosen

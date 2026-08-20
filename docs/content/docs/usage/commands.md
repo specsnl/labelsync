@@ -17,18 +17,16 @@ labelsync [flags] <command>
 
 Every command accepts these.
 
-| Flag             | Default             | What it does                                                |
-|------------------|---------------------|-------------------------------------------------------------|
-| `-c`, `--config` | [search order][cfg] | Path to the config file, or a directory to search           |
-| `--token`        | resolved, below     | GitHub token (discouraged — prefer `GH_TOKEN`)              |
-| `-o`, `--output` | `pretty`            | Output format: `pretty` or `json`                           |
-| `--debug`        | off                 | Write debug diagnostics to stderr                           |
-| `--no-cache`     | off                 | Ignore the ETag cache for this run                          |
-| `--concurrency`  | `8`                 | Maximum repositories read in parallel                       |
-| `--write-rate`   | `70`                | Maximum label writes per minute                             |
-| `--max-wait`     | `15m`               | Longest a rate-limit backoff may sleep before the run fails |
-
-[cfg]: ./configuration.md#where-the-file-is-found
+| Flag             | Default                                                                  | What it does                                                |
+|------------------|--------------------------------------------------------------------------|-------------------------------------------------------------|
+| `-c`, `--config` | [search order]({{< ref "./configuration.md#where-the-file-is-found" >}}) | Path to the config file, or a directory to search           |
+| `--token`        | resolved, below                                                          | GitHub token (discouraged — prefer `GH_TOKEN`)              |
+| `-o`, `--output` | `pretty`                                                                 | Output format: `pretty` or `json`                           |
+| `--debug`        | off                                                                      | Write debug diagnostics to stderr                           |
+| `--no-cache`     | off                                                                      | Ignore the ETag cache for this run                          |
+| `--concurrency`  | `8`                                                                      | Maximum repositories read in parallel                       |
+| `--write-rate`   | `70`                                                                     | Maximum label writes per minute                             |
+| `--max-wait`     | `15m`                                                                    | Longest a rate-limit backoff may sleep before the run fails |
 
 A value the flags cannot honour is rejected before any work starts: an `--output` that is neither
 format, a `--concurrency` or `--write-rate` below `1`, a negative `--max-wait`.
