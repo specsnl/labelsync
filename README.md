@@ -79,7 +79,8 @@ In a container, `docker run --rm ghcr.io/specsnl/labelsync:0.1 --help` — also 
 `ghcr.io/specsnl/labelsync/debian` for when a step needs a shell.
 
 Release candidates are a separate, opt-in cask, so `brew upgrade` never moves a stable install onto
-one:
+one — while the rc cask itself tracks the leading edge and upgrades onto a stable release once it
+ships:
 
 ```sh
 brew install specsnl/tap/labelsync@rc

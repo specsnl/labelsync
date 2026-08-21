@@ -32,16 +32,18 @@ Pre-releases ship as their own cask, so a stable install never gets upgraded ont
 brew install specsnl/tap/labelsync@rc
 ```
 
+That cask follows the leading edge — whatever the most recent tag is, candidate or stable. `brew
+upgrade` therefore moves you off a candidate and onto the stable release that supersedes it, so
+opting in means seeing what is next early, not being left behind on it.
+
 Both casks provide a command named `labelsync`, so they cannot be installed side by side —
-installing one over the other fails at link time. Switching channels means uninstalling first:
+installing one over the other fails at link time. Switching back means uninstalling first:
 
 ```sh
 brew uninstall labelsync@rc && brew install specsnl/tap/labelsync
 ```
 
-The rc cask keeps pointing at the last release candidate until the next one is tagged, so a series
-that has already gone stable leaves an old rc behind. Prefer the stable cask unless you are
-deliberately testing what is next; the details are in
+Prefer the stable cask unless you are deliberately testing what is next; the details are in
 [Distribution]({{< ref "../architecture/distribution.md#stable-and-rc-are-two-casks" >}}).
 
 ## 2. Have a token
