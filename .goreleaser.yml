@@ -30,7 +30,8 @@ release:
   prerelease: auto
 
 homebrew_casks:
-  - name: 'labelsync{{ if .Prerelease }}@rc{{ end }}'
+  - &cask
+    name: labelsync@rc
     binaries: [labelsync]
     repository:
       owner: specsnl
@@ -45,3 +46,6 @@ homebrew_casks:
           if OS.mac?
             system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/labelsync"]
           end
+  - <<: *cask
+    name: labelsync
+    skip_upload: auto

@@ -46,7 +46,8 @@ And two container images, each a manifest list over `linux/amd64` and `linux/arm
 | Container | `docker run ghcr.io/specsnl/labelsync:1.2.3`     | the tag               |
 | Go        | `go install github.com/specsnl/labelsync@latest` | `dev`                 |
 
-Homebrew has a fourth, opt-in entry point: `brew install specsnl/tap/labelsync@rc` — see
+Homebrew has a fourth, opt-in entry point: `brew install specsnl/tap/labelsync@rc`, which tracks
+the most recent tag whether it is stable or not — see
 [Stable and rc are two casks](#stable-and-rc-are-two-casks).
 
 `go install` compiles from source with no `-ldflags`, so its binaries report `dev` — that is the
@@ -81,30 +82,43 @@ than the most recent *stable* one — and `brew upgrade` would move everyone ont
 the moment one is tagged, without anyone opting in. The GitHub release is flagged pre-release
 correctly throughout; Homebrew never consults that, only the cask.
 
-The cask `name` therefore templates on `.Prerelease`, which holds `rc.1` for `v0.1.0-rc.1` and is
-empty for `v0.1.0`. Each tag writes its own file, and neither channel can overwrite the other:
+There are therefore two static `homebrew_casks` entries, one per token, and which tags each one
+publishes on is `skip_upload` and nothing else:
 
-| Tag           | Cask file               | Token          | Install                                 |
-|---------------|-------------------------|----------------|-----------------------------------------|
-| `v0.9.9`      | `Casks/labelsync.rb`    | `labelsync`    | `brew install specsnl/tap/labelsync`    |
-| `v0.9.9-rc.1` | `Casks/labelsync@rc.rb` | `labelsync@rc` | `brew install specsnl/tap/labelsync@rc` |
+| Tag           | `Casks/labelsync.rb` | `Casks/labelsync@rc.rb` |
+|---------------|----------------------|-------------------------|
+| `v0.9.9-rc.1` | untouched            | `0.9.9-rc.1`            |
+| `v0.9.9`      | `0.9.9`              | `0.9.9`                 |
 
-`binaries: [labelsync]` on the same entry is load-bearing. goreleaser defaults `binaries` to the
-cask *name*, so templating the name alone emits `binary "labelsync@rc"` while the archive contains
+`skip_upload: auto` on the stable entry skips it for any tag carrying a semver pre-release
+component, which is exactly the stable/rc split. It is evaluated per entry, so the rc entry — which
+sets no `skip_upload` at all — publishes unconditionally. **`@rc` means the leading edge, not the rc
+series**: a stable tag writes both files at the same version, and because Homebrew's `Version`
+comparison ranks an `rc` token below a bare version, `brew upgrade` moves someone on `@rc` from a
+candidate onto the stable that supersedes it rather than seeing nothing newer for the whole gap
+between series. Any pre-release token lands there, not just `rc.N` — a `-beta.1` tag publishes to
+`@rc` too, which under two static entries is the design rather than an accident of a template.
+
+The shared body — `repository`, `homepage`, `description`, `directory`, `hooks` — is a YAML anchor on
+the rc entry that the stable entry merges, so the two cannot drift; the entry order is what the
+anchor needs, since goreleaser rejects an unknown top-level key to hang one on. Stable overrides only
+`name` and adds `skip_upload`.
+
+`binaries: [labelsync]` on both entries is load-bearing. goreleaser defaults `binaries` to the cask
+*name*, so the rc entry would otherwise emit `binary "labelsync@rc"` while the archive contains
 `labelsync` — a cask that installs nothing, and one that contradicts its own quarantine hook, which
 is hardcoded to `#{staged_path}/labelsync`. Nothing goes red until someone tries to install an rc,
-which is why `release_test.go` asserts both the rendered names and the `binaries` list.
+which is why `release_test.go` reads both entries back and asserts the tap coordinates, the
+`binaries` list, the quarantine hook, and the `skip_upload` split — the last being the whole channel
+policy, and invisible until a real tag.
 
 **The two casks cannot coexist.** Both link a command named `labelsync`, so installing
 `labelsync@rc` replaces a stable `labelsync` rather than sitting beside it — the second install
 fails at link time. Homebrew's answer is `conflicts_with`, but goreleaser's `conflicts[].cask` is
-not templateable, so one templated entry cannot name the right counterpart on each side; giving the
-rc its own command name would need `binary "labelsync", target: "labelsyncrc"`, which goreleaser
-cannot emit at all. Going back to stable is `brew uninstall labelsync@rc && brew install labelsync`.
-
-**The rc cask goes stale and stays.** After a stable ships, `Casks/labelsync@rc.rb` still points at
-the last rc until the next one overwrites it. That is what a channel means — but it also means
-installing it long after a series has ended gets something old. Pruning it is manual.
+not templateable, so neither entry can name its counterpart; giving the rc its own command name
+would need `binary "labelsync", target: "labelsyncrc"`, which goreleaser cannot emit at all. Going
+back to stable is `brew uninstall labelsync@rc && brew install labelsync` — less pressing than it
+was, since staying on `@rc` no longer means missing stable releases.
 
 Writing to another repository needs a token that `secrets.GITHUB_TOKEN` cannot be: that one is
 scoped to this repository alone. `HOMEBREW_TAP_GITHUB_TOKEN` is an organisation secret with write
@@ -235,12 +249,14 @@ publishing:
 task dc:run:goreleaser SUB_CMD="release --clean --skip=publish,validate,announce"
 ```
 
-That is also the only way to see which cask a channel produces: tag the scratch clone `v0.9.9-rc.1`
-and the rendered file is `dist/homebrew/Casks/labelsync@rc.rb`; tag it `v0.9.9` and it is
-`labelsync.rb`. A snapshot has no pre-release component, so it always renders the stable name.
+Both cask files are rendered either way — `skip_upload` gates the publishing pipe, not the
+rendering, so `dist/homebrew/Casks/` holds `labelsync.rb` and `labelsync@rc.rb` even for a
+pre-release tag. What a local run proves about the tap is that each file names the right version and
+the right `binary`; **which of the two a tag actually commits, nothing local shows** — only a real
+tag's workflow log, where a stable tag lands two commits in the tap and a pre-release lands one.
 
-Two things the local run cannot tell you, both because they only exist at publish time: whether
-`HOMEBREW_TAP_GITHUB_TOKEN` is present, and whether the tap accepts the commit.
+Three things the local run cannot tell you, all because they only exist at publish time: which casks
+are uploaded, whether `HOMEBREW_TAP_GITHUB_TOKEN` is present, and whether the tap accepts the commit.
 
 The images are not part of that: they do not go through goreleaser, and the `goreleaser` service has
 no docker socket to build them with. `task images` is their local equivalent — it builds both stages,
