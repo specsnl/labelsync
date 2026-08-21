@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"text/template"
 
 	"gopkg.in/yaml.v3"
 )
@@ -24,20 +23,26 @@ type releaseConfig struct {
 		Flags   []string `yaml:"flags"`
 		Ldflags []string `yaml:"ldflags"`
 	} `yaml:"builds"`
-	HomebrewCasks []struct {
-		Name       string   `yaml:"name"`
-		Binaries   []string `yaml:"binaries"`
-		Repository struct {
-			Owner string `yaml:"owner"`
-			Name  string `yaml:"name"`
-			Token string `yaml:"token"`
-		} `yaml:"repository"`
-		Hooks struct {
-			Post struct {
-				Install string `yaml:"install"`
-			} `yaml:"post"`
-		} `yaml:"hooks"`
-	} `yaml:"homebrew_casks"`
+	HomebrewCasks []releaseCask `yaml:"homebrew_casks"`
+}
+
+// SkipUpload is `any` because goreleaser types it as `string | boolean`: the
+// value in use is the string `auto`, and what the tests read is whether the key
+// is there at all, which a typed field could not express.
+type releaseCask struct {
+	Name       string   `yaml:"name"`
+	Binaries   []string `yaml:"binaries"`
+	SkipUpload any      `yaml:"skip_upload"`
+	Repository struct {
+		Owner string `yaml:"owner"`
+		Name  string `yaml:"name"`
+		Token string `yaml:"token"`
+	} `yaml:"repository"`
+	Hooks struct {
+		Post struct {
+			Install string `yaml:"install"`
+		} `yaml:"post"`
+	} `yaml:"hooks"`
 }
 
 func loadReleaseConfig(t *testing.T) releaseConfig {
@@ -59,6 +64,36 @@ func loadReleaseConfig(t *testing.T) releaseConfig {
 
 	return cfg
 }
+
+// The two cask entries by name. Everything except the name and `skip_upload`
+// comes from a YAML anchor on the rc entry, so the assertions below read both
+// entries back rather than trusting the merge to have carried anything.
+func loadCasks(t *testing.T) map[string]releaseCask {
+	t.Helper()
+
+	byName := map[string]releaseCask{}
+
+	for _, cask := range loadReleaseConfig(t).HomebrewCasks {
+		byName[cask.Name] = cask
+	}
+
+	for _, name := range []string{caskStable, caskRC} {
+		if _, ok := byName[name]; !ok {
+			t.Fatalf("no %q cask entry; the entries are %v", name, slices.Sorted(maps.Keys(byName)))
+		}
+	}
+
+	if len(byName) != 2 {
+		t.Fatalf("want exactly the two cask entries, got %v", slices.Sorted(maps.Keys(byName)))
+	}
+
+	return byName
+}
+
+const (
+	caskStable = "labelsync"
+	caskRC     = "labelsync@rc"
+)
 
 // The platform matrix is what the README and the releases page promise: Linux and
 // macOS, amd64 and arm64. Dropping one is invisible in review — the release still
@@ -93,21 +128,16 @@ func TestRelease_BinariesAreStaticallyLinked(t *testing.T) {
 // secrets.GITHUB_TOKEN cannot be. Nothing fails until the last step of a real
 // release if this stops naming the secret the workflow passes in.
 func TestRelease_CaskPublishesToTheTapWithItsOwnToken(t *testing.T) {
-	casks := loadReleaseConfig(t).HomebrewCasks
-	if len(casks) != 1 {
-		t.Fatalf("want exactly one cask, got %d", len(casks))
-	}
-
-	cask := casks[0]
-
-	if got := cask.Repository.Owner + "/" + cask.Repository.Name; got != "specsnl/homebrew-tap" {
-		t.Errorf("tap = %q, want %q", got, "specsnl/homebrew-tap")
-	}
-
 	const secret = "HOMEBREW_TAP_GITHUB_TOKEN"
 
-	if !strings.Contains(cask.Repository.Token, secret) {
-		t.Errorf("cask token = %q, want it to read .Env.%s", cask.Repository.Token, secret)
+	for name, cask := range loadCasks(t) {
+		if got := cask.Repository.Owner + "/" + cask.Repository.Name; got != "specsnl/homebrew-tap" {
+			t.Errorf("%s tap = %q, want %q", name, got, "specsnl/homebrew-tap")
+		}
+
+		if !strings.Contains(cask.Repository.Token, secret) {
+			t.Errorf("%s token = %q, want it to read .Env.%s", name, cask.Repository.Token, secret)
+		}
 	}
 
 	workflow, err := os.ReadFile(".github/workflows/release.yml")
@@ -120,57 +150,38 @@ func TestRelease_CaskPublishesToTheTapWithItsOwnToken(t *testing.T) {
 	}
 }
 
-// A pre-release tag and a stable tag must write different files in the tap, or an
-// rc overwrites the one cask `brew upgrade` follows and hands everyone a release
-// candidate until the stable ships. The name templates on .Prerelease, which is
-// `rc.1` for v0.1.0-rc.1 and empty for v0.1.0.
-func TestRelease_PrereleasesGetTheirOwnCask(t *testing.T) {
-	casks := loadReleaseConfig(t).HomebrewCasks
-	if len(casks) != 1 {
-		t.Fatalf("want exactly one cask, got %d", len(casks))
+// Which channel each entry publishes to is `skip_upload` and nothing else, and
+// it is invisible until a real tag: `auto` on the stable entry skips it for a
+// tag with a semver pre-release component, while the rc entry carries no
+// `skip_upload` at all and therefore publishes on every tag, stable ones
+// included. Drop the `auto` and an rc overwrites the cask `brew upgrade`
+// follows; add one to the rc entry and someone who opted into `@rc` is stranded
+// on a candidate for the whole gap between series.
+func TestRelease_StableSkipsPrereleasesAndRcTakesEveryTag(t *testing.T) {
+	casks := loadCasks(t)
+
+	if got := casks[caskStable].SkipUpload; got != "auto" {
+		t.Errorf("%s skip_upload = %v, want %q — otherwise a pre-release tag overwrites the stable cask",
+			caskStable, got, "auto")
 	}
 
-	tmpl, err := template.New("cask").Parse(casks[0].Name)
-	if err != nil {
-		t.Fatalf("parse the cask name as a template: %v", err)
-	}
-
-	for _, tc := range []struct {
-		tag        string
-		prerelease string
-		want       string
-	}{
-		{tag: "v0.9.9", prerelease: "", want: "labelsync"},
-		{tag: "v0.9.9-rc.1", prerelease: "rc.1", want: "labelsync@rc"},
-	} {
-		t.Run(tc.tag, func(t *testing.T) {
-			var got strings.Builder
-			if err := tmpl.Execute(&got, struct{ Prerelease string }{tc.prerelease}); err != nil {
-				t.Fatalf("render the cask name: %v", err)
-			}
-
-			if got.String() != tc.want {
-				t.Errorf("cask name for %s = %q, want %q", tc.tag, got.String(), tc.want)
-			}
-		})
+	if got := casks[caskRC].SkipUpload; got != nil {
+		t.Errorf("%s skip_upload = %v, want it unset — the rc cask tracks the leading edge, stable tags included",
+			caskRC, got)
 	}
 }
 
-// goreleaser defaults `binaries` to the cask *name*, so templating the name alone
-// emits `binary "labelsync@rc"` while the archive holds `labelsync` — a cask that
-// installs nothing, and nothing goes red until someone tries the rc.
+// goreleaser defaults `binaries` to the cask *name*, so the rc entry would
+// otherwise emit `binary "labelsync@rc"` while the archive holds `labelsync` — a
+// cask that installs nothing, and nothing goes red until someone tries the rc.
 func TestRelease_CaskNamesTheBinaryInTheArchive(t *testing.T) {
 	cfg := loadReleaseConfig(t)
-
-	casks := cfg.HomebrewCasks
-	if len(casks) != 1 {
-		t.Fatalf("want exactly one cask, got %d", len(casks))
-	}
-
 	want := []string{cfg.Builds[0].Binary}
 
-	if !slices.Equal(casks[0].Binaries, want) {
-		t.Errorf("cask binaries = %v, want %v — what the archive actually contains", casks[0].Binaries, want)
+	for name, cask := range loadCasks(t) {
+		if !slices.Equal(cask.Binaries, want) {
+			t.Errorf("%s binaries = %v, want %v — what the archive actually contains", name, cask.Binaries, want)
+		}
 	}
 }
 
@@ -178,16 +189,13 @@ func TestRelease_CaskNamesTheBinaryInTheArchive(t *testing.T) {
 // `brew install` succeeds and the very next command is refused by Gatekeeper —
 // a failure that surfaces nowhere near its cause.
 func TestRelease_CaskClearsTheQuarantineAttribute(t *testing.T) {
-	casks := loadReleaseConfig(t).HomebrewCasks
-	if len(casks) != 1 {
-		t.Fatalf("want exactly one cask, got %d", len(casks))
-	}
+	for name, cask := range loadCasks(t) {
+		install := cask.Hooks.Post.Install
 
-	install := casks[0].Hooks.Post.Install
-
-	for _, want := range []string{"xattr", "-dr", "com.apple.quarantine"} {
-		if !strings.Contains(install, want) {
-			t.Errorf("the post-install hook does not mention %q:\n%s", want, install)
+		for _, want := range []string{"xattr", "-dr", "com.apple.quarantine"} {
+			if !strings.Contains(install, want) {
+				t.Errorf("the %s post-install hook does not mention %q:\n%s", name, want, install)
+			}
 		}
 	}
 }
