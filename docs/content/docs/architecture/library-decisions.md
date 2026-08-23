@@ -23,6 +23,7 @@ Two rules decide most of it:
 | `github.com/spf13/cobra`                | The command tree                              | `internal/cmd`                                                       | yes                                              |
 | `gopkg.in/yaml.v3`                      | Config parsing and export rendering           | `internal/config`                                                    | yes                                              |
 | `charm.land/huh/v2`                     | The prune `MultiSelect`                       | `internal/cmd/prune.go`                                              | yes                                              |
+| `charm.land/bubbletea/v2`               | `WindowSizeMsg`, in the prune prompt's test   | `internal/cmd/prune_form_internal_test.go`                           | **new (direct, test only)** — indirect via huh   |
 | `charm.land/lipgloss/v2`                | Diff colouring, tables, the countdown         | `internal/util/output`, `internal/plan`, `internal/github/ratelimit` | yes                                              |
 | `github.com/adrg/xdg`                   | Config and cache directory resolution         | `internal/labelsync`                                                 | yes                                              |
 | `github.com/danwakefield/fnmatch`       | Repository `include` / `exclude` globs        | `internal/config/resolve.go`                                         | yes                                              |
@@ -36,7 +37,7 @@ Two rules decide most of it:
 `log/slog` carries debug diagnostics, from the standard library — see
 [Output § Debug logging]({{< ref "./output.md#debug-logging" >}}).
 
-The three "new (direct)" rows are libraries the module already pulled in through lipgloss. Naming
+The "new (direct)" rows are libraries the module already pulled in through lipgloss. Naming
 them in `go.mod` does not add a dependency; it stops the code depending on a transitive one it
 cannot see, which is what turns a lipgloss minor upgrade into a compile error somewhere unrelated.
 
@@ -82,7 +83,14 @@ prompt that answers "yes" for the whole list is the wrong shape for that decisio
 usually "these three, not those two". `huh.MultiSelect` is that answer, and it is already the form
 library specs-cli uses.
 
-It is confined to one file, `internal/cmd/prune.go`, behind `App.Prompt` so tests replace it
+`bubbletea` is a direct dependency for one reason, and only in a test: the prompt's layout is a
+function of the terminal size, so `internal/cmd/prune_form_internal_test.go` hands the form a
+`tea.WindowSizeMsg` and reads the render back. Going through huh's own resize path is the point —
+the sizing bug it guards against
+([Apply § Every candidate is on screen]({{< ref "./apply.md#every-candidate-is-on-screen" >}})) only
+appears there. No non-test file imports it.
+
+`huh` is confined to one file, `internal/cmd/prune.go`, behind `App.Prompt` so tests replace it
 wholesale, and it is never reached without a terminal on stdin — a prune with nobody to ask fails
 with `interactive_required` rather than blocking a CI job. See
 [Apply § Prune: the selection]({{< ref "./apply.md#prune-the-selection" >}}).

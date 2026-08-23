@@ -52,6 +52,24 @@ which is what `--yes` does, returns the plan unchanged.
 Repositories survive a selection that empties them. One whose candidates were all declined is still a
 repository the run visited, and still applies its creates and updates.
 
+### Every candidate is on screen
+
+The prompt is built by `pruneForm`, and the shape it builds is not the library default. The heading
+and the warning sit on the **group**, and the `MultiSelect` carries an explicit `Height` of one line
+per candidate.
+
+A field left to size itself fits its list viewport to the option lines and then subtracts its own
+title and description from that, so three candidates under a two-line description leave a viewport
+one row tall: one repository visible, the rest reachable only by arrowing through a line that
+redraws in place. On a destructive prompt that is worse than ugly — the list *is* the report being
+decided from, and a report that shows one of three rows while claiming to be the whole question
+invites an enter on a selection nobody saw.
+
+Hoisting the text to the group keeps it out of that subtraction, and the group still clamps the list
+to the window when the whole form genuinely does not fit — the one case where scrolling is the right
+answer. `internal/cmd/prune_form_internal_test.go` renders the form at fixed window sizes and asserts
+both halves.
+
 ## The order is a crash-consistency guarantee
 
 Actions go out in exactly the order the planner emitted them: renames, then squatter recolours, then
