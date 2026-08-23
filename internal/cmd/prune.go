@@ -113,32 +113,47 @@ func (a *App) prompt() Selector {
 	return a.multiSelect
 }
 
-// multiSelect is the real prompt: a huh.MultiSelect over the candidates, in plan
-// order, with nothing pre-selected.
+// pruneForm builds the prompt: a huh.MultiSelect over the candidates, in plan
+// order, with nothing pre-selected, writing the chosen ones through selected.
 //
 // Nothing is pre-selected on purpose. A prompt that arrives with every box ticked
 // turns an accidental enter into a full prune, and the whole reason prune is
 // report-first is that the accident is not undoable.
+//
+// The heading and the warning sit on the *group*, not on the field, and the field
+// carries an explicit Height of one line per candidate. Both halves of that are
+// load-bearing. A field with no Height sizes its own list viewport to the option
+// lines and then subtracts its title and description from that, so a
+// three-candidate prompt under a two-line description ends up with a viewport of
+// a single row: one repository visible, the rest reachable only by arrowing
+// through a line that redraws in place. Hoisting the text to the group keeps it
+// out of that subtraction, and the group still shrinks the list to fit a short
+// terminal — huh clamps the field to the window height when the whole form does
+// not fit, which is the one case where scrolling is the right answer.
+func pruneForm(candidates []plan.Candidate, selected *[]plan.Candidate) *huh.Form {
+	options := make([]huh.Option[plan.Candidate], 0, len(candidates))
+	for _, candidate := range candidates {
+		options = append(options, huh.NewOption(candidate.Repo+"  "+candidate.Name, candidate))
+	}
+
+	return huh.NewForm(huh.NewGroup(
+		huh.NewMultiSelect[plan.Candidate]().
+			Options(options...).
+			Height(len(options)).
+			Value(selected),
+	).Title(pruneTitle).Description(pruneDescription))
+}
+
+// multiSelect is the real prompt.
 //
 // It draws on **stderr** rather than stdout, like every other thing that narrates
 // a run: stdout is the product, and a `--output=json | jq` pipeline must not
 // receive a redrawn form in the middle of its stream. It reads stdin, which
 // [App.canPrompt] has already established is a terminal.
 func (a *App) multiSelect(ctx context.Context, candidates []plan.Candidate) ([]plan.Candidate, error) {
-	options := make([]huh.Option[plan.Candidate], 0, len(candidates))
-	for _, candidate := range candidates {
-		options = append(options, huh.NewOption(candidate.Repo+"  "+candidate.Name, candidate))
-	}
-
 	var selected []plan.Candidate
 
-	form := huh.NewForm(huh.NewGroup(
-		huh.NewMultiSelect[plan.Candidate]().
-			Title(pruneTitle).
-			Description(pruneDescription).
-			Options(options...).
-			Value(&selected),
-	)).WithInput(a.Stdin).WithOutput(a.Stderr)
+	form := pruneForm(candidates, &selected).WithInput(a.Stdin).WithOutput(a.Stderr)
 
 	// RunWithContext rather than Run, so ^C at the shell and a cancelled run stop
 	// the same way: the context the whole command tree is executed with is the one
