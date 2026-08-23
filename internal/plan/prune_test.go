@@ -75,7 +75,7 @@ func TestRetainDeletes(t *testing.T) {
 		want Plan
 	}{
 		{
-			// What --prune=all asks for: every candidate back, and therefore the
+			// What --yes asks for: every candidate back, and therefore the
 			// plan the user was shown, unchanged.
 			name: "every candidate leaves the plan as it was",
 			keep: Candidates(candidatePlan()),

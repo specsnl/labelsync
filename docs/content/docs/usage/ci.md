@@ -224,12 +224,12 @@ The two ways through are the two the message names:
 
 ```sh
 labelsync sync --dry-run --mode prune     # report removal candidates; never prompts
-labelsync sync --mode prune --prune all   # remove every candidate, unattended
+labelsync sync --mode prune --yes         # remove every candidate, unattended
 ```
 
 `--dry-run --mode prune` is the one to put in a pull-request check: it lists every unconfigured
 label as a removal candidate, exits `2` if there is anything to report, and writes nothing.
-`--prune=all` deletes without asking, and deleting a label removes it from every issue and pull
+`--yes` deletes without asking, and deleting a label removes it from every issue and pull
 request that carries it — so put it behind a manual `workflow_dispatch` rather than a schedule, and
 read the dry run first. The full semantics are in
 [Commands § Removing labels]({{< ref "./commands.md#prune" >}}).

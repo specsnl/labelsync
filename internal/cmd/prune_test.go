@@ -89,7 +89,7 @@ func TestSync_PruneWithoutATerminalRefusesImmediately(t *testing.T) {
 
 	// The message has to name both ways out, because the run that hit this is
 	// almost always a pipeline that wanted one of them.
-	for _, want := range []string{"--prune=all", "--dry-run"} {
+	for _, want := range []string{"--yes", "--dry-run"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q", err, want)
 		}
@@ -119,7 +119,7 @@ func TestSync_PruneDryRunNeedsNoTerminal(t *testing.T) {
 	}
 }
 
-// TestSync_PruneAllRemovesExactlyTheCandidates is what --prune=all buys, and what
+// TestSync_PruneAllRemovesExactlyTheCandidates is what --yes buys, and what
 // it must not overreach into. Every unconfigured label goes; every configured one
 // stays, with its colour and description.
 func TestSync_PruneAllRemovesExactlyTheCandidates(t *testing.T) {
@@ -129,9 +129,9 @@ func TestSync_PruneAllRemovesExactlyTheCandidates(t *testing.T) {
 	config := writeConfig(t, oneRepo)
 
 	_, stdout, stderr, err := runApp(t, app, nil,
-		args(config, flags, "sync", "--mode", "prune", "--prune", "all")...)
+		args(config, flags, "sync", "--mode", "prune", "--yes")...)
 	if err != nil {
-		t.Fatalf("sync --mode prune --prune all: %v", err)
+		t.Fatalf("sync --mode prune --yes: %v", err)
 	}
 
 	want := []string{"type: bug", "type: feature"}
@@ -150,7 +150,7 @@ func TestSync_PruneAllRemovesExactlyTheCandidates(t *testing.T) {
 	}
 
 	// Convergence: the same command again has nothing left to remove.
-	_, stdout, _, err = runApp(t, app, nil, args(config, flags, "sync", "--mode", "prune", "--prune", "all")...)
+	_, stdout, _, err = runApp(t, app, nil, args(config, flags, "sync", "--mode", "prune", "--yes")...)
 	if err != nil {
 		t.Fatalf("second sync: %v", err)
 	}
@@ -328,28 +328,33 @@ func TestSync_PruneWithNothingToRemoveNeverAsks(t *testing.T) {
 	}
 }
 
-// TestSync_PruneFlag pins what --prune accepts, and what it refuses. Both
-// refusals are before the first request: a command line that reads as destructive
-// and would delete nothing is worth failing on rather than interpreting.
-func TestSync_PruneFlag(t *testing.T) {
+// TestSync_YesFlag pins where --yes is accepted, and where it is refused. The
+// refusal is before the first request: append mode never prompts and never
+// deletes, so a --yes it honoured silently would let a forgotten --mode=prune
+// pass for a run that pruned nothing.
+func TestSync_YesFlag(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		argv    []string
 		wantErr string
 	}{
 		{
-			name: "all with prune mode is accepted",
-			argv: []string{"sync", "--dry-run", "--mode", "prune", "--prune", "all"},
+			name: "yes with prune mode is accepted",
+			argv: []string{"sync", "--dry-run", "--mode", "prune", "--yes"},
 		},
 		{
-			name:    "any other value is refused",
-			argv:    []string{"sync", "--dry-run", "--mode", "prune", "--prune", "some"},
-			wantErr: `invalid --prune "some"`,
+			name: "the -y shorthand is the same flag",
+			argv: []string{"sync", "--dry-run", "--mode", "prune", "-y"},
 		},
 		{
-			name:    "all without prune mode is refused",
-			argv:    []string{"sync", "--dry-run", "--prune", "all"},
-			wantErr: "--prune=all needs --mode=prune",
+			name:    "yes without prune mode is refused",
+			argv:    []string{"sync", "--dry-run", "--yes"},
+			wantErr: "--yes needs --mode=prune",
+		},
+		{
+			name:    "the shorthand is refused on the same terms",
+			argv:    []string{"sync", "--dry-run", "-y"},
+			wantErr: "--yes needs --mode=prune",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

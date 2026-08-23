@@ -101,7 +101,7 @@ const unconfiguredNote = "unconfigured"
 // unconfigured label as a removal candidate.
 //
 // A candidate is exactly that. Which candidates are actually deleted is chosen
-// by the caller — an interactive selection, or --prune=all — and the planner
+// by the caller — an interactive selection, or --yes — and the planner
 // takes no part in it, which is what makes prune semantics testable without a
 // terminal.
 //

@@ -40,14 +40,14 @@ Prune is three parts in three packages, and the split is the design:
 1. `internal/plan` records every unconfigured label as a removal candidate and decides nothing.
    `Candidates(p)` names them, in plan order; `RetainDeletes(p, keep)` returns the plan minus the
    candidates that were not kept.
-2. `internal/cmd` asks — a `huh.MultiSelect`, or `--prune=all` — and narrows the plan.
+2. `internal/cmd` asks — a `huh.MultiSelect`, or `--yes` — and narrows the plan.
    See [Usage § Prune]({{< ref "../usage/commands.md#prune" >}}).
 3. `internal/apply` executes what it is given.
 
 `RetainDeletes` only ever **filters**. A candidate can be dropped between the report on stdout and
 the writes, never introduced, so "the plan you were shown is the plan that ran, minus what you
 declined" is a property of the code rather than a promise about it. Passing every candidate back,
-which is what `--prune=all` does, returns the plan unchanged.
+which is what `--yes` does, returns the plan unchanged.
 
 Repositories survive a selection that empties them. One whose candidates were all declined is still a
 repository the run visited, and still applies its creates and updates.

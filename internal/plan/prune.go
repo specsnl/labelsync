@@ -5,7 +5,7 @@ package plan
 //
 // [Compute] records every unconfigured label as a candidate and decides nothing
 // about which of them are removed. That decision belongs to the caller — an
-// interactive selection, or --prune=all — and it arrives back here as a set of
+// interactive selection, or --yes — and it arrives back here as a set of
 // [Candidate]s for [RetainDeletes] to filter the plan by. Keeping both halves
 // pure is what makes prune semantics testable with two slices and no terminal.
 
@@ -51,7 +51,7 @@ func Candidates(p Plan) []Candidate {
 // Filtering rather than adding is deliberate. The plan the user was shown is the
 // plan that gets applied, minus what they declined — so a candidate can only ever
 // be dropped between the report and the writes, never introduced. Passing every
-// candidate back, which is what --prune=all does, returns p unchanged.
+// candidate back, which is what --yes does, returns p unchanged.
 //
 // The repository a candidate belongs to is [RepoPlan.Repo] rather than
 // [Action.Repo]: grouping is what a plan *is*, and an action carrying a
