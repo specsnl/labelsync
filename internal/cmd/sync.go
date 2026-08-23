@@ -20,21 +20,15 @@ import (
 const (
 	flagDryRun = "dry-run"
 	flagMode   = "mode"
-	flagPrune  = "prune"
+	flagYes    = "yes"
 	flagRepo   = "repo"
 )
-
-// pruneAll is the only value --prune takes. It is a string flag rather than a
-// bool so the command line reads as the sentence it is — `--prune=all` says what
-// will be removed, where `--prune` would leave "all of them?" to be inferred —
-// and so that a future `--prune=none` is a value rather than a second flag.
-const pruneAll = "all"
 
 // pruneNeedsATerminalHelp is what the non-interactive guard says. It has to name
 // both ways out, because the run that hits it is almost always a pipeline that
 // wanted one of them and got neither.
 const pruneNeedsATerminalHelp = "--mode=prune asks which labels to remove, and stdin is not a terminal — " +
-	"pass --prune=all to remove every candidate, or --dry-run to only list them"
+	"pass --yes to remove every candidate, or --dry-run to only list them"
 
 func newSyncCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
@@ -48,7 +42,7 @@ that would take and write nothing.
   labelsync sync --group websites               # only these groups, repeatable
   labelsync sync --repo specsnl/labelsync       # only these repositories
   labelsync sync --mode prune                   # also ask what to remove
-  labelsync sync --mode prune --prune all       # remove every unconfigured label
+  labelsync sync --mode prune --yes             # remove every unconfigured label
 
 Applying is append mode by default: missing labels are created, existing ones
 are updated, and unconfigured labels sitting on a configured colour are
@@ -58,9 +52,9 @@ recoloured. Nothing is ever deleted.
 candidate, and then asks which of them to delete. Deleting a label removes it
 from every issue and pull request that carries it, and nothing restores that, so
 prune is never implicit: it needs the mode, and removal needs either an answer
-to the prompt or "--prune=all". Without a terminal on stdin and without
-"--prune=all" the run refuses rather than prompting a pipe that cannot answer.
-"--dry-run" only lists, and needs neither.
+to the prompt or "--yes". Without a terminal on stdin and without "--yes" the
+run refuses rather than prompting a pipe that cannot answer. "--dry-run" only
+lists, and needs neither.
 
 Exit codes follow terraform plan -detailed-exitcode, and the outcome codes are
 bits that combine:
@@ -87,7 +81,7 @@ export is what captures the ones you already have.`,
 	flags := cmd.Flags()
 	flags.Bool(flagDryRun, false, "Compute and print the plan, writing nothing")
 	flags.String(flagMode, string(plan.ModeAppend), `Reconciliation mode: "append" or "prune"`)
-	flags.String(flagPrune, "", `With --mode=prune, remove every candidate without prompting: "all"`)
+	flags.BoolP(flagYes, "y", false, "With --mode=prune, remove every unconfigured label without prompting")
 	flags.StringArray(flagGroup, nil, "Only sync this group (repeatable)")
 	flags.StringArray(flagRepo, nil, "Only sync this owner/repo, bypassing group enumeration (repeatable)")
 
@@ -101,8 +95,8 @@ type syncOpts struct {
 	groups []string
 	repos  []string
 
-	// pruneAll is --prune=all: take every removal candidate without asking.
-	pruneAll bool
+	// assumeYes is --yes: take every removal candidate without asking.
+	assumeYes bool
 }
 
 // syncOptions reads and validates the command's flags, before anything is
@@ -142,26 +136,20 @@ func syncOptions(app *App, cmd *cobra.Command) (syncOpts, error) {
 		return opts, fmt.Errorf("invalid --%s %q: want %q or %q", flagMode, mode, plan.ModeAppend, plan.ModePrune)
 	}
 
-	prune, _ := flags.GetString(flagPrune)
+	opts.assumeYes, _ = flags.GetBool(flagYes)
 
-	switch prune {
-	case "":
-	case pruneAll:
-		opts.pruneAll = true
-	default:
-		return opts, fmt.Errorf("invalid --%s %q: want %q", flagPrune, prune, pruneAll)
+	// Append mode never prompts and never deletes, so --yes has nothing to
+	// answer. It is refused rather than ignored: append is also what a user gets
+	// when they meant to prune and forgot the mode, and accepting --yes there
+	// would turn that slip into a clean run that deleted nothing and said so
+	// nowhere. The flag no longer carries the word "prune" to jog the memory,
+	// which makes the slip likelier rather than less.
+	if opts.assumeYes && opts.mode != plan.ModePrune {
+		return opts, fmt.Errorf("--%s needs --%s=%s: append mode never deletes",
+			flagYes, flagMode, plan.ModePrune)
 	}
 
-	// Append mode has no candidates to take, so --prune=all is a request that
-	// cannot be honoured. Ignoring it would mean a command line that reads as
-	// destructive and deletes nothing, which is the one outcome worth refusing
-	// over — the user who typed it meant --mode=prune.
-	if opts.pruneAll && opts.mode != plan.ModePrune {
-		return opts, fmt.Errorf("--%s=%s needs --%s=%s: append mode never deletes",
-			flagPrune, pruneAll, flagMode, plan.ModePrune)
-	}
-
-	if opts.mode == plan.ModePrune && !opts.dryRun && !opts.pruneAll && !app.canPrompt() {
+	if opts.mode == plan.ModePrune && !opts.dryRun && !opts.assumeYes && !app.canPrompt() {
 		return opts, fmt.Errorf("%w: %s", labelsync.ErrInteractiveRequired, pruneNeedsATerminalHelp)
 	}
 

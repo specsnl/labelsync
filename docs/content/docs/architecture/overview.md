@@ -76,7 +76,7 @@ labelsync [--config <path>]
           [--max-wait <duration>]         default: 15m
 │
 ├── sync                                  reconcile labels
-│     [--dry-run] [--mode append|prune] [--prune all]
+│     [--dry-run] [--mode append|prune] [--yes]
 │     [--group <name>]... [--repo <owner/repo>]...
 ├── export <owner/repo> [--out <file>]    dump a repo's labels as config YAML
 ├── init [--force]                        scaffold a labels.yml
@@ -87,7 +87,7 @@ labelsync [--config <path>]
 
 Everything above exists. `sync` applies in both modes: append by default, and `--mode=prune`
 additionally reports every unconfigured label as a removal candidate and asks which of them to
-delete — `huh.MultiSelect` on a terminal, `--prune=all` without one, and a refusal
+delete — `huh.MultiSelect` on a terminal, `--yes` without one, and a refusal
 (`interactive_required`) rather than a prompt shown to a pipe. See
 [Usage § Prune]({{< ref "../usage/commands.md#prune" >}}) and [Apply]({{< ref "./apply.md" >}}).
 
@@ -125,7 +125,7 @@ delete — `huh.MultiSelect` on a terminal, `--prune=all` without one, and a ref
   rather than a courtesy: the plan is the removal report the selection is made against.
 - **`prune.go`** is the part of prune that needs a person, and the only part of the whole feature that
   involves a terminal. It validates nothing and writes nothing: it turns the candidates a plan carries
-  into the ones that will be deleted, either from `--prune=all` or from a `huh.MultiSelect`, and hands
+  into the ones that will be deleted, either from `--yes` or from a `huh.MultiSelect`, and hands
   back a plan narrowed with `plan.RetainDeletes`. The prompt draws on **stderr**, like everything else
   that narrates a run, so `--output=json | jq` never receives a redrawn form mid-stream. The guard
   that keeps it away from a pipe lives in `sync.go`'s flag validation, because its whole value is

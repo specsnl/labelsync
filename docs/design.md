@@ -101,7 +101,7 @@ no group resolves to is **never touched** — this is the primary safety propert
 | `prune`              | Everything `append` does, plus removal of unconfigured labels. **Report-first** — lists them and prompts for what to remove. |
 
 `prune` is never implicit. It requires `--mode=prune`, and removal requires either an interactive
-selection or `--prune=all`. `--dry-run` lists the candidates and removes none of them, and is the only
+selection or `--yes`. `--dry-run` lists the candidates and removes none of them, and is the only
 prune that needs neither — see the [non-interactive guard](#non-interactive-guard).
 
 ---
@@ -369,15 +369,15 @@ migration recipe is in [Usage § Renaming labels](./content/docs/usage/commands.
      for each remaining unconfigured label:
        record as removal candidate
      removal set determined by:
-       --prune=all      → all candidates
+       --yes            → all candidates
        interactive TTY  → huh.MultiSelect over candidates
-       non-interactive  → error: prune requires --prune=all without a TTY
+       non-interactive  → error: prune requires --yes without a TTY
      emit Delete for each selected
 ```
 
 **Landed** — step 6 in full. `Compute` emits a `Delete` per candidate
 ([#28](https://github.com/specsnl/labelsync/issues/28)); `plan.Candidates` and `plan.RetainDeletes`
-offer and filter that list, and `--prune=all` or the interactive `MultiSelect` decides which survive
+offer and filter that list, and `--yes` or the interactive `MultiSelect` decides which survive
 ([#44](https://github.com/specsnl/labelsync/issues/44)) — the command's half, and the only part of
 prune that involves a terminal. See
 [Architecture § Prune](./content/docs/architecture/plan.md#prune).
@@ -752,7 +752,7 @@ Exceeding it exits with an error and a summary of what remained.
 > **Partly landed.** Every command below is implemented in `internal/cmd` — the root, `sync`,
 > `export`, `init`, `groups`, `cache`, and `version` — and `sync` applies, in append mode. See
 > [Overview § How the tree is wired](./content/docs/architecture/overview.md#how-the-tree-is-wired).
-> `--prune all` and the prune write path landed with
+> `--yes` and the prune write path landed with
 > [#44](https://github.com/specsnl/labelsync/issues/44).
 >
 > `init` takes a `--force`, which this sketch does not show, and honours `--config` as its
@@ -773,7 +773,7 @@ labelsync [--config <path>]
 ├── sync                                  reconcile labels
 │     [--dry-run]                         compute and print, write nothing
 │     [--mode append|prune]               default: append
-│     [--prune all]                       non-interactive: remove all unconfigured
+│     [--yes]                             non-interactive: remove all unconfigured
 │     [--group <name>]...                 restrict to specific groups
 │     [--repo <owner/repo>]...            restrict to specific repos (bypasses groups)
 │
@@ -845,7 +845,7 @@ drifted" — the very claim a failure invalidates. A partially applied run is `e
 
 ### Non-interactive guard
 
-If `--mode=prune` is requested without `--prune=all` and **stdin is not a TTY**, the tool exits
+If `--mode=prune` is requested without `--yes` and **stdin is not a TTY**, the tool exits
 with `ErrInteractiveRequired` immediately. It must never present a `huh` prompt to a pipe — that
 hangs a CI job indefinitely, which is the most common way interactive CLIs break in pipelines.
 
@@ -878,7 +878,7 @@ labelsync/
     │   ├── init.go
     │   ├── groups.go
     │   ├── cache.go
-    │   ├── prune.go              # the removal selection: --prune=all, huh.MultiSelect
+    │   ├── prune.go              # the removal selection: --yes, huh.MultiSelect
     │   └── version.go
     ├── config/
     │   ├── config.go             # YAML load, defaults, normalisation
@@ -1128,7 +1128,7 @@ need one.
 | `ratelimit`        | Injected clock. Primary vs secondary backoff, `Retry-After` honouring, `--max-wait` ceiling                                                                                                                        |
 | `output`           | Golden files for pretty and JSON renderings                                                                                                                                                                        |
 | `apply`            | A `Writer` fake recording calls in order: the emitted order, deletes last, append refusing one, the no-op never sent, a repository abandoned mid-run                                                               |
-| `cmd` (prune)      | End to end against the stateful fixture: the non-TTY guard's sentinel and exit code, `--prune=all` removing exactly the candidate set, a selection removing only what it named, append never deleting              |
+| `cmd` (prune)      | End to end against the stateful fixture: the non-TTY guard's sentinel and exit code, `--yes` removing exactly the candidate set, a selection removing only what it named, append never deleting                    |
 
 Determinism deserves an explicit test that runs the full planner twice over the same fixtures and
 asserts byte-identical output. Colour churn on re-run is the most likely subtle regression.
@@ -1227,7 +1227,7 @@ Matching specs-cli, so the developer experience is identical:
 | 3 | `internal/github`: auth chain, enumeration + filtering, label reads, ETag cache                 | yes      |
 | 4 | `sync --dry-run` end to end, pretty + JSON rendering, exit codes, `groups`, `export`, `init`    | yes      |
 | 5 | `internal/apply` append mode + `ratelimit` (bucket, backoff, countdown in all three renderings) | yes      |
-| 6 | Prune mode: report, `huh.MultiSelect`, `--prune=all`, non-TTY guard                             | yes      |
+| 6 | Prune mode: report, `huh.MultiSelect`, `--yes`, non-TTY guard                                   | yes      |
 | 7 | Renames, `cache` commands, goreleaser + Homebrew, CI workflow, docs site                        | —        |
 
 Milestones 1–2 are the entire interesting core and need no GitHub access at all — worth building

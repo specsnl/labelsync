@@ -284,7 +284,7 @@ pass becomes a `delete` carrying `Reason: "unconfigured"`, in ascending name ord
 other action.
 
 **The planner only ever produces candidates.** Which of them are actually deleted is decided by the
-caller — an interactive `huh.MultiSelect`, or `--prune=all` — and `Compute` takes no part in that.
+caller — an interactive `huh.MultiSelect`, or `--yes` — and `Compute` takes no part in that.
 Keeping the split here is what makes prune semantics unit-testable with two slices and no terminal.
 The `plan → select → apply` shape also means the selection can drop actions from a plan without the
 plan having to be recomputed.
@@ -600,8 +600,8 @@ one test run to the next, or a failure would not reproduce.
 
 ## Where the selection lives
 
-The `--mode` and `--prune` flags, the interactive `huh.MultiSelect` over the candidates, and the
-non-TTY guard that turns `prune` without `--prune=all` into an error rather than a hung prompt all sit
+The `--mode` and `--yes` flags, the interactive `huh.MultiSelect` over the candidates, and the
+non-TTY guard that turns `prune` without `--yes` into an error rather than a hung prompt all sit
 in `internal/cmd`. This package's share is `Candidates` and `RetainDeletes` — see
 [Prune](#prune) — and it stays as pure as everything else here: the offer is a slice, the answer is a
 slice, and no part of it knows a terminal exists.

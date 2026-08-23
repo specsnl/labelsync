@@ -151,17 +151,17 @@ labelsync sync --group websites                       # only these groups, repea
 labelsync sync --repo specsnl/labelsync               # only these repositories, repeatable
 labelsync sync --dry-run --mode prune                 # also list what would be removed
 labelsync sync --mode prune                           # list them, then ask which to remove
-labelsync sync --mode prune --prune all               # remove every unconfigured label
+labelsync sync --mode prune --yes                     # remove every unconfigured label
 labelsync sync --output=json                          # NDJSON, one action per line
 ```
 
-| Flag        | Default  | What it does                                                         |
-|-------------|----------|----------------------------------------------------------------------|
-| `--dry-run` | off      | Compute and print, write nothing                                     |
-| `--mode`    | `append` | `append` never deletes; `prune` also removes unconfigured labels     |
-| `--prune`   | —        | With `--mode=prune`, `all` removes every candidate without prompting |
-| `--group`   | all      | Restrict to a group, repeatable                                      |
-| `--repo`    | —        | Restrict to an `owner/repo`, repeatable, bypassing group enumeration |
+| Flag          | Default  | What it does                                                         |
+|---------------|----------|----------------------------------------------------------------------|
+| `--dry-run`   | off      | Compute and print, write nothing                                     |
+| `--mode`      | `append` | `append` never deletes; `prune` also removes unconfigured labels     |
+| `--yes`, `-y` | off      | With `--mode=prune`, remove every candidate without prompting        |
+| `--group`     | all      | Restrict to a group, repeatable                                      |
+| `--repo`      | —        | Restrict to an `owner/repo`, repeatable, bypassing group enumeration |
 
 #### What applying does
 
@@ -314,7 +314,7 @@ restores that. So prune is never implicit and always report-first:
 1. It needs `--mode=prune`. Append mode has no path to a delete at all.
 2. The plan is printed first, with every unconfigured label as a `delete` line annotated
    `unconfigured`. That list is the report you decide from.
-3. Removal then needs an answer: tick the ones to remove in the prompt, or pass `--prune=all`.
+3. Removal then needs an answer: tick the ones to remove in the prompt, or pass `--yes`.
 
 ```text
 specsnl/example-website
@@ -338,14 +338,14 @@ updates, the recolours — is applied either way, and answering with nothing sel
 good answer. `Ctrl-C` ends the run and writes nothing at all.
 
 ```sh
-labelsync sync --mode prune --prune all               # every candidate, no prompt
+labelsync sync --mode prune --yes                     # every candidate, no prompt
 labelsync sync --dry-run --mode prune                 # list them, decide later
 ```
 
 **Without a terminal on stdin, `--mode=prune` refuses rather than prompting.** A prompt shown to a
 pipe blocks a CI job until somebody cancels it, so a prune with nobody to ask fails immediately with
 `interactive_required` (exit `1`) — before the config is read and before the first request. The two
-ways through are the two the message names: `--prune=all` to remove everything, or `--dry-run` to only
+ways through are the two the message names: `--yes` to remove everything, or `--dry-run` to only
 list. `--dry-run` never prompts and so is never guarded, which is what makes it the prune a
 pull-request check can run.
 

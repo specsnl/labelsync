@@ -88,7 +88,7 @@ var (
 	ErrNoToken = errors.New("no GitHub token found")
 
 	// ErrInteractiveRequired is returned when an operation needs a prompt but
-	// stdin is not a TTY — prune without --prune=all in CI, for example.
+	// stdin is not a TTY — prune without --yes in CI, for example.
 	ErrInteractiveRequired = errors.New("operation requires an interactive terminal")
 
 	// ErrRepoInaccessible is returned when a repository cannot be reached with

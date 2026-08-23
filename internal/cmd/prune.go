@@ -80,11 +80,11 @@ func selectRemovals(ctx context.Context, app *App, opts syncOpts, p plan.Plan) (
 		return p, nil
 	}
 
-	if opts.pruneAll {
+	if opts.assumeYes {
 		// Loud, on stderr, because nobody was asked. The plan on stdout already
 		// lists every one of them; this is the line that says they are all going.
-		app.Out.Warn("--%s=%s: removing %s from every issue and pull request that carries them",
-			flagPrune, pruneAll, plural(len(candidates), "unconfigured label"))
+		app.Out.Warn("--%s: removing %s from every issue and pull request that carries them",
+			flagYes, plural(len(candidates), "unconfigured label"))
 
 		return p, nil
 	}
