@@ -31,6 +31,21 @@ updates:
           - minor
           - patch
 
+  - package-ecosystem: gomod
+    directory: /docs
+    schedule:
+      interval: weekly
+    labels:
+      - go
+    commit-message:
+      prefix: build
+      include: scope
+    groups:
+      go-dependencies:
+        update-types:
+          - minor
+          - patch
+
   - package-ecosystem: docker
     directory: /
     schedule:
