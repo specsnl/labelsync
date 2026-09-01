@@ -7,7 +7,6 @@ updates:
     schedule:
       interval: weekly
     labels:
-      - dependencies
       - github-actions
     commit-message:
       prefix: build
@@ -22,7 +21,21 @@ updates:
     schedule:
       interval: weekly
     labels:
-      - dependencies
+      - go
+    commit-message:
+      prefix: build
+      include: scope
+    groups:
+      go-dependencies:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: gomod
+    directory: /docs
+    schedule:
+      interval: weekly
+    labels:
       - go
     commit-message:
       prefix: build
@@ -38,7 +51,6 @@ updates:
     schedule:
       interval: weekly
     labels:
-      - dependencies
       - docker
     commit-message:
       prefix: build
