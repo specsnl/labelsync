@@ -204,23 +204,53 @@ func TestRelease_CaskClearsTheQuarantineAttribute(t *testing.T) {
 // deliberately: yaml.v3 parses the bare key as the boolean true, and nothing
 // here needs the trigger.
 type releaseWorkflow struct {
-	Permissions map[string]string `yaml:"permissions"`
-	Jobs        map[string]struct {
-		Permissions map[string]string `yaml:"permissions"`
-		Strategy    struct {
-			Matrix struct {
-				Include []struct {
-					Package string `yaml:"package"`
-					Target  string `yaml:"target"`
-				} `yaml:"include"`
-			} `yaml:"matrix"`
-		} `yaml:"strategy"`
-		Steps []struct {
-			Uses string         `yaml:"uses"`
-			With map[string]any `yaml:"with"`
-		} `yaml:"steps"`
-	} `yaml:"jobs"`
+	Permissions map[string]string     `yaml:"permissions"`
+	Jobs        map[string]releaseJob `yaml:"jobs"`
 }
+
+// A job that calls a reusable workflow has `uses`/`with` where a normal one has
+// `steps`, so both shapes live on one struct and each test reads the half it
+// cares about.
+type releaseJob struct {
+	Needs       string            `yaml:"needs"`
+	Uses        string            `yaml:"uses"`
+	With        map[string]any    `yaml:"with"`
+	Permissions map[string]string `yaml:"permissions"`
+	Strategy    struct {
+		Matrix struct {
+			Runner []matrixRunner `yaml:"runner"`
+		} `yaml:"matrix"`
+	} `yaml:"strategy"`
+}
+
+// matrixRunner is one leg of an image build: the runner it runs on and the
+// platform it builds for. Shared with the pull-request guard in ci_test.go,
+// which pairs them the same way.
+type matrixRunner struct {
+	OS       string `yaml:"os"`
+	Platform string `yaml:"platform"`
+}
+
+// The image name every stage publishes under. The debian stage is a tag suffix
+// on this name rather than a package of its own — see the architecture docs.
+const imageName = "ghcr.io/specsnl/labelsync"
+
+// The Dockerfile ARG the version is injected through, which the shared workflow
+// has to be told the name of.
+const versionBuildArg = "LABELSYNC_VERSION"
+
+// buildJobs maps each build job to the manifest job that merges its digests,
+// and publishedTargets maps each build job to the Dockerfile stage it ships.
+var (
+	buildJobs = map[string]string{
+		"image":        "image-manifest",
+		"image-debian": "image-debian-manifest",
+	}
+	publishedTargets = map[string]string{
+		"image":        "binary",
+		"image-debian": "debian",
+	}
+)
 
 func loadReleaseWorkflow(t *testing.T) releaseWorkflow {
 	t.Helper()
@@ -235,106 +265,154 @@ func loadReleaseWorkflow(t *testing.T) releaseWorkflow {
 		t.Fatalf("parse the release workflow: %v", err)
 	}
 
-	if _, ok := workflow.Jobs["images"]; !ok {
-		t.Fatalf("the release workflow has no `images` job; jobs are %v", slices.Sorted(maps.Keys(workflow.Jobs)))
+	for build, manifest := range buildJobs {
+		for _, name := range []string{build, manifest} {
+			if _, ok := workflow.Jobs[name]; !ok {
+				t.Fatalf("the release workflow has no %q job; jobs are %v",
+					name, slices.Sorted(maps.Keys(workflow.Jobs)))
+			}
+		}
 	}
 
 	return workflow
 }
 
-// imagesStepWith returns the `with:` value of the first step of the images job
-// whose `uses:` names action, as a string — the block mixes strings and
-// booleans, so everything is read back through fmt.Sprint rather than typed per
+// with reads one `with:` input as a string. The block mixes strings and
+// booleans, so everything comes back through fmt.Sprint rather than typed per
 // key.
-func imagesStepWith(t *testing.T, action, key string) string {
+func (j releaseJob) with(t *testing.T, key string) string {
 	t.Helper()
 
-	for _, step := range loadReleaseWorkflow(t).Jobs["images"].Steps {
-		if !strings.Contains(step.Uses, action) {
-			continue
-		}
-
-		value, ok := step.With[key]
-		if !ok {
-			t.Fatalf("the %s step has no %q; it has %v", action, key, slices.Sorted(maps.Keys(step.With)))
-		}
-
-		return fmt.Sprint(value)
+	value, ok := j.With[key]
+	if !ok {
+		t.Fatalf("the job has no %q input; it has %v", key, slices.Sorted(maps.Keys(j.With)))
 	}
 
-	t.Fatalf("the images job has no step using %s", action)
-
-	return ""
+	return fmt.Sprint(value)
 }
 
-// Two packages, from two stages of one Dockerfile. The names are the addresses
-// consumers pin to and the stages are how `target:` selects a runtime, so a
-// rename on either side of that pairing silently publishes the wrong image —
-// or, if the stage no longer exists, publishes nothing until the release fails.
-func TestRelease_ImagesJobPublishesBothPackages(t *testing.T) {
-	include := loadReleaseWorkflow(t).Jobs["images"].Strategy.Matrix.Include
-
-	want := map[string]string{
-		"ghcr.io/specsnl/labelsync":        "binary",
-		"ghcr.io/specsnl/labelsync/debian": "debian",
-	}
-
-	if len(include) != len(want) {
-		t.Fatalf("the images matrix has %d entries, want %d", len(include), len(want))
-	}
-
+// Two images, from two stages of one Dockerfile, both published under one name:
+// the scratch stage unsuffixed and debian as a `-debian` tag suffix, which is
+// how the org publishes a CLI's base-image variants. A build job without its
+// manifest job pushes digests nothing ever merges into a tag — a release that
+// goes green and publishes nothing pullable.
+func TestRelease_ImageJobsPublishBothStages(t *testing.T) {
+	workflow := loadReleaseWorkflow(t)
 	stages := dockerfileStages(t)
 
-	for _, entry := range include {
-		target, ok := want[entry.Package]
-		if !ok {
-			t.Errorf("unexpected package %q in the images matrix", entry.Package)
+	for build, manifest := range buildJobs {
+		target := publishedTargets[build]
 
-			continue
+		if _, ok := stages[target]; !ok {
+			t.Errorf("the Dockerfile has no %q stage for the %s job; stages are %v",
+				target, build, slices.Sorted(maps.Keys(stages)))
 		}
 
-		if entry.Target != target {
-			t.Errorf("%s builds target %q, want %q", entry.Package, entry.Target, target)
+		for _, name := range []string{build, manifest} {
+			job := workflow.Jobs[name]
+
+			if got := job.with(t, "image-name"); got != imageName {
+				t.Errorf("%s publishes %q, want %q", name, got, imageName)
+			}
+
+			if got := job.with(t, "target"); got != target {
+				t.Errorf("%s builds target %q, want %q", name, got, target)
+			}
 		}
 
-		if _, ok := stages[entry.Target]; !ok {
-			t.Errorf("the Dockerfile has no %q stage for %s; stages are %v",
-				entry.Target, entry.Package, slices.Sorted(maps.Keys(stages)))
+		if got := workflow.Jobs[manifest].Needs; got != build {
+			t.Errorf("%s needs %q, want %q — a manifest merges digests its build job has to have pushed",
+				manifest, got, build)
 		}
-
-		delete(want, entry.Package)
 	}
 
-	for pkg := range want {
-		t.Errorf("the images matrix does not publish %s", pkg)
+	// The variant is what turns debian into a tag suffix. Without it the two
+	// manifests write the same tags from different digests, and whichever
+	// finishes last owns `:1.2.3`.
+	if got := workflow.Jobs["image-debian-manifest"].with(t, "variant"); got != "debian" {
+		t.Errorf("image-debian-manifest variant = %q, want %q", got, "debian")
+	}
+
+	if _, ok := workflow.Jobs["image-manifest"].With["variant"]; ok {
+		t.Error("image-manifest sets a variant, which would suffix the tags the scratch image publishes as the default")
 	}
 }
 
-// Both platforms in one push, so every tag of one release resolves to one
-// manifest digest. Dropping a platform is invisible in review: the release still
-// succeeds, and an arm64 runner pulling it fails at `docker run` instead.
-func TestRelease_ImagesCoverBothPlatforms(t *testing.T) {
-	platforms := imagesStepWith(t, "docker/build-push-action", "platforms")
+// One runner per architecture, each building for its own platform. Pointing both
+// legs at the same runner still produces a manifest list — buildx would emulate
+// the foreign one — and the release succeeds either way, so nothing but this
+// says which happened.
+func TestRelease_ImageJobsBuildOnANativeRunnerPerPlatform(t *testing.T) {
+	workflow := loadReleaseWorkflow(t)
 
-	for _, platform := range []string{"linux/amd64", "linux/arm64"} {
-		if !strings.Contains(platforms, platform) {
-			t.Errorf("platforms = %q, want it to include %q", platforms, platform)
+	want := map[string]string{
+		"linux/amd64": "ubuntu-24.04",
+		"linux/arm64": "ubuntu-24.04-arm",
+	}
+
+	for build := range buildJobs {
+		runners := workflow.Jobs[build].Strategy.Matrix.Runner
+
+		if len(runners) != len(want) {
+			t.Errorf("%s has %d matrix legs, want %d", build, len(runners), len(want))
+		}
+
+		seen := map[string]bool{}
+
+		for _, runner := range runners {
+			native, ok := want[runner.Platform]
+			if !ok {
+				t.Errorf("%s builds unexpected platform %q", build, runner.Platform)
+
+				continue
+			}
+
+			if runner.OS != native {
+				t.Errorf("%s builds %s on %q, want %q", build, runner.Platform, runner.OS, native)
+			}
+
+			seen[runner.Platform] = true
+		}
+
+		for platform := range want {
+			if !seen[platform] {
+				t.Errorf("%s does not build %s; an arm64 host pulling the release would fail at `docker run`",
+					build, platform)
+			}
+		}
+	}
+}
+
+// The shared workflow injects the version through the build arg it is named
+// here, and a wrong name fails silently: buildx warns about an unused arg, the
+// build succeeds, and the published image reports `dev`.
+func TestRelease_ImageJobsNameTheVersionBuildArg(t *testing.T) {
+	workflow := loadReleaseWorkflow(t)
+
+	for build := range buildJobs {
+		if got := workflow.Jobs[build].with(t, "version-build-arg"); got != versionBuildArg {
+			t.Errorf("%s injects the version through %q, want %q", build, got, versionBuildArg)
 		}
 	}
 
-	if push := imagesStepWith(t, "docker/build-push-action", "push"); push != "true" {
-		t.Errorf("push = %q, want %q — the job would build both images and publish neither", push, "true")
+	if !strings.Contains(readDockerfile(t), "ARG "+versionBuildArg+"=") {
+		t.Errorf("the Dockerfile declares no ARG %s for the workflow to pass the version to", versionBuildArg)
 	}
 }
 
 // Pushing to GHCR needs `packages: write`, which the workflow-level block does
-// not grant: it is read-only so each job asks for its own write scope. Without
-// this the whole release goes green and the images fail at the push.
-func TestRelease_ImagesJobCanWritePackages(t *testing.T) {
+// not grant: it is read-only so each job asks for its own write scope. A
+// reusable workflow inherits nothing it is not given, so the grant has to sit on
+// the calling job — without it the release goes green and the push fails.
+func TestRelease_ImageJobsCanWritePackages(t *testing.T) {
 	workflow := loadReleaseWorkflow(t)
 
-	if got := workflow.Jobs["images"].Permissions["packages"]; got != "write" {
-		t.Errorf("the images job has packages: %q, want %q", got, "write")
+	for build, manifest := range buildJobs {
+		for _, name := range []string{build, manifest} {
+			if got := workflow.Jobs[name].Permissions["packages"]; got != "write" {
+				t.Errorf("the %s job has packages: %q, want %q", name, got, "write")
+			}
+		}
 	}
 
 	if got := workflow.Jobs["release"].Permissions["contents"]; got != "write" {
@@ -342,49 +420,44 @@ func TestRelease_ImagesJobCanWritePackages(t *testing.T) {
 	}
 }
 
-// The tag policy is the whole contract a consumer pins against, and every part
-// of it is one line of config that a plausible-looking edit can drop. A missing
-// {{major}}.{{minor}} leaves early consumers pinned to a patch forever; a
-// missing v0. guard promises stability across the releases most likely to break;
-// a `latest=true` flavour would hand `docker run …:latest` a release candidate.
-func TestRelease_ImageTagsFollowThePolicy(t *testing.T) {
-	tags := imagesStepWith(t, "docker/metadata-action", "tags")
+// The tag policy, the login, the digest merge and the OCI labels all live in
+// specsnl/github-actions now, so what this repository still owns is the pin. A
+// half-finished bump — one job moved, three left behind — builds digests with
+// one version of the pipeline and merges them with another.
+func TestRelease_SharedWorkflowsArePinnedToOneRef(t *testing.T) {
+	refs := map[string][]string{}
 
-	for _, want := range []string{
-		"type=semver,pattern={{version}}",
-		"type=semver,pattern={{major}}.{{minor}}",
-		"type=semver,pattern={{major}},enable=",
-	} {
-		if !strings.Contains(tags, want) {
-			t.Errorf("the tag list does not contain %q:\n%s", want, tags)
+	for _, path := range []string{".github/workflows/release.yml", ".github/workflows/ci.yml"} {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+
+		for line := range strings.Lines(string(content)) {
+			_, after, ok := strings.Cut(line, "specsnl/github-actions")
+			if !ok {
+				continue
+			}
+
+			_, ref, ok := strings.Cut(after, "@")
+			if !ok {
+				t.Errorf("%s uses specsnl/github-actions without a ref:\n%s", path, strings.TrimSpace(line))
+
+				continue
+			}
+
+			ref = strings.TrimSpace(ref)
+			refs[ref] = append(refs[ref], path+": "+strings.TrimSpace(line))
 		}
 	}
 
-	// No `v` prefix anywhere: `labelsync version` prints the tag without one.
-	if strings.Contains(tags, "prefix=v") || strings.Contains(tags, "v{{version}}") {
-		t.Errorf("the tag list prefixes tags with a v, which the version command never prints:\n%s", tags)
+	if len(refs) == 0 {
+		t.Fatal("neither workflow calls specsnl/github-actions; the image pipeline is not shared at all")
 	}
 
-	if !strings.Contains(tags, "!startsWith(github.ref, 'refs/tags/v0.')") {
-		t.Errorf("the bare {{major}} is not guarded against 0.x, so a 0.x release would publish a :0 tag:\n%s", tags)
-	}
-
-	if flavor := imagesStepWith(t, "docker/metadata-action", "flavor"); !strings.Contains(flavor, "latest=auto") {
-		t.Errorf("flavor = %q, want it to set latest=auto — a prerelease must not move :latest", flavor)
-	}
-}
-
-// GHCR links a package to this repository through org.opencontainers.image.source,
-// and an unlinked package inherits neither the repository's visibility nor its
-// permissions — so it stays private, and off the Packages sidebar, however many
-// releases push to it.
-func TestRelease_ImagesCarryTheOCILabels(t *testing.T) {
-	for _, key := range []string{"labels", "annotations"} {
-		value := imagesStepWith(t, "docker/build-push-action", key)
-
-		if !strings.Contains(value, "steps.meta.outputs."+key) {
-			t.Errorf("%s = %q, want it to come from the metadata action, which emits image.source", key, value)
-		}
+	if len(refs) > 1 {
+		t.Errorf("the shared workflows are pinned to %d different refs: %v",
+			len(refs), slices.Sorted(maps.Keys(refs)))
 	}
 }
 
@@ -440,10 +513,11 @@ func TestRelease_DockerfileBuildFlagsMatchGoreleaser(t *testing.T) {
 	}
 }
 
-// An arm64 image needs no emulation at all, but only while the builder is pinned
-// to the platform doing the building and takes its GOOS/GOARCH from the platform
-// being built for. Unpin either and the arm64 leg runs apt-get and the whole
-// compile under QEMU, which is slow enough to look like a hung release.
+// The release builds each platform on its own runner, so nothing there is ever
+// emulated — but a `--platform` build anywhere else is, unless the builder stays
+// pinned to the platform doing the building and takes its GOOS/GOARCH from the
+// platform being built for. Unpin either and `docker buildx build --platform
+// linux/arm64` on a laptop runs apt-get and the whole compile under QEMU.
 func TestRelease_ImagesCrossCompileRatherThanEmulate(t *testing.T) {
 	dockerfile := readDockerfile(t)
 
