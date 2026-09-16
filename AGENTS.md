@@ -20,25 +20,27 @@ in the output; it is not an error.
 
 Run `task --list` for the full set. The ones used most:
 
-| Command                | What it does                                                      |
-|------------------------|-------------------------------------------------------------------|
-| `task checkall`        | The full check sequence: `tidy:check`, `lint`, `test`, `md:check` |
-| `task tidy:check`      | `go mod tidy -diff` — fails if `go.mod`/`go.sum` are untidy       |
-| `task tidy`            | `go mod tidy`                                                     |
-| `task lint`            | `golangci-lint run`                                               |
-| `task lint:fix`        | `golangci-lint run --fix`                                         |
-| `task test`            | `go test -race -tags=integration ./...`                           |
-| `task test:update`     | Rewrite the golden files from the current output                  |
-| `task md:check`        | markdownlint over every Markdown file                             |
-| `task md:fix`          | Align Markdown tables, then apply autofixable rules               |
-| `task build`           | Build the binary into the working directory                       |
-| `task docs:serve`      | Hugo dev server with live reload on <http://localhost:1313>       |
-| `task docs:preview`    | Build, then serve the static site over nginx on port 8080         |
-| `task docs:build`      | Build the site into `docs/public/`                                |
-| `task docs:mod:tidy`   | Tidy the Hugo module in `docs/`                                   |
-| `task release:dry-run` | Local goreleaser snapshot, no publishing                          |
-| `task demo:record:*`   | Re-record one demo GIF with VHS: `:labelsync`, `:init`            |
-| `task dc:shell`        | Shell into the `go-builder` service                               |
+| Command                | What it does                                                        |
+|------------------------|---------------------------------------------------------------------|
+| `task checkall`        | The full check sequence: `tidy:check`, `lint`, `test`, `md:check`   |
+| `task tidy:check`      | `go mod tidy -diff` — fails if `go.mod`/`go.sum` are untidy         |
+| `task tidy`            | `go mod tidy`                                                       |
+| `task lint`            | `golangci-lint run`                                                 |
+| `task lint:fix`        | `golangci-lint run --fix`                                           |
+| `task test`            | `go test -race -tags=integration ./...`                             |
+| `task test:update`     | Rewrite the golden files from the current output                    |
+| `task md:check`        | markdownlint over every Markdown file                               |
+| `task md:fix`          | Align Markdown tables, then apply autofixable rules                 |
+| `task build`           | Build the binary into the working directory                         |
+| `task image:build`     | Load both runtime images locally: `:dev` and `:dev-debian`          |
+| `task image:smoke`     | Build them, then run `test/image.bats` — what CI's image guard does |
+| `task docs:serve`      | Hugo dev server with live reload on <http://localhost:1313>         |
+| `task docs:preview`    | Build, then serve the static site over nginx on port 8080           |
+| `task docs:build`      | Build the site into `docs/public/`                                  |
+| `task docs:mod:tidy`   | Tidy the Hugo module in `docs/`                                     |
+| `task release:dry-run` | Local goreleaser snapshot, no publishing                            |
+| `task demo:record:*`   | Re-record one demo GIF with VHS: `:labelsync`, `:init`              |
+| `task dc:shell`        | Shell into the `go-builder` service                                 |
 
 ### Local check sequence
 
@@ -120,6 +122,11 @@ tests or the Markdown checks.
   or the developer experience, not by reflex. Prefer table-driven tests; use
   `net/http/httptest` for the GitHub client and an injected clock for anything time-dependent.
 
+  The one exception is [test/image.bats](./test/image.bats), which drives `docker run` against the
+  published images: the subject is a container, not a package, and bats is what the shared CI action
+  expects. It runs from `task image:smoke` and from the `Image (...)` jobs in CI, never from
+  `go test`.
+
 - **Sentinel errors are always wrapped with `%w`.** Every way a run can fail has a sentinel in
   [internal/labelsync/errors.go](./internal/labelsync/errors.go). A call site with context to add
   never returns a sentinel bare, and never renders one with `%v` or into a freshly constructed
@@ -148,6 +155,7 @@ tests or the Markdown checks.
 ```text
 labelsync/
 ├── main.go                       # XDG init, cmd.Execute()
+├── test/                         # image.bats — acceptance checks for the published images
 └── internal/
     ├── labelsync/                # configuration.go (XDG paths), errors.go (sentinels + KindOf)
     ├── cmd/                      # one file per Cobra command
