@@ -1,0 +1,74 @@
+# https://taskfile.dev
+version: "3"
+
+silent: true
+
+vars:
+  IMAGE: '{{ .IMAGE | default "ghcr.io/specsnl/labelsync" }}'
+  LABELSYNC_VERSION:
+    sh: described=$(git describe --tags --always --dirty="-dev" 2>/dev/null || echo "dev"); echo "${described#v}"
+
+tasks:
+
+  build:
+    desc: Build both published runtime images for the host platform
+    summary: |
+      Builds the two stages the release workflow publishes and loads them into
+      the local docker:
+
+        ghcr.io/specsnl/labelsync:dev          the scratch image, `binary` stage
+        ghcr.io/specsnl/labelsync:dev-debian   the debian image, `debian` stage
+
+      The tags mirror the published ones, where the debian variant is a suffix
+      on the same image name rather than a package of its own.
+
+      Host platform only: --load writes into the docker image store, which holds
+      one platform per tag.
+    cmds:
+      - task: build:one
+        vars: { TARGET: binary, TAG: dev }
+      - task: build:one
+        vars: { TARGET: debian, TAG: dev-debian }
+
+  build:one:
+    internal: true
+    cmds:
+      - >-
+        docker buildx build .
+        --target {{ .TARGET }}
+        --tag {{ .IMAGE }}:{{ .TAG }}
+        --build-arg LABELSYNC_VERSION={{ .LABELSYNC_VERSION }}
+        --load
+    requires:
+      vars: [TARGET, TAG]
+
+  smoke:
+    desc: Build both runtime images and run the acceptance checks CI runs
+    summary: |
+      Runs test/image.bats against each image, which is the same file the
+      `Image (...)` jobs in ci.yml run — the version the binary reports, the
+      user it runs as, the CA bundle, and a bind-mounted config.
+
+      The checks drive docker through a socket proxy, so they need the daemon on
+      the host rather than the one `task build` uses.
+    deps: [build]
+    cmds:
+      - mkdir -p /tmp/labelsync-image-smoke
+      - defer: docker compose --profile image rm --stop --force docker-socket-proxy
+      - task: smoke:one
+        vars: { TARGET: binary, TAG: dev }
+      - task: smoke:one
+        vars: { TARGET: debian, TAG: dev-debian }
+
+  smoke:one:
+    internal: true
+    cmds:
+      - task: :dc:run:bats
+        vars:
+          RUN_FLAGS: >-
+            --env IMAGE={{ .IMAGE }}:{{ .TAG }}
+            --env EXPECTED_VERSION={{ .LABELSYNC_VERSION }}
+            --env TARGET={{ .TARGET }}
+          SUB_CMD: test/image.bats
+    requires:
+      vars: [TARGET, TAG]
