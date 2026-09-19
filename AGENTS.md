@@ -14,6 +14,10 @@ or `npx` directly — the Taskfile wraps Docker Compose services that pin the Go
 Node versions, and set the shared build caches. Running the underlying tool directly uses whatever
 happens to be installed locally, which is not what CI runs.
 
+Every task routed through `docker compose` removes the `volume-init` container it pulled in through
+`depends_on` when it finishes, so a run leaves no stopped containers behind. The teardown is visible
+in the output; it is not an error.
+
 Run `task --list` for the full set. The ones used most:
 
 | Command                | What it does                                                      |
