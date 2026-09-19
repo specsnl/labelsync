@@ -11,7 +11,8 @@ RUN apt-get update \
         ca-certificates \
         tree \
         git \
-        openssh-client
+        openssh-client \
+    && rm -rf /var/lib/apt/lists/*
 
 FROM base AS builder-download
 

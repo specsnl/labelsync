@@ -133,14 +133,15 @@ tasks:
             bash -c 'go test $(grep -rlF --include="*_test.go" "flag.Bool(\"update\"" . | xargs -n1 dirname | sort -u) -update'
 
   checkall:
-    desc: Run every check — the tidy check, golangci-lint, the Go tests, and markdownlint
+    desc: Run every check — the tidy check, golangci-lint, hadolint, the Go tests, and markdownlint
     summary: |
-      The full local check sequence: tidy:check, lint, test, md:check.
+      The full local check sequence: tidy:check, lint, lint:docker, test, md:check.
 
       Every step reports; none of them writes. Run this before opening a pull request.
     cmds:
       - task: tidy:check
       - task: lint
+      - task: lint:docker
       - task: test
       - task: md:check
 

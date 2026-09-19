@@ -74,6 +74,22 @@ jobs:
       - name: Test
         run: go test -race -count=1 -tags=integration ./...
 
+  dockerfile-lint:
+    name: Dockerfile lint
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Task
+        uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Lint the Dockerfile
+        run: task lint:docker
+
   image:
     name: Image (${{ matrix.target }}, ${{ matrix.runner.platform }})
     runs-on: ${{ matrix.runner.os }}
