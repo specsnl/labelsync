@@ -74,3 +74,64 @@ jobs:
       - name: Test
         run: go test -race -count=1 -tags=integration ./...
 
+  dockerfile-lint:
+    name: Dockerfile lint
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Task
+        uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Lint the Dockerfile
+        run: task lint:docker
+
+  image:
+    name: Image (${{ matrix.target }}, ${{ matrix.runner.platform }})
+    runs-on: ${{ matrix.runner.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [binary, debian]
+        runner:
+          - os: ubuntu-24.04
+            platform: linux/amd64
+          - os: ubuntu-24.04-arm
+            platform: linux/arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build the runtime image
+        id: build
+        uses: specsnl/github-actions/build-image@2.4.3
+        with:
+          platform: ${{ matrix.runner.platform }}
+          image-name: ghcr.io/specsnl/labelsync
+          dockerfile: Dockerfile
+          target: ${{ matrix.target }}
+          load: true
+          raw-tag: ci-${{ matrix.target }}
+          build-args: LABELSYNC_VERSION=ci-${{ github.sha }}
+
+      - name: Set up bats
+        id: bats
+        uses: bats-core/bats-action@4.0.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Smoke test
+        env:
+          BATS_LIB_PATH: ${{ steps.bats.outputs.lib-path }}
+          IMAGE: ${{ steps.build.outputs.image }}
+          EXPECTED_VERSION: ci-${{ github.sha }}
+          TARGET: ${{ matrix.target }}
+        run: bats test/image.bats
+

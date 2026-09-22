@@ -118,6 +118,41 @@ services:
       - .:/src
       - ./dev:/usr/local/bin:ro
 
+  bats:
+    profiles: ["image"]
+    user: ${FIXUID:-1000}:${FIXGID:-1000}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: bats
+    working_dir: ${PWD}
+    environment:
+      HOME: /tmp
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
+      TMPDIR: /tmp/labelsync-image-smoke
+    depends_on:
+      - docker-socket-proxy
+    volumes:
+      - ${PWD}:${PWD}
+      - /tmp/labelsync-image-smoke:/tmp/labelsync-image-smoke
+
+  docker-socket-proxy:
+    profiles: ["image"]
+    # Latest version: https://hub.docker.com/r/tecnativa/docker-socket-proxy/tags
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    environment:
+      ALLOW_START: 1
+      ALLOW_STOP: 1
+      CONTAINERS: 1
+      DISTRIBUTION: 1
+      IMAGES: 1
+      INFO: 1
+      NETWORKS: 1
+      POST: 1
+      VOLUMES: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
   node:
     profiles: ["markdown"]
     user: ${FIXUID:-1000}:${FIXGID:-1000}
@@ -132,6 +167,15 @@ services:
     volumes:
       - .:/src
       - cache:/cache
+
+  hadolint:
+    profiles: ["lint"]
+    user: ${FIXUID:-1000}:${FIXGID:-1000}
+    # Latest version: https://hub.docker.com/r/hadolint/hadolint/tags
+    image: hadolint/hadolint:v2.14.0
+    working_dir: /src
+    volumes:
+      - .:/src
 
   golangci-lint:
     profiles: ["lint"]

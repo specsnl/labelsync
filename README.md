@@ -75,8 +75,8 @@ Or `go install github.com/specsnl/labelsync@latest`, or download a `tar.gz` for 
 the [releases page](https://github.com/specsnl/labelsync/releases) — Linux and macOS, amd64 and
 arm64.
 
-In a container, `docker run --rm ghcr.io/specsnl/labelsync:0.1 --help` — also published as
-`ghcr.io/specsnl/labelsync/debian` for when a step needs a shell.
+In a container, `docker run --rm ghcr.io/specsnl/labelsync:0.1 --help` — with a `:0.1-debian` variant
+of every tag for when a step needs a shell.
 
 Release candidates are a separate, opt-in cask, so `brew upgrade` never moves a stable install onto
 one — while the rc cask itself tracks the leading edge and upgrades onto a stable release once it

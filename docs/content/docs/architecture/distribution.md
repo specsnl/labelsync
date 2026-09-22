@@ -5,16 +5,17 @@ weight: 12
 
 A release is one git tag. Pushing `v1.2.3` runs
 [`.github/workflows/release.yml`](https://github.com/specsnl/labelsync/blob/main/.github/workflows/release.yml),
-which has two independent jobs: `release` runs goreleaser once — building every binary, creating the
-GitHub release, and committing the cask *for that tag's channel* to
-[`specsnl/homebrew-tap`](https://github.com/specsnl/homebrew-tap) — while `images` builds the two
-container images and pushes them to GHCR. Neither needs anything from the other, so they run side by
-side. Nothing else is manual, and there is no version to bump anywhere in the tree —
-see [Versioning]({{< ref "./versioning.md" >}}).
+which has two independent halves: `release` runs goreleaser once — building every binary, creating
+the GitHub release, and committing the cask *for that tag's channel* to
+[`specsnl/homebrew-tap`](https://github.com/specsnl/homebrew-tap) — while four `image*` jobs call the
+organisation's shared image pipeline and push the container images to GHCR. Neither half needs
+anything from the other, so they run side by side. Nothing else is manual, and there is no version to
+bump anywhere in the tree — see [Versioning]({{< ref "./versioning.md" >}}).
 
 The workflow's own `permissions:` block is `contents: read`, and each job asks for the one write
 scope it needs: `contents: write` for the release, `packages: write` for the push to GHCR. Neither
-job holds the other's token.
+half holds the other's token, and a reusable workflow inherits nothing it is not granted, so the
+`packages: write` sits on the calling job rather than at the top of the file.
 
 ## What a release produces
 
@@ -30,12 +31,13 @@ Four archives, one per platform, plus `checksums.txt`:
 Every binary is `CGO_ENABLED=0` and `-tags=netgo`, so it is statically linked and depends on nothing
 on the target machine. `-trimpath` and `-s -w` keep build paths out of it and the symbol table small.
 
-And two container images, each a manifest list over `linux/amd64` and `linux/arm64`:
+And two container images — one package, two variants — each a manifest list over `linux/amd64` and
+`linux/arm64`:
 
-| Package                            | Base               | Why it exists                                                     |
-|------------------------------------|--------------------|-------------------------------------------------------------------|
-| `ghcr.io/specsnl/labelsync`        | `scratch`          | The default. Binary, CA bundle, `/etc/passwd`, nothing else       |
-| `ghcr.io/specsnl/labelsync/debian` | `debian:13.6-slim` | Has a shell, so it can be a base image or a multi-command CI step |
+| Reference                                | Base               | Why it exists                                                     |
+|------------------------------------------|--------------------|-------------------------------------------------------------------|
+| `ghcr.io/specsnl/labelsync:1.2.3`        | `scratch`          | The default. Binary, CA bundle, `/etc/passwd`, nothing else       |
+| `ghcr.io/specsnl/labelsync:1.2.3-debian` | `debian:13.6-slim` | Has a shell, so it can be a base image or a multi-command CI step |
 
 ## The four channels
 
@@ -129,13 +131,39 @@ release, at the last step, after the GitHub release has already been created.
 ## The container images
 
 Both images come out of the same
-[`Dockerfile`](https://github.com/specsnl/labelsync/blob/main/Dockerfile) the local build uses: the
-`images` job runs `docker/build-push-action` once per runtime stage, selecting it with `target:`.
-`binary` is the `scratch` stage and publishes `ghcr.io/specsnl/labelsync`; `debian` publishes
-`ghcr.io/specsnl/labelsync/debian`.
+[`Dockerfile`](https://github.com/specsnl/labelsync/blob/main/Dockerfile) the local build uses, and
+both are published by the organisation's shared pipeline in
+[`specsnl/github-actions`](https://github.com/specsnl/github-actions) — `build-go-cli.yml` per
+platform, then `merge-go-cli.yml` to merge the digests into a manifest list. The whole of it is four
+jobs of configuration:
 
-Three things about those stages are load-bearing, and none of them is visible in a `version` smoke
-test:
+```yaml
+  image:
+    strategy:
+      matrix:
+        runner:
+          - { os: ubuntu-24.04, platform: linux/amd64 }
+          - { os: ubuntu-24.04-arm, platform: linux/arm64 }
+    uses: specsnl/github-actions/.github/workflows/build-go-cli.yml@2.4.3
+    with:
+      image-name: ghcr.io/specsnl/labelsync
+      target: binary
+      version-build-arg: LABELSYNC_VERSION
+```
+
+plus the same again for `target: debian`, and a manifest job per target — the debian one carrying
+`variant: debian`. Login, buildx, the digest export, the tag policy, the OCI labels and
+`provenance: false` all live in the shared workflow, along with a layer cache in the Actions cache
+keyed per Dockerfile, platform and target.
+
+What stays here is what only this repository can know: **which stages to publish**, **what the image
+is called**, and **what the version build arg is named**. Everything else the pipeline works out from
+the tag. There is no `version:` input either — the shared workflow defaults it to the tag without its
+leading `v`, which is exactly what goreleaser injects, so the image and the tarball cut from one tag
+cannot disagree about what they are.
+
+Three things about the runtime stages are load-bearing, and none of them is visible in a `version`
+smoke test:
 
 - **The CA bundle, copied into `/etc/ssl/certs/` — with the trailing slash.** Without it the file
   lands as a *file* named `/etc/ssl/certs`, and Go, which looks in six fixed paths and not that one,
@@ -153,50 +181,57 @@ test:
 
 ### Tags
 
-| Git tag       | `ghcr.io/specsnl/labelsync`   | `…/labelsync/debian`          |
-|---------------|-------------------------------|-------------------------------|
-| `v1.2.3`      | `1.2.3`, `1.2`, `1`, `latest` | `1.2.3`, `1.2`, `1`, `latest` |
-| `v1.3.0-rc.1` | `1.3.0-rc.1`                  | `1.3.0-rc.1`                  |
-| `v0.4.0`      | `0.4.0`, `0.4`, `latest`      | `0.4.0`, `0.4`, `latest`      |
+| Git tag       | Scratch                                 | Debian                                                              |
+|---------------|-----------------------------------------|---------------------------------------------------------------------|
+| `v1.2.3`      | `1.2.3`, `1.2`, `1`, `v1.2.3`, `latest` | `1.2.3-debian`, `1.2-debian`, `1-debian`, `v1.2.3-debian`, `debian` |
+| `v1.3.0-rc.1` | `1.3.0-rc.1`, `v1.3.0-rc.1`             | `1.3.0-rc.1-debian`, `v1.3.0-rc.1-debian`                           |
+| `v0.4.0`      | `0.4.0`, `0.4`, `v0.4.0`, `latest`      | `0.4.0-debian`, `0.4-debian`, `v0.4.0-debian`, `debian`             |
 
-`docker/metadata-action` owns that policy declaratively, which is what keeps the pre-release
-behaviour and the moving tags as config rather than as hand-written conditionals over `github.ref`:
+**The debian image is a tag suffix, not a package of its own.** That is how `node`, `python` and
+`postgres` publish their base-image variants, and it is what the organisation's shared pipeline is
+built around: `variant: debian` on the merge job turns into a `-debian` suffix on every version tag
+plus a bare `:debian`. The variants share a tag namespace and each still has its own digest. It cost
+one thing to adopt — `ghcr.io/specsnl/labelsync/debian`, the nested package the first four release
+candidates pushed to, is frozen at `0.1.0-rc.4` and receives nothing further.
 
-```yaml
-tags: |
-  type=semver,pattern={{version}}
-  type=semver,pattern={{major}}.{{minor}}
-  type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
-flavor: latest=auto
-```
+`docker/metadata-action`, inside the shared workflow, owns the policy declaratively, which is what
+keeps the pre-release behaviour and the moving tags as config rather than as hand-written
+conditionals over `github.ref`:
 
-- **No `v` prefix.** `labelsync version` prints the tag without one — that is what goreleaser's
-  `{{ .Version }}` renders, and what `metadata-action`'s `version` output is — so a `:v1.2.3` tag
-  would disagree with the version the image reports. The images take that same value as the
-  `LABELSYNC_VERSION` build arg, which is how both build paths agree.
-- **`1.2.3` is immutable; `1.2`, `1` and `latest` move.** All four come out of the *same* build in the
-  same push, so every tag of one release resolves to one manifest digest by construction —
+- **The version tag has no `v`.** `labelsync version` prints the tag without one — that is what
+  goreleaser's `{{ .Version }}` renders, and what `metadata-action`'s `version` output is. `v1.2.3`
+  is published too, as an alias onto the same digest, because the shared pipeline also emits
+  `type=ref,event=tag`; nothing in labelsync reads it, and `:1.2.3` stays the form the documentation
+  and the CI recipe pin.
+- **`1.2.3` is immutable; `1.2`, `1` and `latest` move.** They all come out of the *same* digests in
+  the same merge, so every tag of one release resolves to one manifest by construction —
   `docker buildx imagetools inspect` reports the same digest for each. Tagging `v1.2.4` re-points
   `:1.2` and `:1` at the new manifest.
 - **No `:0` while labelsync is pre-1.0.** Semver allows a `0.x` bump to break, so a `:0` tag would
-  promise stability across exactly the releases most likely to break. The `enable=` guard drops at
+  promise stability across exactly the releases most likely to break. The shared workflow guards the
+  bare `{{major}}` on `!startsWith(github.ref, 'refs/tags/v0.')`, so the guard drops by itself at
   1.0.0; until then `:0.4` is the narrowest honest moving tag, and it still moves on every patch.
-- **A pre-release moves nothing.** `metadata-action` emits neither `{{major}}` nor
-  `{{major}}.{{minor}}` for a prerelease semver tag, and `latest=auto` moves `latest` only for a
-  non-prerelease — so an `-rc.N` tag publishes its own version tag and touches nothing else. The
-  window between an rc and its stable release is exactly when `docker run ghcr.io/specsnl/labelsync`
-  must not hand a stranger a release candidate. It is the same problem the tap has, and the reason
-  that one ships [two casks](#stable-and-rc-are-two-casks) — but the cheaper answer to it: a tag
-  pattern, rather than a second package per channel.
+- **A pre-release moves nothing.** `metadata-action` collapses `{{major}}` and `{{major}}.{{minor}}`
+  onto the full version for a prerelease semver tag, and the shared workflow sets `latest=false` and
+  re-adds `:latest` itself, guarded on a tag with no `-` in it — so an `-rc.N` tag publishes its own
+  version tag and touches nothing else. The window between an rc and its stable release is exactly
+  when `docker run ghcr.io/specsnl/labelsync` must not hand a stranger a release candidate. It is the
+  same problem the tap has, and the reason that one ships
+  [two casks](#stable-and-rc-are-two-casks) — but the cheaper answer to it: a tag pattern, rather
+  than a second package per channel.
 
 `org.opencontainers.image.source` is not decoration: without it GHCR does not link the package to the
 repository, and an unlinked package inherits neither its visibility nor its permissions.
-`metadata-action` emits it alongside `.version`, `.revision`, `.licenses` and `.description`, and
-they are passed on as both labels and manifest annotations.
+`metadata-action` emits it alongside `.version`, `.revision`, `.licenses` and `.description`, and the
+shared pipeline passes them on as both labels and manifest annotations.
 
-### Two platforms, no emulation
+### One runner per platform
 
-`platforms: linux/amd64,linux/arm64` is one build per image, and neither leg runs a foreign binary:
+Each platform is built on a runner of its own architecture — `linux/amd64` on `ubuntu-24.04`,
+`linux/arm64` on `ubuntu-24.04-arm` — and the two digests are merged into a manifest list afterwards.
+Nothing is emulated, and nothing has to be: `setup-qemu-action` appears nowhere in the pipeline.
+
+The Dockerfile could have supplied both legs from one runner, and still can:
 
 - the builder stage is `FROM --platform=$BUILDPLATFORM`, so `apt-get` and `go build` always run
   natively;
@@ -205,12 +240,52 @@ they are passed on as both labels and manifest annotations.
   `task build` asks for the host's own platform;
 - both runtime stages only `COPY`.
 
-That is why the job needs no `setup-qemu-action` at all. Letting buildx pick the target platform for
-the *builder* instead would run the whole `apt-get` and `go build` under QEMU for the arm64 leg.
+That property is what makes `docker buildx build --platform linux/arm64` on an amd64 laptop finish in
+seconds rather than crawling through QEMU, and `TestRelease_ImagesCrossCompileRatherThanEmulate`
+keeps it. The release no longer depends on it, but the
+[pull-request guard](#the-pull-request-guard) needs the native runners for a different reason
+entirely: it *runs* what it builds.
 
-`provenance: false` keeps the manifest list to the two platforms it claims; buildx otherwise attaches
-provenance as extra `unknown/unknown` manifests, which several registries render as phantom
-platforms.
+`provenance: false`, which the shared `build-image` action sets, keeps the manifest list to the two
+platforms it claims; buildx otherwise attaches provenance as extra `unknown/unknown` manifests, which
+several registries render as phantom platforms.
+
+### The pull-request guard
+
+A broken Dockerfile should fail on the pull request, not while a tag is being cut. The `image` job in
+[`ci.yml`](https://github.com/specsnl/labelsync/blob/main/.github/workflows/ci.yml) builds both
+stages on both architectures — four jobs — and runs
+[`test/image.bats`](https://github.com/specsnl/labelsync/blob/main/test/image.bats) against each
+result.
+
+It calls the shared `build-image` action directly rather than `build-go-cli.yml`, because the image
+has to be built and run in the same job: a reusable workflow would load it into a daemon the caller
+cannot reach. `load: true` builds one platform into the runner's own daemon and reports the reference
+to run — which is also why each leg needs a runner of its own architecture. A build that only
+compiles the foreign architecture proves nothing about the image it produced.
+
+What the script asserts is the set of things a release would otherwise be the first to find out:
+
+- **the version the binary reports.** The image is built with `LABELSYNC_VERSION=ci-<sha>`, a string
+  no fallback can produce, and the binary has to print it back. This is the one input that fails
+  *silently*: rename the build arg on either side and buildx warns about an unused arg, the build
+  succeeds, and the image reports `dev`.
+- **that it runs as `65534`,** read off `Config.User` rather than from `id`, which the scratch image
+  has no shell to run.
+- **that the CA bundle is at `/etc/ssl/certs/ca-certificates.crt`,** copied out of a created
+  container — again, no shell — so the missing trailing slash is caught here rather than by the first
+  API call someone makes.
+- **that a bind-mounted config is readable and parses.** A valid one fails on the *token*, which is
+  how the script knows the YAML was read; an invalid one comes back with
+  `"error_kind":"invalid_color"`.
+- **the shell in the debian image, and `/etc/passwd` in the scratch one** — the two properties that
+  belong to one stage each.
+
+The same script runs locally: `task image:smoke` builds both images and drives bats through a
+container that reaches the host daemon over a socket proxy.
+
+The four `Image (...)` checks are not in the branch ruleset's required checks, so they report but do
+not gate.
 
 ### Two build paths for one binary
 
@@ -227,13 +302,12 @@ templates with manual `{{ if not .Prerelease }}` conditionals where `metadata-ac
 patterns; and nothing about it is verifiable locally while the `goreleaser` service has no docker
 socket. If the identical-bits property ever matters more than those three, that is the way back.
 
-### The two manual steps
+### The manual step
 
-GHCR creates a package private on its first push, so each of the two needs its visibility flipped
-once, by hand, before anyone can pull it. A nested name (`labelsync/debian`) is legal for an
-organisation package and gets its own package page — the alternative, one package with a
-`1.2.3-debian` tag suffix, halves that bookkeeping but makes the variants share a tag namespace and
-hides the digest-per-variant distinction in the package list.
+GHCR creates a package private on its first push, so its visibility has to be flipped once, by hand,
+before anyone can pull it. That is one package now rather than two, which is the bookkeeping the
+`-debian` suffix buys: `ghcr.io/specsnl/labelsync` is already public, and the variant lands inside
+it.
 
 ## Verifying it without publishing
 
@@ -259,17 +333,21 @@ Three things the local run cannot tell you, all because they only exist at publi
 are uploaded, whether `HOMEBREW_TAP_GITHUB_TOKEN` is present, and whether the tap accepts the commit.
 
 The images are not part of that: they do not go through goreleaser, and the `goreleaser` service has
-no docker socket to build them with. `task images` is their local equivalent — it builds both stages,
-tags them `:dev`, loads them into the local docker, and runs `version` out of each:
+no docker socket to build them with. Two tasks cover them instead — `task image:build` loads both
+stages into the local docker as `:dev` and `:dev-debian`, mirroring the published names, and
+`task image:smoke` builds them and then runs the same `test/image.bats` the pull-request guard runs:
 
 ```sh
-task images
+task image:smoke
+```
+
+The one check neither makes is the CA bundle *working*, as opposed to being present — that needs the
+network:
+
+```sh
 docker run --rm -e GH_TOKEN -v "$PWD/labels.yml:/labels.yml:ro" \
   ghcr.io/specsnl/labelsync:dev sync --dry-run --config /labels.yml
 ```
-
-That second command is the check the `version` smoke test cannot make: it is the only one that proves
-the CA bundle landed where Go looks for it.
 
 Host platform only, because `--load` writes into the docker image store, which holds one platform per
 tag. The multi-platform manifest list is the one part of the published result that only a real release

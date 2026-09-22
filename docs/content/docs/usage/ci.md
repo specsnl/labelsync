@@ -168,15 +168,16 @@ jobs:
 ### From a container image
 
 The alternative to installing a toolchain is pulling one. Two images are published to GHCR on every
-release:
+release, as one package with two variants:
 
-| Image                              | Contents                                                                  |
-|------------------------------------|---------------------------------------------------------------------------|
-| `ghcr.io/specsnl/labelsync`        | `scratch` — the binary and a CA bundle, nothing else                      |
-| `ghcr.io/specsnl/labelsync/debian` | `debian:13.6-slim` — has a shell, so a step can run more than one command |
+| Image                                  | Contents                                                                  |
+|----------------------------------------|---------------------------------------------------------------------------|
+| `ghcr.io/specsnl/labelsync:0.1`        | `scratch` — the binary and a CA bundle, nothing else                      |
+| `ghcr.io/specsnl/labelsync:0.1-debian` | `debian:13.6-slim` — has a shell, so a step can run more than one command |
 
-Both are manifest lists over `linux/amd64` and `linux/arm64`, and both run as uid `65534` with the
-binary as their entrypoint, so arguments append:
+The `-debian` suffix is on every tag the default variant has, plus a bare `:debian`. Both are
+manifest lists over `linux/amd64` and `linux/arm64`, and both run as uid `65534` with the binary as
+their entrypoint, so arguments append:
 
 ```yaml
       - name: Check for drift
@@ -196,8 +197,9 @@ deliberately no `:0` while labelsync is pre-1.0, because semver lets a `0.x` bum
 on, `:1` becomes the tag to pin. `:latest` exists but is the wrong choice for CI, for the usual
 reason: it changes under you across a major version.
 
-A pre-release publishes only its own exact tag — `:0.2.0-rc.1` — and moves neither `:latest` nor any
-minor tag, so a pinned job never wakes up on a release candidate.
+A pre-release publishes only its own version — `:0.2.0-rc.1`, and `:v0.2.0-rc.1` as an alias onto the
+same digest — and moves neither `:latest` nor any minor tag, so a pinned job never wakes up on a
+release candidate.
 
 The container needs the config file, which is why the working directory is mounted; `--config` takes
 a path if it lives somewhere else. Everything on this page applies unchanged — the exit codes are the
