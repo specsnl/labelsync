@@ -80,7 +80,7 @@ RUN set -eux; \
 ENV BATS_LIB_PATH=/usr/lib/bats
 
 # Latest version: https://hub.docker.com/_/debian/tags
-FROM debian:13.6-slim AS debian
+FROM debian:13.7-slim AS debian
 
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build /src/labelsync /usr/local/bin
