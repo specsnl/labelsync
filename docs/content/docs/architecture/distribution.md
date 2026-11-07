@@ -12,6 +12,10 @@ organisation's shared image pipeline and push the container images to GHCR. Neit
 anything from the other, so they run side by side. Nothing else is manual, and there is no version to
 bump anywhere in the tree — see [Versioning]({{< ref "./versioning.md" >}}).
 
+The `release` job sets `GORELEASER_CURRENT_TAG` to the pushed tag. A final is usually tagged on the
+commit of its last release candidate, and with two tags on one commit goreleaser would otherwise
+release the RC again.
+
 The workflow's own `permissions:` block is `contents: read`, and each job asks for the one write
 scope it needs: `contents: write` for the release, `packages: write` for the push to GHCR. Neither
 half holds the other's token, and a reusable workflow inherits nothing it is not granted, so the
