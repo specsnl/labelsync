@@ -72,11 +72,17 @@ on the user's machine. That is what makes the install a download instead of a Go
 requirement, and it is the same shape as `specs-cli`'s entry in the tap.
 
 Casks of unsigned binaries downloaded over HTTP carry macOS's quarantine attribute, which turns the
-first run into a Gatekeeper refusal. The cask therefore ships a `postflight` hook:
+first run into a Gatekeeper refusal. The cask therefore ships a post-install hook, written in
+goreleaser's declarative `install_steps` DSL and rendered into the cask as a `postflight_steps` block:
 
 ```ruby
-system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/labelsync"]
+on_macos do
+  run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/labelsync"]
+end
 ```
+
+goreleaser rewrites `{{ .StagedPath }}` into Homebrew's own `{{staged_path}}` placeholder, which the
+cask resolves at install time.
 
 Without it, `brew install` succeeds and the very next command fails — the worst possible split,
 because the failure surfaces nowhere near its cause.
@@ -113,7 +119,7 @@ anchor needs, since goreleaser rejects an unknown top-level key to hang one on. 
 `binaries: [labelsync]` on both entries is load-bearing. goreleaser defaults `binaries` to the cask
 *name*, so the rc entry would otherwise emit `binary "labelsync@rc"` while the archive contains
 `labelsync` — a cask that installs nothing, and one that contradicts its own quarantine hook, which
-is hardcoded to `#{staged_path}/labelsync`. Nothing goes red until someone tries to install an rc,
+is hardcoded to `{{ .StagedPath }}/labelsync`. Nothing goes red until someone tries to install an rc,
 which is why `release_test.go` reads both entries back and asserts the tap coordinates, the
 `binaries` list, the quarantine hook, and the `skip_upload` split — the last being the whole channel
 policy, and invisible until a real tag.

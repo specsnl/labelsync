@@ -40,7 +40,7 @@ type releaseCask struct {
 	} `yaml:"repository"`
 	Hooks struct {
 		Post struct {
-			Install string `yaml:"install"`
+			InstallSteps string `yaml:"install_steps"`
 		} `yaml:"post"`
 	} `yaml:"hooks"`
 }
@@ -190,9 +190,9 @@ func TestRelease_CaskNamesTheBinaryInTheArchive(t *testing.T) {
 // a failure that surfaces nowhere near its cause.
 func TestRelease_CaskClearsTheQuarantineAttribute(t *testing.T) {
 	for name, cask := range loadCasks(t) {
-		install := cask.Hooks.Post.Install
+		install := cask.Hooks.Post.InstallSteps
 
-		for _, want := range []string{"xattr", "-dr", "com.apple.quarantine"} {
+		for _, want := range []string{"xattr", "-dr", "com.apple.quarantine", "{{ .StagedPath }}/labelsync"} {
 			if !strings.Contains(install, want) {
 				t.Errorf("the %s post-install hook does not mention %q:\n%s", name, want, install)
 			}
