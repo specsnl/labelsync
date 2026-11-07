@@ -185,9 +185,10 @@ not part of the site, so pages link to it by absolute github.com URL.
 
 **Links between content pages go through `{{< ref >}}`**, keeping the path exactly as it is on
 disk — `[Plan]({{< ref "./plan.md" >}})`, `[Commands]({{< ref "../usage/commands.md#prune" >}})`.
-A plain `./plan.md` link 404s on the built site — Hugo does not rewrite `.md` links and Hextra
-ships no render-link hook — while `task md:check` stays green. `ref` instead fails the build when
-its target moves or disappears.
+Hextra's render-link hook does resolve a plain `./plan.md` link, but only while the target exists:
+once it moves, the hook passes the `.md` path through untouched, the built site 404s, and both the
+Hugo build and `task md:check` stay green. `ref` instead fails the build when its target moves or
+disappears.
 
 ### The design record
 
