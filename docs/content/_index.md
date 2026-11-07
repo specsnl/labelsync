@@ -20,7 +20,7 @@ layout: hextra-home
 
 <div style="margin-bottom: 4rem">
 {{< hextra/hero-button text="Get Started" link="docs/usage/getting-started" >}}
-{{< hextra/hero-button text="GitHub" link="https://github.com/specsnl/labelsync" style="outline" >}}
+{{< hextra/hero-button text="GitHub" link="https://github.com/specsnl/labelsync" >}}
 </div>
 
 {{< hextra/feature-grid >}}
