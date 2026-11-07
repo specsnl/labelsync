@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"sync"
 
 	gogithub "github.com/google/go-github/v76/github"
 	"golang.org/x/sync/errgroup"
@@ -87,6 +88,26 @@ func (c *Client) Select(ctx context.Context, selectors []config.Selector, concur
 	// whatever order the walks happened to finish in.
 	out := make([]Selection, len(selectors))
 
+	var (
+		mu          sync.Mutex
+		done, found int
+	)
+
+	// Counted under the lock and reported under it too, so the line never goes
+	// backwards when two walks finish at once.
+	advance := func(repos int) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		done++
+		found += repos
+
+		c.progress.Enumerating(done, len(selectors), found)
+	}
+
+	c.progress.Enumerating(0, len(selectors), 0)
+	defer c.progress.Done()
+
 	group, ctx := errgroup.WithContext(ctx)
 	group.SetLimit(concurrency)
 
@@ -99,6 +120,8 @@ func (c *Client) Select(ctx context.Context, selectors []config.Selector, concur
 				if errors.Is(err, labelsync.ErrRepoInaccessible) {
 					out[i] = Selection{Selector: selector}
 
+					advance(0)
+
 					return nil
 				}
 
@@ -106,6 +129,8 @@ func (c *Client) Select(ctx context.Context, selectors []config.Selector, concur
 			}
 
 			out[i] = selection
+
+			advance(len(selection.Repos))
 
 			return nil
 		})
