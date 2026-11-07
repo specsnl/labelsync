@@ -8,6 +8,7 @@ import (
 	"github.com/specsnl/labelsync/internal/github"
 	"github.com/specsnl/labelsync/internal/github/ratelimit"
 	"github.com/specsnl/labelsync/internal/labelsync"
+	"github.com/specsnl/labelsync/internal/util/progress"
 )
 
 // client resolves a token and builds the GitHub client every network command
@@ -30,8 +31,12 @@ func (a *App) client(ctx context.Context) (*github.Client, error) {
 			// A wait a user cannot see reads as a hang. Which of the three
 			// renderings they get is decided here, once, from --output and from
 			// what stderr turns out to be — see ratelimit.NewReporter.
-			ratelimit.WithReporter(ratelimit.NewReporter(a.Out, a.Stderr, a.Format)),
+			ratelimit.WithReporter(pausing{
+				Reporter: ratelimit.NewReporter(a.Out, a.Stderr, a.Format),
+				progress: a.progress(),
+			}),
 		)),
+		github.WithProgress(a.progress()),
 	}
 
 	// --no-cache arrives as the absence of anywhere to put anything, rather than
@@ -43,6 +48,26 @@ func (a *App) client(ctx context.Context) (*github.Client, error) {
 	// Last, so a test can override any of the above — a base URL pointing at
 	// httptest, a cache directory under t.TempDir() — through one seam.
 	return github.New(token, append(opts, a.GitHub...)...)
+}
+
+// pausing takes the progress line down for as long as a rate-limit wait is
+// shown, because both draw on the same row of stderr. The countdown is the more
+// important of the two while it lasts — it is the one explaining why nothing
+// moves — and the progress line comes back the moment it is over.
+type pausing struct {
+	ratelimit.Reporter
+
+	progress progress.Reporter
+}
+
+func (p pausing) Start(w ratelimit.Wait) {
+	p.progress.Pause()
+	p.Reporter.Start(w)
+}
+
+func (p pausing) Done(w ratelimit.Wait) {
+	p.Reporter.Done(w)
+	p.progress.Resume()
 }
 
 // resolve loads the config and resolves its groups into selectors, reporting

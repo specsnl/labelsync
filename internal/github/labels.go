@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sync"
 
 	gogithub "github.com/google/go-github/v76/github"
 	"golang.org/x/sync/errgroup"
@@ -190,6 +191,23 @@ func (c *Client) ReadLabels(ctx context.Context, repos []config.Repo, concurrenc
 	// a repository that was skipped, and is filtered out below.
 	read := make([]*RepoLabels, len(repos))
 
+	var (
+		mu   sync.Mutex
+		done int
+	)
+
+	advance := func() {
+		mu.Lock()
+		defer mu.Unlock()
+
+		done++
+
+		c.progress.Reading(done, len(repos))
+	}
+
+	c.progress.Reading(0, len(repos))
+	defer c.progress.Done()
+
 	group, ctx := errgroup.WithContext(ctx)
 	group.SetLimit(concurrency)
 
@@ -200,6 +218,8 @@ func (c *Client) ReadLabels(ctx context.Context, repos []config.Repo, concurrenc
 				// Already recorded by Do, and the summary will name it. Every
 				// other error is the run's.
 				if errors.Is(err, labelsync.ErrRepoInaccessible) {
+					advance()
+
 					return nil
 				}
 
@@ -207,6 +227,8 @@ func (c *Client) ReadLabels(ctx context.Context, repos []config.Repo, concurrenc
 			}
 
 			read[i] = &RepoLabels{Repo: repo, Labels: labels}
+
+			advance()
 
 			return nil
 		})

@@ -263,7 +263,7 @@ func applyPlan(ctx context.Context, app *App, client *github.Client, p plan.Plan
 	// what is left is three writes and when it is three hundred.
 	client.ExpectWrites(writes)
 
-	report, err := apply.Apply(ctx, client, p, mode)
+	report, err := apply.Apply(ctx, client, p, mode, apply.WithProgress(app.progress()))
 
 	// The report is written even when the run ended early, because it is the only
 	// account of what was already changed. A failed apply that says nothing about

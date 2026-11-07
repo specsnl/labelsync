@@ -904,6 +904,7 @@ labelsync/
     └── util/
         ├── exit/                 # exit codes
         ├── output/               # lipgloss logger + table renderer
+        ├── progress/             # the status line drawn on stderr during long phases
         └── validate/             # shared validators
 ```
 

@@ -199,6 +199,25 @@ A repository that cannot be reached partway through is abandoned, the rest are s
 run exits `4`. The exit codes in full, and what to branch on in a CI job, are in
 [Running in CI § Exit codes]({{< ref "./ci.md#exit-codes" >}}).
 
+#### What progress looks like
+
+At a terminal, `sync` keeps one status line on **stderr** while it works, rewritten in place and
+cleared at the end of each phase:
+
+```text
+enumerating… 2/4 groups · 230 repositories
+reading labels… 23/65 repositories
+applying… 12/65 repositories · 48/179 writes · specsnl/specsops-ansible
+```
+
+Only one of them is on screen at a time. The line is cleared before the plan is printed, before the
+prune prompt is shown, and before the `applied:` line, so the output once the run finishes is the
+same as without it. A rate-limit wait takes the row over while it lasts.
+
+Progress is drawn **only** when stderr is a terminal and the output is pretty. Into a pipe or a CI
+log, under `--output=json`, and under `--debug` there is none: no line, no event, no control
+characters.
+
 #### What a rate-limit wait looks like
 
 A run that has to wait says so, on **stderr**, so `> out.txt` still captures only the answer:
@@ -399,6 +418,10 @@ so a consumer filters on them rather than matching prose:
 - a warning when `visibility: private` was asked for a user who is not the one the token belongs
   to, which GitHub can only ever answer with nothing;
 - the usual end-of-run summary of repositories that could not be reached.
+
+At a terminal, the enumeration also shows a status line on stderr (`enumerating… 2/4 groups · 230
+repositories`), cleared before the table is printed. It follows the same rules as
+[`sync`'s](#what-progress-looks-like).
 
 Pipe stdout and you keep all of that on the terminal. `2>/dev/null` keeps only the table.
 

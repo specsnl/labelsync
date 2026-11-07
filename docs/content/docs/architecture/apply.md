@@ -165,6 +165,15 @@ Note the two thresholds are different mechanisms. This one refuses to start; the
 [threshold pause]({{< ref "./rate-limiting.md#proactive" >}}) stops mid-run when the budget drops to its last 20
 requests, and waits for the window to turn over.
 
+## Progress
+
+`Apply` takes options after the mode, and `WithProgress` is the only one so far. It tells the
+reporter about each repository as it is reached and each write as it lands, against totals fixed
+before the first request: the plan's repository count and `Writes(p)`. No-ops send nothing, so they
+move nothing. The phase ends with a deferred `Done`, so the `applied` record the command writes next
+never lands on a half-drawn line. What the reporter does with it is
+[Progress]({{< ref "./progress.md" >}})'s business.
+
 ## Nothing here needs an HTTP mock to test
 
 `Apply` takes a `Writer` — the three methods of `*github.Client` it uses — so the semantics that

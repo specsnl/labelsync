@@ -44,6 +44,7 @@ import (
 	"github.com/specsnl/labelsync/internal/github"
 	"github.com/specsnl/labelsync/internal/labelsync"
 	"github.com/specsnl/labelsync/internal/plan"
+	"github.com/specsnl/labelsync/internal/util/progress"
 )
 
 // ReportKind is the "kind" of the record [Report] marshals to.
@@ -111,8 +112,13 @@ type Report struct {
 // candidates the user accepted: narrowing it is [plan.RetainDeletes]' job and the
 // command's decision, and nothing here can tell a candidate that was chosen from
 // one that was never offered.
-func Apply(ctx context.Context, client Writer, p plan.Plan, mode plan.Mode) (Report, error) {
+func Apply(ctx context.Context, client Writer, p plan.Plan, mode plan.Mode, opts ...Option) (Report, error) {
 	report := Report{Kind: ReportKind}
+
+	o := options{progress: progress.Nop()}
+	for _, opt := range opts {
+		opt(&o)
+	}
 
 	if mode != plan.ModePrune {
 		if err := refuseDeletes(p); err != nil {
@@ -120,7 +126,13 @@ func Apply(ctx context.Context, client Writer, p plan.Plan, mode plan.Mode) (Rep
 		}
 	}
 
-	for _, repoPlan := range p.Repos {
+	step := &tracker{
+		progress: o.progress,
+		at:       progress.Apply{ReposTotal: len(p.Repos), WritesTotal: Writes(p)},
+	}
+	defer o.progress.Done()
+
+	for i, repoPlan := range p.Repos {
 		owner, name, ok := split(repoPlan.Repo)
 		if !ok {
 			return report, fmt.Errorf("%w: %s", labelsync.ErrInvalidRepoRef, repoPlan.Repo)
@@ -128,7 +140,9 @@ func Apply(ctx context.Context, client Writer, p plan.Plan, mode plan.Mode) (Rep
 
 		report.Repositories++
 
-		if err := applyRepo(ctx, client, owner, name, repoPlan, mode, &report); err != nil {
+		step.repo(i+1, repoPlan.Repo)
+
+		if err := applyRepo(ctx, client, owner, name, repoPlan, mode, &report, step); err != nil {
 			// Already recorded by github.Client.Do, and the end-of-run summary
 			// will name it. Every other error is the run's.
 			if errors.Is(err, labelsync.ErrRepoInaccessible) {
@@ -167,6 +181,7 @@ func applyRepo(
 	repoPlan plan.RepoPlan,
 	mode plan.Mode,
 	report *Report,
+	step *tracker,
 ) error {
 	for _, action := range repoPlan.Actions {
 		switch action.Kind {
@@ -187,6 +202,8 @@ func applyRepo(
 
 			report.Created++
 
+			step.wrote()
+
 		case plan.KindUpdate:
 			// The action's pointers go straight through: an update carries the
 			// fields it changes and nothing else, and a nil one has to stay nil
@@ -201,6 +218,8 @@ func applyRepo(
 			}
 
 			report.Updated++
+
+			step.wrote()
 
 		case plan.KindDelete:
 			// Unreachable under append mode: refuseDeletes ran before the first
@@ -219,12 +238,47 @@ func applyRepo(
 
 			report.Deleted++
 
+			step.wrote()
+
 		default:
 			return fmt.Errorf("%w: %q in %s", errUnknownKind, action.Kind, repoPlan.Repo)
 		}
 	}
 
 	return nil
+}
+
+// Option configures [Apply].
+type Option func(*options)
+
+type options struct {
+	progress progress.Reporter
+}
+
+// WithProgress installs the reporter told about every repository the run
+// reaches and every write it sends. Without one the run reports nothing until
+// it is over.
+func WithProgress(p progress.Reporter) Option {
+	return func(o *options) { o.progress = p }
+}
+
+// tracker is where the run has got to, as the progress reporter is told it.
+type tracker struct {
+	progress progress.Reporter
+	at       progress.Apply
+}
+
+func (t *tracker) repo(position int, slug string) {
+	t.at.Repos = position
+	t.at.Repo = slug
+
+	t.progress.Applying(t.at)
+}
+
+func (t *tracker) wrote() {
+	t.at.Writes++
+
+	t.progress.Applying(t.at)
 }
 
 // refuseDeletes rejects a plan carrying anything destructive, before the first

@@ -48,6 +48,8 @@ of failing.
 Pass `--output=json` in CI. Every line is one self-contained JSON object, failures carry a stable
 `error_kind`, and nothing is coloured or redrawn — a rate-limit countdown becomes a structured
 event every 30 seconds rather than a line rewritten in place, which is unreadable in a log file.
+The progress line a terminal shows during enumeration, label reads and the apply is not drawn at
+all off a terminal, so a CI log and the NDJSON stream carry no progress records.
 
 **stdout is the product; stderr is the story of making it.** The plan and the summary go to stdout;
 progress, warnings, and diagnostics go to stderr. So a step can capture the answer and nothing

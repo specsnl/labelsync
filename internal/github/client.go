@@ -36,6 +36,7 @@ import (
 	"github.com/specsnl/labelsync/internal/labelsync"
 	"github.com/specsnl/labelsync/internal/util/exit"
 	"github.com/specsnl/labelsync/internal/util/output"
+	"github.com/specsnl/labelsync/internal/util/progress"
 )
 
 // Retry defaults. A 5xx from GitHub is nearly always transient, and a label
@@ -62,6 +63,7 @@ type Client struct {
 	failures *Failures
 	cache    *cache
 	limiter  *ratelimit.Limiter
+	progress progress.Reporter
 
 	// The authenticated login, resolved at most once — see [Client.Login].
 	loginOnce sync.Once
@@ -73,6 +75,7 @@ type Client struct {
 type options struct {
 	cacheDir   string
 	limiter    *ratelimit.Limiter
+	progress   progress.Reporter
 	baseURL    string
 	httpClient *http.Client
 	retries    int
@@ -109,6 +112,13 @@ func WithCacheDir(dir string) Option {
 // wrong one for a few hundred label writes.
 func WithLimiter(l *ratelimit.Limiter) Option {
 	return func(o *options) { o.limiter = l }
+}
+
+// WithProgress installs the reporter the long reads — [Client.Select] and
+// [Client.ReadLabels] — tell how far they have got. Without one they report
+// nothing.
+func WithProgress(p progress.Reporter) Option {
+	return func(o *options) { o.progress = p }
 }
 
 // WithHTTPClient supplies the transport the retry wrapper is layered over.
@@ -202,7 +212,17 @@ func New(token Token, opts ...Option) (*Client, error) {
 
 	slog.Debug("github client built", "token", token, "base_url", rest.BaseURL.String(), "retries", o.retries)
 
-	return &Client{rest: rest, failures: &Failures{}, cache: newCache(o.cacheDir), limiter: o.limiter}, nil
+	if o.progress == nil {
+		o.progress = progress.Nop()
+	}
+
+	return &Client{
+		rest:     rest,
+		failures: &Failures{},
+		cache:    newCache(o.cacheDir),
+		limiter:  o.limiter,
+		progress: o.progress,
+	}, nil
 }
 
 // REST exposes the underlying go-github client, for the request-issuing code in

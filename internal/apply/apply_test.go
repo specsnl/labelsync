@@ -12,6 +12,7 @@ import (
 	"github.com/specsnl/labelsync/internal/github"
 	"github.com/specsnl/labelsync/internal/labelsync"
 	"github.com/specsnl/labelsync/internal/plan"
+	"github.com/specsnl/labelsync/internal/util/progress/progresstest"
 )
 
 // fake is a [apply.Writer] that records what it was asked to do, in the order it
@@ -446,5 +447,56 @@ func create(repo, name string) plan.Action {
 		Name:        name,
 		Color:       new("d73a4a"),
 		Description: new("Something isn't working"),
+	}
+}
+
+// TestApplyReportsProgress pins what the apply line is told: each repository as
+// it is reached, each write as it lands, and nothing for a no-op, which sends no
+// request. The totals are fixed from the start, so the line reads as a share.
+func TestApplyReportsProgress(t *testing.T) {
+	recorder := &progresstest.Recorder{}
+
+	p := plan.Plan{Repos: []plan.RepoPlan{
+		{Repo: "specsnl/one", Actions: []plan.Action{
+			create("specsnl/one", "a"),
+			{Kind: plan.KindNoOp, Repo: "specsnl/one", Name: "b"},
+		}},
+		{Repo: "specsnl/two", Actions: []plan.Action{create("specsnl/two", "a")}},
+	}}
+
+	if _, err := apply.Apply(t.Context(), &fake{}, p, plan.ModeAppend, apply.WithProgress(recorder)); err != nil {
+		t.Fatalf("Apply() error = %v, want nil", err)
+	}
+
+	want := []string{
+		"applying 1/2 0/2 specsnl/one",
+		"applying 1/2 1/2 specsnl/one",
+		"applying 2/2 1/2 specsnl/two",
+		"applying 2/2 2/2 specsnl/two",
+		"done",
+	}
+
+	if got := recorder.Calls(); !slices.Equal(got, want) {
+		t.Errorf("progress =\n  %s\nwant\n  %s", strings.Join(got, "\n  "), strings.Join(want, "\n  "))
+	}
+}
+
+// TestApplyTakesTheLineDownWhenTheRunStops is the early exit: the applied
+// record is written next, and it must not land on top of the progress line.
+func TestApplyTakesTheLineDownWhenTheRunStops(t *testing.T) {
+	recorder := &progresstest.Recorder{}
+
+	client := &fake{fail: func(string, string, string) error { return errors.New("context canceled") }}
+
+	p := plan.Plan{Repos: []plan.RepoPlan{
+		{Repo: "specsnl/one", Actions: []plan.Action{create("specsnl/one", "a")}},
+	}}
+
+	if _, err := apply.Apply(t.Context(), client, p, plan.ModeAppend, apply.WithProgress(recorder)); err == nil {
+		t.Fatal("Apply() error = nil, want the failure")
+	}
+
+	if got := recorder.Last(); got != "done" {
+		t.Errorf("last progress call = %q, want done", got)
 	}
 }

@@ -30,7 +30,8 @@ labelsync/
     ├── apply/                    # executes a Plan, in append or prune mode
     └── util/
         ├── exit/                 # exit codes
-        └── output/               # Writer (pretty + NDJSON), table renderers, slog setup
+        ├── output/               # Writer (pretty + NDJSON), table renderers, slog setup
+        └── progress/             # the status line drawn on stderr during long phases
 ```
 
 The design plan sketched a `util/validate/` for shared validators. It was never built: every rule
@@ -42,17 +43,18 @@ been a second home for one of them.
 
 Every package the design plan called for has landed.
 
-| Package                | Notes                                                                                                        |
-|------------------------|--------------------------------------------------------------------------------------------------------------|
-| `internal/labelsync`   | XDG config/cache paths, config file names, sentinels, `KindOf`                                               |
-| `internal/util/exit`   | The four exit codes — see [Output & Exit Codes]({{< ref "./output.md" >}})                                   |
-| `internal/util/output` | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                                                      |
-| `internal/cmd`         | Every command; `sync` applies in both modes, and owns the prune selection                                    |
-| `internal/config`      | Load, validate, resolve, export, the `init` scaffold — see [Configuration]({{< ref "./configuration.md" >}}) |
-| `internal/palette`     | The candidate grid and `Allocate` — see [Colour Palette]({{< ref "./palette.md" >}})                         |
-| `internal/plan`        | `Action`, `Plan`, `Compute` in both modes, rendering — see [Planner]({{< ref "./plan.md" >}})                |
-| `internal/github`      | Auth, client, enumeration, labels, ETag cache, the limiter and its countdown                                 |
-| `internal/apply`       | Creates, updates, recolours, and deletes under prune — see [Apply]({{< ref "./apply.md" >}})                 |
+| Package                  | Notes                                                                                                        |
+|--------------------------|--------------------------------------------------------------------------------------------------------------|
+| `internal/labelsync`     | XDG config/cache paths, config file names, sentinels, `KindOf`                                               |
+| `internal/util/exit`     | The four exit codes — see [Output & Exit Codes]({{< ref "./output.md" >}})                                   |
+| `internal/util/output`   | `Writer`, pretty + NDJSON, TTY detection, `slog` wiring                                                      |
+| `internal/util/progress` | The status line of the long phases — see [Progress]({{< ref "./progress.md" >}})                             |
+| `internal/cmd`           | Every command; `sync` applies in both modes, and owns the prune selection                                    |
+| `internal/config`        | Load, validate, resolve, export, the `init` scaffold — see [Configuration]({{< ref "./configuration.md" >}}) |
+| `internal/palette`       | The candidate grid and `Allocate` — see [Colour Palette]({{< ref "./palette.md" >}})                         |
+| `internal/plan`          | `Action`, `Plan`, `Compute` in both modes, rendering — see [Planner]({{< ref "./plan.md" >}})                |
+| `internal/github`        | Auth, client, enumeration, labels, ETag cache, the limiter and its countdown                                 |
+| `internal/apply`         | Creates, updates, recolours, and deletes under prune — see [Apply]({{< ref "./apply.md" >}})                 |
 
 ### Why `plan` and `palette` are isolated
 
