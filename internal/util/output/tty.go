@@ -39,3 +39,19 @@ func IsTTY(stream any) bool {
 
 	return term.IsTerminal(f.Fd())
 }
+
+// TerminalWidth returns the width of stream in columns, or 0 when stream is not
+// a terminal or its size cannot be read. Zero is what [RenderTable] reads as
+// unbounded.
+func TerminalWidth(stream any) int {
+	if !IsTTY(stream) {
+		return 0
+	}
+
+	width, _, err := term.GetSize(stream.(fileDescriptor).Fd())
+	if err != nil {
+		return 0
+	}
+
+	return width
+}

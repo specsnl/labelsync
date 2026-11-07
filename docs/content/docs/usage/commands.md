@@ -425,6 +425,11 @@ repositories`), cleared before the table is printed. It follows the same rules a
 
 Pipe stdout and you keep all of that on the terminal. `2>/dev/null` keeps only the table.
 
+On a terminal the table fits the terminal's width: a long repository list wraps over several lines
+inside its column, breaking between repositories, and wrapped rows are separated by a blank line.
+Piped or redirected, the table keeps its natural width — one line per group, however long — so a
+script reading it does not depend on the terminal it ran in.
+
 A `--group` naming a group the config does not define is an error (`unknown_group`), not an empty
 table: reporting nothing for a typo is how a working selector gets blamed. An owner that cannot be
 listed does not stop the run — the other groups still resolve, and the exit code carries `4`.

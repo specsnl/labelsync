@@ -271,8 +271,8 @@ consequences worth internalising:
 
 ### What `IsTTY` is still for
 
-Colour is handled, so it is tempting to conclude the helper has no remaining job. It has two, and
-neither is about styling.
+Colour is handled, so it is tempting to conclude the helper has no remaining job. It has three, and
+none is about styling.
 
 Progress UI — spinners, progress bars, the rate-limit countdown — is stderr like every other
 diagnostic, and is *additionally* drawn only when the stream is a terminal. This is the standard
@@ -285,13 +285,16 @@ to nothing at all.
 - the **progress line** — `\r` on a terminal and nothing at all anywhere else; see
   [Progress]({{< ref "./progress.md" >}});
 - the **prune prompt** — never shown to a pipe. A CI job blocked on an invisible prompt hangs until
-  someone cancels it. That is `ErrInteractiveRequired`.
+  someone cancels it. That is `ErrInteractiveRequired`;
+- the **table width** — `TerminalWidth` builds on `IsTTY` and reads the width of stdout, which
+  `WriteTable` fits the table to. See [Fitting the terminal](#fitting-the-terminal).
 
 Note which stream each one asks about. The countdown and the progress line ask about **stderr**,
 where they draw. The
 prompt asks about **stdin**, because the hang it prevents is a read with nobody to answer it — a job
 with a terminal attached to stderr and its stdin closed must still refuse to prompt. Two questions,
-two streams; check the one the decision actually depends on.
+two streams; check the one the decision actually depends on. The table width is a third, and it
+asks about **stdout**, where the table goes.
 
 The stdin the prompt asks about is `cmd.InOrStdin()` and never `os.Stdin`, for the same reason the
 writers come from `cmd.OutOrStdout()`: it is the stream the run was actually given, where `os.Stdin`
@@ -363,6 +366,46 @@ changes are unreadable.
 
 Column widths are measured in **display width**, not bytes. A label name may contain an emoji, and
 `len()` would over-pad the column by several characters.
+
+### Fitting the terminal
+
+`RenderTable` takes a maximum width, border included; `0` means unbounded. `PrettyWriter.WriteTable`
+passes `TerminalWidth(stdout)` — the terminal's width when stdout is a terminal, and `0` when it is
+not or the size cannot be read. Piped output therefore keeps its natural width and never depends on
+the terminal it happened to be piped from.
+
+```go
+func RenderTable(headers []string, rows [][]string, maxWidth int) string
+func TerminalWidth(stream any) int
+```
+
+When the natural layout fits, it is rendered unchanged. Otherwise the **widest column shrinks first**,
+one column at a time, so the column that causes the overflow — the repository list in `groups` —
+absorbs it, and narrow columns such as `Group` and `Count` keep their width until everything is
+equally narrow. No column goes below one character; a terminal too narrow for that gets a table
+wider than itself.
+
+Cells in a shrunk column wrap at spaces, so `specsnl/a, specsnl/b` breaks between repositories and
+never inside a name. Only a single token longer than its column is hard-broken. Every line of a
+wrapped row pads every cell, the blank continuation cells included, so the columns stay aligned and
+the border intact:
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Group     Source        Count  Repositories                                                  │
+│ ──────────────────────────────────────────────────────────────────────────────────────────── │
+│ specsops  org: specsnl  6      specsnl/specsops, specsnl/specsops-ansible,                   │
+│                                specsnl/specsops-ansible-collection,                          │
+│                                specsnl/specsops-golden-images, specsnl/specsops-opentofu,    │
+│                                specsnl/specsops-sops                                         │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+A wrapped table separates its rows with a blank line, so a continuation line cannot be read as the
+start of the next row. A table that fits has no separators, exactly as before.
+
+`RenderColumns` does not wrap. The diff's last column is a free-text note and could get the same
+treatment later.
 
 ## Debug logging
 
