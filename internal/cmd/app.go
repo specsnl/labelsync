@@ -21,6 +21,7 @@ import (
 
 	"github.com/specsnl/labelsync/internal/github"
 	"github.com/specsnl/labelsync/internal/util/output"
+	"github.com/specsnl/labelsync/internal/util/progress"
 )
 
 // Default values for the persistent flags. Named because the tests assert on
@@ -142,6 +143,15 @@ type App struct {
 	// [App.canPrompt].
 	Prompt Selector
 
+	// Progress draws the status line of the long phases on stderr. Nil means the
+	// rendering progress.New picks from --output, --debug and stderr, resolved
+	// once on first use so that the client, the countdown and the apply all share
+	// one line.
+	//
+	// It is a test seam: a terminal file descriptor is not something a test can
+	// portably fake, so a test that wants to see the line hands one in.
+	Progress progress.Reporter
+
 	// Now is the clock, for the one command that renders an age. Nil means
 	// time.Now.
 	//
@@ -157,6 +167,15 @@ type App struct {
 	// that running the suite cannot touch the developer's real cache. Production
 	// leaves it nil.
 	GitHub []github.Option
+}
+
+// progress is the run's status line, chosen on first use.
+func (a *App) progress() progress.Reporter {
+	if a.Progress == nil {
+		a.Progress = progress.New(a.Stderr, a.Format, a.Debug)
+	}
+
+	return a.Progress
 }
 
 // now is the clock, or time.Now when nothing replaced it.

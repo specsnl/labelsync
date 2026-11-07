@@ -167,7 +167,7 @@ labelsync/
     ├── plan/                     # Compute() — pure, no network — plus Action, candidates, rendering
     ├── palette/                  # Allocate() and the deterministic HSL candidate grid
     ├── apply/                    # executes a Plan in append or prune mode
-    └── util/                     # exit/, output/
+    └── util/                     # exit/, output/, progress/
 ```
 
 The full structure, with a file-level breakdown, is in
@@ -215,6 +215,7 @@ design section it grew out of.
 | [github-client.md](./docs/content/docs/architecture/github-client.md)         | The go-github wrapper and its error taxonomy     |
 | [rate-limiting.md](./docs/content/docs/architecture/rate-limiting.md)         | The write bucket, backoff, the countdown         |
 | [apply.md](./docs/content/docs/architecture/apply.md)                         | Executing a plan, prune, the budget check        |
+| [progress.md](./docs/content/docs/architecture/progress.md)                   | The status line, its phases, sharing the row     |
 | [distribution.md](./docs/content/docs/architecture/distribution.md)           | The release pipeline, install channels, the cask |
 | [library-decisions.md](./docs/content/docs/architecture/library-decisions.md) | Every direct dependency, and the rejects         |
 | [demo.md](./docs/content/docs/architecture/demo.md)                           | The VHS tape, and how to re-record the GIF       |

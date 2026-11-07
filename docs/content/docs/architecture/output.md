@@ -282,10 +282,13 @@ to nothing at all.
 
 - the **rate-limit countdown** — `\r` on a terminal, periodic log lines into a pipe, because control
   characters in a CI log are unreadable;
+- the **progress line** — `\r` on a terminal and nothing at all anywhere else; see
+  [Progress]({{< ref "./progress.md" >}});
 - the **prune prompt** — never shown to a pipe. A CI job blocked on an invisible prompt hangs until
   someone cancels it. That is `ErrInteractiveRequired`.
 
-Note which stream each one asks about. The countdown asks about **stderr**, where it draws. The
+Note which stream each one asks about. The countdown and the progress line ask about **stderr**,
+where they draw. The
 prompt asks about **stdin**, because the hang it prevents is a read with nobody to answer it — a job
 with a terminal attached to stderr and its stdin closed must still refuse to prompt. Two questions,
 two streams; check the one the decision actually depends on.

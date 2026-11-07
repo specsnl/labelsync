@@ -124,6 +124,10 @@ structured event is `output.Writer`'s business, not the countdown's, which is wh
 the in-place rendering takes the raw `stderr`, because a carriage return with no newline after it is
 a thing no `Writer` method can express and should not learn to.
 
+The countdown shares its row with the [progress line]({{< ref "./progress.md#sharing-the-row" >}}).
+The command wraps the reporter so the progress line is paused before the countdown starts and
+resumed after it is done. The countdown itself knows nothing about it.
+
 ### Why it reports a write count
 
 "Resuming in 04:32" is a delay. "Resuming in 04:32 · 143 writes remaining" is progress — sitting out
