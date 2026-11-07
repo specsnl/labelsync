@@ -399,6 +399,16 @@ Three details are load-bearing:
 The theme itself is cached across runs by `docs/go.sum`, which is why the module download does not
 show up in the build time of a typical docs change.
 
+### Theme customisation
+
+The site overrides one Hextra template, `docs/layouts/_partials/custom/head-end.html`, and keeps it
+to CSS: the `--primary-*` variables that give it the specs.nl blue instead of Hextra's default, and
+an underline on the footer link. Everything else is configuration. The footer's "Made by specs.nl"
+line is Hextra's own copyright slot — `params.footer` in `hugo.toml` turns on the copyright and
+turns off "Powered by Hextra", and `docs/i18n/en.yaml` supplies the text. Keeping the overrides that
+small is deliberate: a copied theme template stops tracking upstream, so every Hextra upgrade would
+otherwise mean diffing it by hand.
+
 ### The custom domain
 
 `labelsync.specs.dev` is set in Settings → Pages rather than in a `CNAME` file under
