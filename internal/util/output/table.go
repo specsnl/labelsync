@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 var (
@@ -40,24 +41,55 @@ func RenderColumns(rows [][]string) string {
 	return strings.Join(lines, "\n")
 }
 
+// tableChrome is the width the box adds around the content: one border
+// column and one column of padding on each side.
+const tableChrome = 4
+
 // RenderTable renders headers and rows as a bordered, column-aligned table.
 // Column widths are computed from the content, headers included.
+//
+// maxWidth is the widest the table may be, border included. When the natural
+// layout is wider, the widest columns give way first and their cells wrap over
+// several lines — at spaces where they can, hard-broken where a single token is
+// longer than the column. Narrow columns keep their natural width. A wrapped
+// table separates its rows with a blank line, so a continuation line cannot be
+// mistaken for the next row. Zero or less means unbounded: the natural layout,
+// whatever its width. A terminal too narrow for even one character per column
+// still gets that one character; the table is then wider than maxWidth.
 //
 // This is what [PrettyWriter.WriteTable] uses — list output such as `groups` or
 // `cache info`, where a header row is meaningful. For the diff, see
 // [RenderColumns].
-func RenderTable(headers []string, rows [][]string) string {
+func RenderTable(headers []string, rows [][]string, maxWidth int) string {
 	widths := columnWidths(append([][]string{headers}, rows...))
+
+	wrapped := maxWidth > 0 && totalWidth(widths)+tableChrome > maxWidth
+	if wrapped {
+		shrinkColumns(widths, maxWidth-tableChrome)
+	}
 
 	var sb strings.Builder
 
-	sb.WriteString(tableHeaderStyle.Render(strings.TrimRight(joinCells(headers, widths), " ")))
+	for i, line := range wrapRow(headers, widths) {
+		if i > 0 {
+			sb.WriteString("\n")
+		}
+
+		sb.WriteString(tableHeaderStyle.Render(line))
+	}
+
 	sb.WriteString("\n")
 	sb.WriteString(tableBorderStyle.Render(strings.Repeat("─", totalWidth(widths))))
 
-	for _, row := range rows {
-		sb.WriteString("\n")
-		sb.WriteString(strings.TrimRight(joinCells(row, widths), " "))
+	for i, row := range rows {
+		if wrapped && i > 0 {
+			sb.WriteString("\n")
+		}
+
+		for _, line := range wrapRow(row, widths) {
+			sb.WriteString("\n")
+			sb.WriteString(line)
+		}
 	}
 
 	return lipgloss.NewStyle().
@@ -65,6 +97,88 @@ func RenderTable(headers []string, rows [][]string) string {
 		BorderForeground(lipgloss.ANSIColor(240)).
 		Padding(0, 1).
 		Render(sb.String())
+}
+
+// shrinkColumns narrows widths in place until the row fits in avail, one
+// column at a time and always the widest, so the columns that cause the
+// overflow absorb it and the narrow ones are only touched once everything is
+// equally narrow. No column goes below one.
+func shrinkColumns(widths []int, avail int) {
+	for totalWidth(widths) > avail {
+		widest := 0
+		for i, w := range widths {
+			if w > widths[widest] {
+				widest = i
+			}
+		}
+
+		if widths[widest] <= 1 {
+			return
+		}
+
+		widths[widest]--
+	}
+}
+
+// wrapRow wraps each cell to its column width and lays the result out as one
+// or more lines, padding every cell — blank continuation cells included — so
+// each column starts at the same offset on every line. Lines are right-trimmed.
+func wrapRow(row []string, widths []int) []string {
+	cells := make([][]string, len(row))
+	height := 1
+
+	for i, cell := range row {
+		cells[i] = wrapCell(cell, widths[i])
+		height = max(height, len(cells[i]))
+	}
+
+	lines := make([]string, height)
+	line := make([]string, len(row))
+
+	for l := range lines {
+		for i := range row {
+			line[i] = ""
+			if l < len(cells[i]) {
+				line[i] = cells[i][l]
+			}
+		}
+
+		lines[l] = strings.TrimRight(joinCells(line, widths), " ")
+	}
+
+	return lines
+}
+
+// wrapCell breaks s into lines no wider than width. It fills each line with
+// whole space-separated words, and hard-breaks only a word that is longer than
+// width on its own.
+func wrapCell(s string, width int) []string {
+	if lipgloss.Width(s) <= width {
+		return []string{s}
+	}
+
+	var (
+		lines []string
+		cur   string
+	)
+
+	for word := range strings.FieldsSeq(s) {
+		switch {
+		case cur == "":
+		case lipgloss.Width(cur)+1+lipgloss.Width(word) <= width:
+			cur += " " + word
+
+			continue
+		default:
+			lines = append(lines, cur)
+		}
+
+		pieces := strings.Split(ansi.Hardwrap(word, width, false), "\n")
+		lines = append(lines, pieces[:len(pieces)-1]...)
+		cur = pieces[len(pieces)-1]
+	}
+
+	return append(lines, cur)
 }
 
 // columnWidths returns the display width of the widest cell in each column.

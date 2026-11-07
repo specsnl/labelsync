@@ -131,6 +131,10 @@ var (
 type PrettyWriter struct {
 	stdout io.Writer
 	stderr io.Writer
+
+	// rawStdout is stdout before the colour wrapper, kept so [TerminalWidth]
+	// can reach its file descriptor.
+	rawStdout io.Writer
 }
 
 // NewPrettyWriter creates a PrettyWriter over the given streams.
@@ -145,8 +149,9 @@ type PrettyWriter struct {
 // does not depend on whoever is running them.
 func NewPrettyWriter(stdout, stderr io.Writer, environ []string) *PrettyWriter {
 	return &PrettyWriter{
-		stdout: colorprofile.NewWriter(stdout, environ),
-		stderr: colorprofile.NewWriter(stderr, environ),
+		stdout:    colorprofile.NewWriter(stdout, environ),
+		stderr:    colorprofile.NewWriter(stderr, environ),
+		rawStdout: stdout,
 	}
 }
 
@@ -184,9 +189,11 @@ func (w *PrettyWriter) WriteEvent(_ any, format string, args ...any) {
 }
 
 // WriteTable renders a bordered, column-aligned table on stdout. The records
-// are ignored: a human reads the cells.
+// are ignored: a human reads the cells. On a terminal the table is fitted to
+// its width, wrapping the widest cells; anywhere else it keeps its natural
+// width, so piped output does not depend on the terminal it was piped from.
 func (w *PrettyWriter) WriteTable(t TableData) {
-	fmt.Fprintln(w.stdout, RenderTable(t.Headers, t.Cells))
+	fmt.Fprintln(w.stdout, RenderTable(t.Headers, t.Cells, TerminalWidth(w.rawStdout)))
 }
 
 // WriteDiff writes the assembled diff text on stdout. The records are ignored:
