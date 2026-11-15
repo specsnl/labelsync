@@ -111,7 +111,7 @@ jobs:
 
       - name: Build the runtime image
         id: build
-        uses: specsnl/github-actions/build-image@3.0.0
+        uses: specsnl/github-actions/build-image@3.0.2
         with:
           platform: ${{ matrix.runner.platform }}
           image-name: ghcr.io/specsnl/labelsync
